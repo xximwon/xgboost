@@ -73,6 +73,26 @@ XGBOOST_DEVICE inline void Softmax(Iterator start, Iterator end) {
 }
 
 /*!
+ * \brief Find the mean value within the iterators
+ *
+ * \param beg the begining iterator
+ * \param end the end iterator
+ *
+ * \return the mean value
+ */
+template <typename Iter>
+float Mean(Iter beg, Iter end) {
+  if (beg == end) { return std::numeric_limits<float>::quiet_NaN(); }
+  float mean{*beg};
+  size_t length = end - beg;
+  float avg = 1 / length;
+  for (Iter it = beg; it != end; ++it) {
+    mean = mean + avg * (*it - mean);
+  }
+  return mean;
+}
+
+/*!
  * \brief Find the maximum iterator within the iterators
  * \param begin The begining iterator.
  * \param end The end iterator.

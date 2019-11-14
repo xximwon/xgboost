@@ -827,5 +827,11 @@ XGBOOST_REGISTER_GBM(Dart, "dart")
     GBTree* p = new Dart(booster_config);
     return p;
   });
+XGBOOST_REGISTER_GBM(ProbForecast, "pboost")
+.describe("Tree booster, used for probability forecasting.")
+.set_body([](LearnerModelParam const* booster_config) {
+            GBTree* p = new ProbForecast(booster_config);
+            return p;
+          });
 }  // namespace gbm
 }  // namespace xgboost

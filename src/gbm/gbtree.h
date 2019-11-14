@@ -29,6 +29,7 @@
 #include "gbtree_model.h"
 #include "../common/common.h"
 #include "../common/timer.h"
+#include "../common/distributions.h"
 
 namespace xgboost {
 enum class TreeMethod : int {
@@ -298,6 +299,15 @@ class GBTree : public GradientBooster {
   std::unique_ptr<Predictor> oneapi_predictor_;
 #endif  // defined(XGBOOST_USE_ONEAPI)
   common::Monitor monitor_;
+};
+
+class ProbForecast : public GBTree {
+ public:
+  explicit ProbForecast(LearnerModelParam const* model) : GBTree{model} {}
+  void Configure(const Args& cfg) override {
+    GBTree::Configure(cfg);
+    // model_..num_output_group = 2;
+  }
 };
 
 }  // namespace gbm

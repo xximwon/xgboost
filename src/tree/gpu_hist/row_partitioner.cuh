@@ -45,7 +45,9 @@ class RowPartitioner {
    * node id -> segment -> indices of rows belonging to node
    */
   /*! \brief Range of row index for each node, pointers into ridx below. */
+  dh::device_vector<Segment> d_ridx_segments_;
   std::vector<Segment> ridx_segments_;
+
   dh::TemporaryArray<RowIndexT> ridx_a_;
   dh::TemporaryArray<bst_node_t> position_a_;
   dh::caching_device_vector<int64_t>
@@ -68,6 +70,14 @@ class RowPartitioner {
    * \brief Gets all training rows in the set.
    */
   common::Span<const RowIndexT> GetRows();
+
+  common::Span<Segment> GetDeviceSegments() {
+    d_ridx_segments_.resize(ridx_segments_.size());
+    dh::safe_cuda(cudaMemcpyAsync(
+        d_ridx_segments_.data().get(), ridx_segments_.data(),
+        ridx_segments_.size() * sizeof(Segment), cudaMemcpyHostToDevice));
+    return dh::ToSpan(d_ridx_segments_);
+  }
 
   /**
    * \brief Gets the tree position of all training instances.
@@ -186,7 +196,7 @@ class RowPartitioner {
     Segment(size_t begin, size_t end) : begin(begin), end(end) {
       CHECK_GE(end, begin);
     }
-    size_t Size() const { return end - begin; }
+    XGBOOST_DEVICE size_t Size() const { return end - begin; }
   };
 };
 };  // namespace tree

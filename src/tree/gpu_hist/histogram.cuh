@@ -6,6 +6,7 @@
 #include <thrust/transform.h>
 
 #include "feature_groups.cuh"
+#include "row_partitioner.cuh"
 
 #include "../../data/ellpack_page.cuh"
 
@@ -22,9 +23,12 @@ XGBOOST_DEV_INLINE T TruncateWithRoundingFactor(T const rounding_factor, float c
 
 template <typename GradientSumT>
 void BuildGradientHistogram(EllpackDeviceAccessor const& matrix,
+                            size_t n_elements,
                             FeatureGroupsAccessor const& feature_groups,
                             common::Span<GradientPair const> gpair,
+                            common::Span<RowPartitioner::Segment> node_segments,
                             common::Span<const uint32_t> ridx,
+                            common::Span<const bst_node_t> d_position,
                             common::Span<GradientSumT> histogram,
                             GradientSumT rounding);
 }  // namespace tree

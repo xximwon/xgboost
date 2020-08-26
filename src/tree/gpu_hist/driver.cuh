@@ -20,6 +20,9 @@ struct ExpandEntry {
   float right_weight { std::numeric_limits<float>::quiet_NaN() };
 
   ExpandEntry() = default;
+  ExpandEntry(bst_node_t nidx, int32_t depth, DeviceSplitCandidate split) :
+      nid{nidx}, depth{depth}, split{split} {}
+
   XGBOOST_DEVICE ExpandEntry(int nid, int depth, DeviceSplitCandidate split,
                              float base, float left, float right)
       : nid(nid), depth(depth), split(std::move(split)), base_weight{base},

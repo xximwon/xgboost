@@ -269,5 +269,26 @@ template void EvaluateSingleSplit<GradientPairPrecise>(
     common::Span<DeviceSplitCandidate> out_split,
     TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
     EvaluateSplitInputs<GradientPairPrecise> input);
+
+
+void EvaluateSplits(TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
+                    common::Span<DeviceSplitCandidate> out_split) {
+  // n_feature should be same for all nodes considering sample_by_* is fixed
+  // but bins is not fixed because sample_by_node can select feature with different number of bins.
+  // problem size = n_nodes * bins_{nidx}
+
+  // Asumming sparse
+
+  // auto nidx = SegmentID(nodes_ptr, idx);
+  // node_histogram = histograms[nidx];
+  // auto fidx = SegmentID(node_histogram.feature_segments, idx_within_node);
+  // f_histogram = node_histogram[fidx];
+
+  // scan_by_key ???
+  // reduce_by_key ???
+
+  // backward ???
+}
+
 }  // namespace tree
 }  // namespace xgboost

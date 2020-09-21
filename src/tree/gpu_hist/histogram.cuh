@@ -40,7 +40,7 @@ class LaunchPolicy {
               FeatureGroupsAccessor const &feature_groups,
               common::Span<GradientPair const> gpair,
               common::Span<const uint32_t> ridx,
-              common::Span<GradientPair> histogram, GradientPair rounding);
+              common::Span<GradientSumT> histogram, GradientSumT rounding);
 };
 }  // namespace tree
 }  // namespace xgboost

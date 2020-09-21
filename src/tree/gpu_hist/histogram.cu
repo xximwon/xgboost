@@ -262,7 +262,7 @@ LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_gr
       int min_grid_size;
       int block_threads = 1024;
       auto kernel = SharedMemHistKernel<GradientSumT>;
-      dh::safe_cuda(cudaOccuupancyMaxPotentialBlockSize(
+      dh::safe_cuda(cudaOccupancyMaxPotentialBlockSize(
           &min_grid_size, &block_threads, kernel, smem_size, 0));
       block_threads_ = static_cast<uint32_t>(block_threads);
       break;
@@ -290,7 +290,7 @@ void LaunchPolicy<GradientSumT>::Launch(
     EllpackDeviceAccessor const &matrix,
     FeatureGroupsAccessor const &feature_groups,
     common::Span<GradientPair const> gpair, common::Span<const uint32_t> ridx,
-    common::Span<GradientPair> histogram, GradientPair rounding) {
+    common::Span<GradientSumT> histogram, GradientSumT rounding) {
   int device = 0;
   dh::safe_cuda(cudaGetDevice(&device));
   bool shared = smem_size_ <= dh::MaxSharedMemory(device);
@@ -301,7 +301,9 @@ void LaunchPolicy<GradientSumT>::Launch(
       kernel,
       matrix, feature_groups, ridx, histogram.data(), gpair.data(), rounding,
       shared);
-  dh::safe_cuda(cudaGetLastError());
 }
+
+template class LaunchPolicy<GradientPairPrecise>;
+template class LaunchPolicy<GradientPair>;
 }  // namespace tree
 }  // namespace xgboost

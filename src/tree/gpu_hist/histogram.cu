@@ -236,8 +236,7 @@ template void BuildGradientHistogram<GradientPairPrecise>(
 
 template <typename GradientSumT>
 LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_groups) {
-  int device = 0;
-  dh::safe_cuda(cudaGetDevice(&device));
+  int device = cub::CurrentDevice();
   size_t smem_size = sizeof(GradientSumT) * feature_groups.max_group_bins;
   auto kernel = SharedMemHistKernel<GradientSumT>;
 
@@ -256,8 +255,6 @@ LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_gr
     case 70:
     case 75:
     case 80:
-      block_threads_ = 1024;
-      break;
     default: {
       int min_grid_size;
       int block_threads = 1024;
@@ -283,6 +280,9 @@ LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_gr
 
   grids_ = dim3(grid_size, num_groups);
   smem_size_ = smem_size;
+
+  shared_ = smem_size_ <= dh::MaxSharedMemory(device);;
+  smem_size_ = shared_ ? smem_size_ : 0;
 }
 
 template <typename GradientSumT>
@@ -291,16 +291,9 @@ void LaunchPolicy<GradientSumT>::Launch(
     FeatureGroupsAccessor const &feature_groups,
     common::Span<GradientPair const> gpair, common::Span<const uint32_t> ridx,
     common::Span<GradientSumT> histogram, GradientSumT rounding) {
-  int device = 0;
-  dh::safe_cuda(cudaGetDevice(&device));
-  bool shared = smem_size_ <= dh::MaxSharedMemory(device);
-  auto kernel = SharedMemHistKernel<GradientSumT>;
-
-  dh::LaunchKernel {
-    grids_, block_threads_, smem_size_} (
-      kernel,
-      matrix, feature_groups, ridx, histogram.data(), gpair.data(), rounding,
-      shared);
+  dh::LaunchKernel{grids_, block_threads_, smem_size_}(
+      SharedMemHistKernel<GradientSumT>, matrix, feature_groups, ridx,
+      histogram.data(), gpair.data(), rounding, shared_);
 }
 
 template class LaunchPolicy<GradientPairPrecise>;

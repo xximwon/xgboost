@@ -33,6 +33,7 @@ class LaunchPolicy {
   dim3 grids_;
   uint32_t block_threads_;
   size_t smem_size_;
+  bool shared_;
 
  public:
   explicit LaunchPolicy(FeatureGroupsAccessor const& feature_groups);

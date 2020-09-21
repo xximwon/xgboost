@@ -203,52 +203,122 @@ __device__ DeviceSplitCandidate operator+(const DeviceSplitCandidate& a,
   return b.loss_chg > a.loss_chg ? b : a;
 }
 
+template <typename T>
+void PrintDeviceSpan(common::Span<T> values, std::string name = "") {
+  using V = std::remove_cv_t<T>;
+  std::vector<V> h_left_histogram(values.size());
+  dh::CopyDeviceSpanToVector(&h_left_histogram, values);
+  std::cout << name << ": " << std::endl;
+  for (auto v : h_left_histogram) {
+    std::cout << v << ", ";
+  }
+  std::cout << std::endl;
+}
+
+template <typename GradientSumT>
+size_t EvaluateNode(TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
+                    EvaluateSplitInputs<GradientSumT> input,
+                    common::Span<GradientSumT> d_left_histogram,
+                    common::Span<float> d_gain_histogram) {
+  auto d_columns_ptr = input.feature_segments;
+  auto scan_it = dh::MakeTransformIterator<size_t>(
+      thrust::make_counting_iterator(0ul),
+      [=] __device__(size_t idx) { return dh::SegmentId(d_columns_ptr, idx); });
+  using Tuple = thrust::tuple<size_t, GradientSumT>;
+  auto val_it = thrust::make_zip_iterator(thrust::make_tuple(
+      thrust::make_counting_iterator(0ul), dh::tbegin(input.gradient_histogram)));
+  dh::caching_device_vector<Tuple> histogram(input.gradient_histogram.size());
+  thrust::fill(histogram.begin(), histogram.end(), Tuple{0, GradientSumT{}});
+  thrust::inclusive_scan_by_key(
+      thrust::device, scan_it, scan_it + input.gradient_histogram.size(),
+      val_it, histogram.begin(), thrust::equal_to<size_t>(),
+      [=] __device__(Tuple const &l, Tuple const &r) -> Tuple {
+        auto left_sum = thrust::get<1>(l);
+        auto right_val = thrust::get<1>(r);
+        size_t idx = thrust::get<0>(l);
+        size_t columnd_id = dh::SegmentId(d_columns_ptr, idx);
+        auto gain = evaluator.CalcSplitGain(
+            input.param, input.nidx, columnd_id, GradStats(left_sum),
+            GradStats(input.parent_sum - left_sum));
+        d_gain_histogram[idx] = gain;
+        if (idx == 0) {
+          d_gain_histogram[0] = input.min_fvalue[columnd_id];
+        }
+        return thrust::make_tuple(thrust::get<0>(r), left_sum + right_val);
+      });
+  thrust::transform(thrust::device, histogram.begin(), histogram.end(),
+                    d_left_histogram.data(),
+                    [] __device__(auto v) { return thrust::get<1>(v); });
+  auto max_it =
+      thrust::max_element(thrust::device, d_gain_histogram.data(),
+                          d_gain_histogram.data() + d_gain_histogram.size());
+  auto idx = std::distance(d_gain_histogram.data(), max_it);
+  return idx;
+}
+
 template <typename GradientSumT>
 void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
                     TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
                     EvaluateSplitInputs<GradientSumT> left,
                     EvaluateSplitInputs<GradientSumT> right) {
-  size_t combined_num_features =
-      left.feature_set.size() + right.feature_set.size();
-  dh::TemporaryArray<DeviceSplitCandidate> feature_best_splits(
-      combined_num_features);
-  // One block for each feature
-  uint32_t constexpr kBlockThreads = 256;
-  dh::LaunchKernel {uint32_t(combined_num_features), kBlockThreads, 0}(
-      EvaluateSplitsKernel<kBlockThreads, GradientSumT>, left, right, evaluator,
-      dh::ToSpan(feature_best_splits));
+  dh::caching_device_vector<GradientSumT> left_histogram(left.gradient_histogram.size());
+  auto d_left_histogram = dh::ToSpan(left_histogram);
+  dh::caching_device_vector<float> left_gain_histogram(left.gradient_histogram.size(), 0);
+  auto left_t = EvaluateNode(evaluator, left, d_left_histogram, dh::ToSpan(left_gain_histogram));
 
-  // Reduce to get best candidate for left and right child over all features
-  auto reduce_offset =
-      dh::MakeTransformIterator<size_t>(thrust::make_counting_iterator(0llu),
-                                        [=] __device__(size_t idx) -> size_t {
-                                          if (idx == 0) {
-                                            return 0;
-                                          }
-                                          if (idx == 1) {
-                                            return left.feature_set.size();
-                                          }
-                                          if (idx == 2) {
-                                            return combined_num_features;
-                                          }
-                                          return 0;
-                                        });
-  size_t temp_storage_bytes = 0;
-  auto num_segments = out_splits.size();
-  cub::DeviceSegmentedReduce::Sum(nullptr, temp_storage_bytes,
-                                  feature_best_splits.data(), out_splits.data(),
-                                  num_segments, reduce_offset, reduce_offset + 1);
-  dh::TemporaryArray<int8_t> temp(temp_storage_bytes);
-  cub::DeviceSegmentedReduce::Sum(temp.data().get(), temp_storage_bytes,
-                                  feature_best_splits.data(), out_splits.data(),
-                                  num_segments, reduce_offset, reduce_offset + 1);
+  dh::caching_device_vector<GradientSumT> right_histogram(left.gradient_histogram.size());
+  auto d_right_histogram = dh::ToSpan(right_histogram);
+  dh::caching_device_vector<float> right_gain_histogram(left.gradient_histogram.size(), 0);
+  auto right_t = EvaluateNode(evaluator, right, d_right_histogram, dh::ToSpan(right_gain_histogram));
+
+  std::cout << "left parent_sum: " << left.parent_sum << std::endl;
+  dh::LaunchN(0, 2, [=]__device__(size_t idx) {
+    decltype(left_t) split;
+    common::Span<GradientSumT> left_sum_histogram;
+    bst_feature_t fidx = 0;
+    if (idx == 0) {
+      split = left_t;
+      left_sum_histogram = d_left_histogram;
+    } else {
+      split = right_t;
+      left_sum_histogram = d_right_histogram;
+    }
+    // auto split_idx = thrust::get<2>(split);
+    // if (idx == 0) {
+    //   fidx = dh::SegmentId(left.feature_segments, split_idx);
+    // } else {
+    //   fidx = dh::SegmentId(left.feature_segments, split_idx);
+    // }
+    // out_splits[idx].Update(
+    //     thrust::get<0>(split), kRightDir, left.feature_values[thrust::get<2>(split)],
+    //     fidx, GradientPair{left_sum_histogram[split_idx]},
+    //     GradientPair{left.parent_sum - left_sum_histogram[split_idx]}, left.param);
+  });
 }
 
 template <typename GradientSumT>
 void EvaluateSingleSplit(common::Span<DeviceSplitCandidate> out_split,
                          TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
                          EvaluateSplitInputs<GradientSumT> input) {
-  EvaluateSplits(out_split, evaluator, input, {});
+  dh::caching_device_vector<GradientSumT> left_histogram(input.gradient_histogram.size());
+  thrust::fill(left_histogram.begin(), left_histogram.end(), GradientSumT{});
+  auto d_left_histogram = dh::ToSpan(left_histogram);
+  dh::caching_device_vector<float> left_gain_histogram(input.gradient_histogram.size(), 0);
+  thrust::fill(left_gain_histogram.begin(), left_gain_histogram.end(), 0);
+  auto d_gain_histogram = dh::ToSpan(left_gain_histogram);
+  auto left_t = EvaluateNode(evaluator, input, d_left_histogram, dh::ToSpan(left_gain_histogram));
+  dh::LaunchN(0, 1, [=] __device__(size_t idx) {
+    common::Span<GradientSumT> left_sum_histogram;
+    bst_feature_t fidx = dh::SegmentId(input.feature_segments, left_t);
+    left_sum_histogram = d_left_histogram;
+
+    auto gain = d_gain_histogram[left_t];
+    out_split[0].Update(
+        gain, kRightDir, input.feature_values[left_t], fidx,
+        GradientPair{left_sum_histogram[left_t]},
+        GradientPair{input.parent_sum - left_sum_histogram[left_t]},
+        input.param);
+  });
 }
 
 template void EvaluateSplits<GradientPair>(

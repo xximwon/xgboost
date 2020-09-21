@@ -234,7 +234,7 @@ template void BuildGradientHistogram<GradientPairPrecise>(
 
 template <typename GradientSumT>
 GPUHistogramBuilder<GradientSumT>::GPUHistogramBuilder(
-    FeatureGroupsAccessor const &feature_groups, uint32_t tunning_threads) {
+    FeatureGroupsAccessor const &feature_groups, uint32_t tuning_threads) {
   int device = cub::CurrentDevice();
   size_t smem_size = sizeof(GradientSumT) * feature_groups.max_group_bins;
   auto kernel = SharedMemHistKernel<GradientSumT>;
@@ -289,6 +289,10 @@ GPUHistogramBuilder<GradientSumT>::GPUHistogramBuilder(
     block_threads_ = default_block_threads();
     break;
   }
+  }
+
+  if (tuning_threads != 0) {
+    block_threads_ = tuning_threads;
   }
 
   int num_groups = feature_groups.NumGroups();

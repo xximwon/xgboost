@@ -28,7 +28,7 @@ class GPUHistogramBuilder {
   bool shared_;
 
  public:
-  explicit GPUHistogramBuilder(FeatureGroupsAccessor const& feature_groups, uint32_t tunning_threads = 0);
+  explicit GPUHistogramBuilder(FeatureGroupsAccessor const& feature_groups, uint32_t tuning_threads = 0);
   void Build(EllpackDeviceAccessor const &matrix,
              FeatureGroupsAccessor const &feature_groups,
              common::Span<GradientPair const> gpair,

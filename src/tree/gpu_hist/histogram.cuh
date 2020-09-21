@@ -21,19 +21,19 @@ XGBOOST_DEV_INLINE T TruncateWithRoundingFactor(T const rounding_factor, float c
 }
 
 template <typename GradientSumT>
-class LaunchPolicy {
+class GPUHistogramBuilder {
   dim3 grids_;
   uint32_t block_threads_;
   size_t smem_size_;
   bool shared_;
 
  public:
-  explicit LaunchPolicy(FeatureGroupsAccessor const& feature_groups, uint32_t tunning_threads = 0);
-  void Launch(EllpackDeviceAccessor const &matrix,
-              FeatureGroupsAccessor const &feature_groups,
-              common::Span<GradientPair const> gpair,
-              common::Span<const uint32_t> ridx,
-              common::Span<GradientSumT> histogram, GradientSumT rounding);
+  explicit GPUHistogramBuilder(FeatureGroupsAccessor const& feature_groups, uint32_t tunning_threads = 0);
+  void Build(EllpackDeviceAccessor const &matrix,
+             FeatureGroupsAccessor const &feature_groups,
+             common::Span<GradientPair const> gpair,
+             common::Span<const uint32_t> ridx,
+             common::Span<GradientSumT> histogram, GradientSumT rounding);
 };
 }  // namespace tree
 }  // namespace xgboost

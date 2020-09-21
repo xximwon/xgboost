@@ -232,10 +232,9 @@ template void BuildGradientHistogram<GradientPairPrecise>(
     common::Span<GradientPairPrecise> histogram,
     GradientPairPrecise rounding);
 
-
-
 template <typename GradientSumT>
-LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_groups) {
+GPUHistogramBuilder<GradientSumT>::GPUHistogramBuilder(
+    FeatureGroupsAccessor const &feature_groups, uint32_t tunning_threads) {
   int device = cub::CurrentDevice();
   size_t smem_size = sizeof(GradientSumT) * feature_groups.max_group_bins;
   auto kernel = SharedMemHistKernel<GradientSumT>;
@@ -311,7 +310,7 @@ LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_gr
 }
 
 template <typename GradientSumT>
-void LaunchPolicy<GradientSumT>::Launch(
+void GPUHistogramBuilder<GradientSumT>::Build(
     EllpackDeviceAccessor const &matrix,
     FeatureGroupsAccessor const &feature_groups,
     common::Span<GradientPair const> gpair, common::Span<const uint32_t> ridx,
@@ -321,7 +320,7 @@ void LaunchPolicy<GradientSumT>::Launch(
       histogram.data(), gpair.data(), rounding, shared_);
 }
 
-template class LaunchPolicy<GradientPairPrecise>;
-template class LaunchPolicy<GradientPair>;
+template class GPUHistogramBuilder<GradientPairPrecise>;
+template class GPUHistogramBuilder<GradientPair>;
 }  // namespace tree
 }  // namespace xgboost

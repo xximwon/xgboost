@@ -30,11 +30,11 @@ void TestDeterministicHistogram(bool is_dense, int shm_size) {
 
     FeatureGroups feature_groups(page->Cuts(), page->is_dense, shm_size,
                                  sizeof(Gradient));
-    
+
     auto rounding = CreateRoundingFactor<Gradient>(gpair.DeviceSpan());
-    BuildGradientHistogram(page->GetDeviceAccessor(0),
-                           feature_groups.DeviceAccessor(0), gpair.DeviceSpan(),
-                           ridx, d_histogram, rounding);
+    GPUHistogramBuilder<Gradient>{feature_groups.DeviceAccessor(0)}.Build(
+        page->GetDeviceAccessor(0), feature_groups.DeviceAccessor(0),
+        gpair.DeviceSpan(), ridx, d_histogram, rounding);
 
     std::vector<Gradient> histogram_h(num_bins);
     dh::safe_cuda(cudaMemcpy(histogram_h.data(), d_histogram.data(),
@@ -46,10 +46,9 @@ void TestDeterministicHistogram(bool is_dense, int shm_size) {
       auto d_new_histogram = dh::ToSpan(new_histogram);
 
       auto rounding = CreateRoundingFactor<Gradient>(gpair.DeviceSpan());
-      BuildGradientHistogram(page->GetDeviceAccessor(0),
-                             feature_groups.DeviceAccessor(0),
-                             gpair.DeviceSpan(), ridx, d_new_histogram,
-                             rounding);
+      GPUHistogramBuilder<Gradient>{feature_groups.DeviceAccessor(0)}.Build(
+          page->GetDeviceAccessor(0), feature_groups.DeviceAccessor(0),
+          gpair.DeviceSpan(), ridx, d_new_histogram, rounding);
 
       std::vector<Gradient> new_histogram_h(num_bins);
       dh::safe_cuda(cudaMemcpy(new_histogram_h.data(), d_new_histogram.data(),
@@ -67,12 +66,11 @@ void TestDeterministicHistogram(bool is_dense, int shm_size) {
 
       // Use a single feature group to compute the baseline.
       FeatureGroups single_group(page->Cuts());
-      
+
       dh::device_vector<Gradient> baseline(num_bins);
-      BuildGradientHistogram(page->GetDeviceAccessor(0),
-                             single_group.DeviceAccessor(0),
-                             gpair.DeviceSpan(), ridx, dh::ToSpan(baseline),
-                             rounding);
+      GPUHistogramBuilder<Gradient>{single_group.DeviceAccessor(0)}.Build(
+          page->GetDeviceAccessor(0), single_group.DeviceAccessor(0),
+          gpair.DeviceSpan(), ridx, dh::ToSpan(baseline), rounding);
 
       std::vector<Gradient> baseline_h(num_bins);
       dh::safe_cuda(cudaMemcpy(baseline_h.data(), baseline.data().get(),

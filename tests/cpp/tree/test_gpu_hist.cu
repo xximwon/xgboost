@@ -80,8 +80,10 @@ void TestBuildHist(bool use_shared_memory_histograms) {
   param.Init(args);
   auto page = BuildEllpackPage(kNRows, kNCols);
   BatchParam batch_param{};
+  GPUHistMakerTrainParam hist_param;
+  hist_param.UpdateAllowUnknown(Args{});
   GPUHistMakerDevice<GradientSumT> maker(0, page.get(), kNRows, param, kNCols, kNCols,
-                                         true, batch_param);
+                                         hist_param, batch_param);
   xgboost::SimpleLCG gen;
   xgboost::SimpleRealUniformDistribution<bst_float> dist(0.0f, 1.0f);
   HostDeviceVector<GradientPair> gpair(kNRows);
@@ -177,8 +179,10 @@ TEST(GpuHist, EvaluateRootSplit) {
   // Initialize GPUHistMakerDevice
   auto page = BuildEllpackPage(kNRows, kNCols);
   BatchParam batch_param{};
+  GPUHistMakerTrainParam hist_param;
+  hist_param.UpdateAllowUnknown(Args{});
   GPUHistMakerDevice<GradientPairPrecise>
-    maker(0, page.get(), kNRows, param, kNCols, kNCols, true, batch_param);
+    maker(0, page.get(), kNRows, param, kNCols, kNCols, hist_param, batch_param);
   // Initialize GPUHistMakerDevice::node_sum_gradients
   maker.node_sum_gradients = {};
 

@@ -45,7 +45,7 @@ struct GPUHistMakerTrainParam
   bool single_precision_histogram;
   bool deterministic_histogram;
   bool debug_synchronize;
-  uint32_t tuning_block_threads;
+  uint32_t gpu_histogram_block_threads;
   // declare parameters
   DMLC_DECLARE_PARAMETER(GPUHistMakerTrainParam) {
     DMLC_DECLARE_FIELD(single_precision_histogram).set_default(false).describe(
@@ -54,7 +54,7 @@ struct GPUHistMakerTrainParam
         "Pre-round the gradient for obtaining deterministic gradient histogram.");
     DMLC_DECLARE_FIELD(debug_synchronize).set_default(false).describe(
         "Check if all distributed tree are identical after tree construction.");
-    DMLC_DECLARE_FIELD(tuning_block_threads)
+    DMLC_DECLARE_FIELD(gpu_histogram_block_threads)
         .set_default(0)
         .describe("Used for tunning histogram build.");
   }
@@ -231,7 +231,7 @@ struct GPUHistMakerDevice {
         sizeof(GradientSumT)));
     histogram_builder.reset(new GPUHistogramBuilder<GradientSumT>(
         feature_groups->DeviceAccessor(device_id),
-        hist_param.tuning_block_threads));
+        hist_param.gpu_histogram_block_threads));
   }
 
   ~GPUHistMakerDevice() {  // NOLINT

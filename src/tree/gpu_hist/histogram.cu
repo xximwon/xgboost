@@ -14,6 +14,7 @@
 
 #include "../../data/ellpack_page.cuh"
 #include "../../common/device_helpers.cuh"
+#include "histogram.cuh"
 
 namespace xgboost {
 namespace tree {
@@ -161,6 +162,10 @@ void BuildGradientHistogram(EllpackDeviceAccessor const& matrix,
   // decide whether to use shared memory
   int device = 0;
   dh::safe_cuda(cudaGetDevice(&device));
+
+  int sm_version;
+  cub::SmVersion(sm_version, device);
+
   int max_shared_memory = dh::MaxSharedMemoryOptin(device);
   size_t smem_size = sizeof(GradientSumT) * feature_groups.max_group_bins;
   bool shared = smem_size <= max_shared_memory;
@@ -227,5 +232,76 @@ template void BuildGradientHistogram<GradientPairPrecise>(
     common::Span<GradientPairPrecise> histogram,
     GradientPairPrecise rounding);
 
+
+
+template <typename GradientSumT>
+LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_groups) {
+  int device = 0;
+  dh::safe_cuda(cudaGetDevice(&device));
+  size_t smem_size = sizeof(GradientSumT) * feature_groups.max_group_bins;
+  auto kernel = SharedMemHistKernel<GradientSumT>;
+
+  int32_t sm_version;
+  cub::SmVersion(sm_version);
+  sm_version /= 10;
+
+  switch(sm_version) {
+    case 35:
+    case 50:
+    case 52:
+    case 60:
+    case 61:
+      block_threads_ = 256;
+      break;
+    case 70:
+    case 75:
+    case 80:
+      block_threads_ = 1024;
+      break;
+    default: {
+      int min_grid_size;
+      int block_threads = 1024;
+      auto kernel = SharedMemHistKernel<GradientSumT>;
+      dh::safe_cuda(cudaOccuupancyMaxPotentialBlockSize(
+          &min_grid_size, &block_threads, kernel, smem_size, 0));
+      block_threads_ = static_cast<uint32_t>(block_threads);
+      break;
+    }
+  }
+
+  int num_groups = feature_groups.NumGroups();
+  int n_mps = 0;
+  dh::safe_cuda(cudaDeviceGetAttribute(&n_mps, cudaDevAttrMultiProcessorCount, device));
+  int n_blocks_per_mp = 0;
+  dh::safe_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor
+                (&n_blocks_per_mp, kernel, block_threads_, smem_size));
+  unsigned grid_size = n_blocks_per_mp * n_mps;
+
+  int num_groups_threshold = 4;
+  grid_size = common::DivRoundUp(grid_size,
+      common::DivRoundUp(num_groups, num_groups_threshold));
+
+  grids_ = dim3(grid_size, num_groups);
+  smem_size_ = smem_size;
+}
+
+template <typename GradientSumT>
+void LaunchPolicy<GradientSumT>::Launch(
+    EllpackDeviceAccessor const &matrix,
+    FeatureGroupsAccessor const &feature_groups,
+    common::Span<GradientPair const> gpair, common::Span<const uint32_t> ridx,
+    common::Span<GradientPair> histogram, GradientPair rounding) {
+  int device = 0;
+  dh::safe_cuda(cudaGetDevice(&device));
+  bool shared = smem_size_ <= dh::MaxSharedMemory(device);
+  auto kernel = SharedMemHistKernel<GradientSumT>;
+
+  dh::LaunchKernel {
+    grids_, block_threads_, smem_size_} (
+      kernel,
+      matrix, feature_groups, ridx, histogram.data(), gpair.data(), rounding,
+      shared);
+  dh::safe_cuda(cudaGetLastError());
+}
 }  // namespace tree
 }  // namespace xgboost

@@ -27,6 +27,21 @@ void BuildGradientHistogram(EllpackDeviceAccessor const& matrix,
                             common::Span<const uint32_t> ridx,
                             common::Span<GradientSumT> histogram,
                             GradientSumT rounding);
+
+template <typename GradientSumT>
+class LaunchPolicy {
+  dim3 grids_;
+  uint32_t block_threads_;
+  size_t smem_size_;
+
+ public:
+  explicit LaunchPolicy(FeatureGroupsAccessor const& feature_groups);
+  void Launch(EllpackDeviceAccessor const &matrix,
+              FeatureGroupsAccessor const &feature_groups,
+              common::Span<GradientPair const> gpair,
+              common::Span<const uint32_t> ridx,
+              common::Span<GradientPair> histogram, GradientPair rounding);
+};
 }  // namespace tree
 }  // namespace xgboost
 

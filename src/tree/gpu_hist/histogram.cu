@@ -244,12 +244,13 @@ GPUHistogramBuilder<GradientSumT>::GPUHistogramBuilder(
   sm_version /= 10;
 
   auto default_block_threads = [smem_size]() {
-      int min_grid_size;
-      int block_threads = 1024;
-      auto kernel = SharedMemHistKernel<GradientSumT>;
-      dh::safe_cuda(cudaOccupancyMaxPotentialBlockSize(
-          &min_grid_size, &block_threads, kernel, smem_size, 0));
-      return static_cast<uint32_t>(block_threads);
+    int min_grid_size;
+    int block_threads = -1;
+    auto kernel = SharedMemHistKernel<GradientSumT>;
+    dh::safe_cuda(cudaOccupancyMaxPotentialBlockSize(
+        &min_grid_size, &block_threads, kernel, smem_size, 0));
+    CHECK_NE(block_threads, -1);
+    return static_cast<uint32_t>(block_threads);
   };
 
   switch (sm_version) {

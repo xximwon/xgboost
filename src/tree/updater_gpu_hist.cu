@@ -45,6 +45,7 @@ struct GPUHistMakerTrainParam
   bool single_precision_histogram;
   bool deterministic_histogram;
   bool debug_synchronize;
+  uint32_t tunning_block_threads;
   // declare parameters
   DMLC_DECLARE_PARAMETER(GPUHistMakerTrainParam) {
     DMLC_DECLARE_FIELD(single_precision_histogram).set_default(false).describe(
@@ -53,6 +54,9 @@ struct GPUHistMakerTrainParam
         "Pre-round the gradient for obtaining deterministic gradient histogram.");
     DMLC_DECLARE_FIELD(debug_synchronize).set_default(false).describe(
         "Check if all distributed tree are identical after tree construction.");
+    DMLC_DECLARE_FIELD(tunning_block_threads)
+        .set_default(0)
+        .describe("Used for tunning histogram build.");
   }
 };
 #if !defined(GTEST_TEST)
@@ -175,6 +179,7 @@ struct GPUHistMakerDevice {
   std::vector<GradientPair> node_sum_gradients;
 
   TrainParam param;
+  GPUHistMakerTrainParam hist_param;
   bool deterministic_histogram;
 
   GradientSumT histogram_rounding;
@@ -199,15 +204,16 @@ struct GPUHistMakerDevice {
                      TrainParam _param,
                      uint32_t column_sampler_seed,
                      uint32_t n_features,
-                     bool deterministic_histogram,
+                     GPUHistMakerTrainParam _hist_param,
                      BatchParam _batch_param)
       : device_id(_device_id),
         page(_page),
         param(std::move(_param)),
+        hist_param{_hist_param},
         tree_evaluator(param, n_features, _device_id),
         column_sampler(column_sampler_seed),
         interaction_constraints(param, n_features),
-        deterministic_histogram{deterministic_histogram},
+        deterministic_histogram{_hist_param.deterministic_histogram},
         batch_param(_batch_param) {
     sampler.reset(new GradientBasedSampler(
         page, _n_rows, batch_param, param.subsample, param.sampling_method));
@@ -223,7 +229,8 @@ struct GPUHistMakerDevice {
     feature_groups.reset(new FeatureGroups(
         page->Cuts(), page->is_dense, dh::MaxSharedMemoryOptin(device_id),
         sizeof(GradientSumT)));
-    histogram_builder.reset(new LaunchPolicy<GradientSumT>(feature_groups->DeviceAccessor(device_id)));
+    histogram_builder.reset(new LaunchPolicy<GradientSumT>(feature_groups->DeviceAccessor(device_id),
+                                                           hist_param.tunning_block_threads));
   }
 
   ~GPUHistMakerDevice() {  // NOLINT
@@ -760,7 +767,7 @@ class GPUHistMakerSpecialised {
                                                      param_,
                                                      column_sampling_seed,
                                                      info_->num_col_,
-                                                     hist_maker_param_.deterministic_histogram,
+                                                     hist_maker_param_,
                                                      batch_param));
 
     p_last_fmat_ = dmat;

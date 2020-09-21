@@ -244,26 +244,51 @@ LaunchPolicy<GradientSumT>::LaunchPolicy(FeatureGroupsAccessor const& feature_gr
   cub::SmVersion(sm_version);
   sm_version /= 10;
 
-  switch(sm_version) {
-    case 35:
-    case 50:
-    case 52:
-    case 60:
-    case 61:
-      block_threads_ = 256;
-      break;
-    case 70:
-    case 75:
-    case 80:
-    default: {
+  auto default_block_threads = [smem_size]() {
       int min_grid_size;
       int block_threads = 1024;
       auto kernel = SharedMemHistKernel<GradientSumT>;
       dh::safe_cuda(cudaOccupancyMaxPotentialBlockSize(
           &min_grid_size, &block_threads, kernel, smem_size, 0));
-      block_threads_ = static_cast<uint32_t>(block_threads);
-      break;
-    }
+      return static_cast<uint32_t>(block_threads);
+  };
+
+  switch (sm_version) {
+  case 35: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 50: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 52: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 60: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 61:
+    block_threads_ = 256;
+    break;
+  case 70: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 75: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  case 80: {
+    block_threads_ = default_block_threads();
+    break;
+  }
+  default: {
+    block_threads_ = default_block_threads();
+    break;
+  }
   }
 
   int num_groups = feature_groups.NumGroups();

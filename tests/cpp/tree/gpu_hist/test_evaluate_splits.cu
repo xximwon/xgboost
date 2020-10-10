@@ -106,6 +106,7 @@ TEST(GpuHist, EvaluateSingleSplitMissing) {
   EXPECT_EQ(result.dir, kRightDir);
   EXPECT_EQ(result.left_sum, GradientPair(-0.5, 0.5));
   EXPECT_EQ(result.right_sum, GradientPair(1.5, 1.0));
+  std::cout << "loss_chg: " << result.loss_chg << std::endl;
 }
 
 TEST(GpuHist, EvaluateSingleSplitEmpty) {

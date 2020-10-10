@@ -179,13 +179,13 @@ HistogramCutsWrapper GetHostCutMatrix () {
   // 24 cut fields, 3 cut fields for each feature (column).
   // Each row of the cut represents the cuts for a data column.
   cmat.SetValues({0.30f, 0.67f, 1.64f,
-              0.32f, 0.77f, 1.95f,
-              0.29f, 0.70f, 1.80f,
-              0.32f, 0.75f, 1.85f,
-              0.18f, 0.59f, 1.69f,
-              0.25f, 0.74f, 2.00f,
-              0.26f, 0.74f, 1.98f,
-              0.26f, 0.71f, 1.83f});
+                  0.32f, 0.77f, 1.95f,
+                  0.29f, 0.70f, 1.80f,
+                  0.32f, 0.75f, 1.85f,
+                  0.18f, 0.59f, 1.69f,
+                  0.25f, 0.74f, 2.00f,
+                  0.26f, 0.74f, 1.98f,
+                  0.26f, 0.71f, 1.83f});
   return cmat;
 }
 
@@ -237,14 +237,14 @@ TEST(GpuHist, EvaluateRootSplit) {
   // Each entry represents a bin.
   std::vector<GradientPairPrecise> hist_gpair = GetHostHistGpair();
   std::vector<bst_float> hist;
+  // column major
   for (auto pair : hist_gpair) {
     hist.push_back(pair.GetGrad());
     hist.push_back(pair.GetHess());
   }
 
   ASSERT_EQ(maker.hist.Data().size(), hist.size());
-  thrust::copy(hist.begin(), hist.end(),
-    maker.hist.Data().begin());
+  thrust::copy(hist.begin(), hist.end(), maker.hist.Data().begin());
   std::vector<float> feature_weights;
 
   maker.column_sampler.Init(kNCols, feature_weights, param.colsample_bynode,
@@ -258,7 +258,7 @@ TEST(GpuHist, EvaluateRootSplit) {
 
   DeviceSplitCandidate res = maker.EvaluateRootSplit({6.4f, 12.8f});
 
-  ASSERT_EQ(res.findex, 7);
+  ASSERT_EQ(res.findex, 7) << "res.fvalue:" << res.fvalue;
   ASSERT_NEAR(res.fvalue, 0.26, xgboost::kRtEps);
 }
 

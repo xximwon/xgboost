@@ -40,6 +40,7 @@ void TestSegmentID() {
     id = dh::SegmentId(s_segments, 2);
     SPAN_CHECK(id == 1);
   });
+  dh::DebugSyncDevice();
 }
 
 TEST(SegmentID, Basic) {

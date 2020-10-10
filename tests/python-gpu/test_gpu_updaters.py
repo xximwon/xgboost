@@ -96,6 +96,13 @@ class TestGPUUpdaters:
         rounds = 4
         self.run_categorical_basic(rows, cols, rounds, cats)
 
+    def test_categorical_regressions_0(self):
+        rows = 303
+        cols = 4
+        rounds = 4
+        cats = 5
+        self.run_categorical_basic(rows, cols, rounds, cats)
+
     @pytest.mark.skipif(**tm.no_cupy())
     @given(parameter_strategy, strategies.integers(1, 20),
            tm.dataset_strategy)

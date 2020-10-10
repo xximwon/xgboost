@@ -4,7 +4,6 @@
 #ifndef EVALUATE_SPLITS_CUH_
 #define EVALUATE_SPLITS_CUH_
 #include <xgboost/span.h>
-#include "../../data/ellpack_page.cuh"
 #include "../split_evaluator.h"
 #include "../constraints.cuh"
 #include "../updater_gpu_common.cuh"

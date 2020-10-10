@@ -67,16 +67,18 @@ struct DeviceSplitCandidate {
   XGBOOST_DEVICE DeviceSplitCandidate() {}  // NOLINT
 
   template <typename ParamT>
-  XGBOOST_DEVICE void Update(const DeviceSplitCandidate& other,
+  XGBOOST_DEVICE bool Update(const DeviceSplitCandidate& other,
                              const ParamT& param) {
     if (other.loss_chg > loss_chg &&
         other.left_sum.GetHess() >= param.min_child_weight &&
         other.right_sum.GetHess() >= param.min_child_weight) {
       *this = other;
+      return true;
     }
+    return false;
   }
 
-  XGBOOST_DEVICE void Update(float loss_chg_in, DefaultDirection dir_in,
+  XGBOOST_DEVICE bool Update(float loss_chg_in, DefaultDirection dir_in,
                              float fvalue_in, int findex_in,
                              GradientPair left_sum_in,
                              GradientPair right_sum_in,
@@ -92,7 +94,9 @@ struct DeviceSplitCandidate {
       left_sum = left_sum_in;
       right_sum = right_sum_in;
       findex = findex_in;
+      return true;
     }
+    return false;
   }
   XGBOOST_DEVICE bool IsValid() const { return loss_chg > 0.0f; }
 

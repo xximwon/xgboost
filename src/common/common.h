@@ -8,6 +8,7 @@
 
 #include <xgboost/base.h>
 #include <xgboost/logging.h>
+#include <xgboost/host_device_vector.h>
 
 #include <algorithm>
 #include <exception>
@@ -172,6 +173,10 @@ std::vector<Idx> ArgSort(std::vector<V> const &array, Comp comp = std::less<V>{}
       [&array, comp](Idx const &l, Idx const &r) { return comp(array[l], array[r]); });
   return result;
 }
+
+void StridedCopy(HostDeviceVector<GradientPair> *out,
+                 HostDeviceVector<GradientPair> const &in, size_t stride,
+                 size_t step);
 }  // namespace common
 }  // namespace xgboost
 #endif  // XGBOOST_COMMON_COMMON_H_

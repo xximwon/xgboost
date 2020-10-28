@@ -202,20 +202,11 @@ void GBTree::DoBoost(DMatrix* p_fmat,
     BoostNewTrees(in_gpair, p_fmat, 0, &ret);
     new_trees.push_back(std::move(ret));
   } else {
-    CHECK_EQ(in_gpair->Size() % ngroup, 0U)
-        << "must have exactly ngroup * nrow gpairs";
-    // TODO(canonizer): perform this on GPU if HostDeviceVector has device set.
+    CHECK_EQ(in_gpair->Size() % ngroup, 0U) << "must have exactly ngroup * nrow gpairs";
     HostDeviceVector<GradientPair> tmp(in_gpair->Size() / ngroup,
-                                       GradientPair(),
-                                       in_gpair->DeviceIdx());
-    const auto& gpair_h = in_gpair->ConstHostVector();
-    auto nsize = static_cast<bst_omp_uint>(tmp.Size());
+                                       GradientPair(), in_gpair->DeviceIdx());
     for (int gid = 0; gid < ngroup; ++gid) {
-      std::vector<GradientPair>& tmp_h = tmp.HostVector();
-#pragma omp parallel for schedule(static)
-      for (bst_omp_uint i = 0; i < nsize; ++i) {
-        tmp_h[i] = gpair_h[i * ngroup + gid];
-      }
+      common::StridedCopy(&tmp, *in_gpair, ngroup, gid);
       std::vector<std::unique_ptr<RegTree> > ret;
       BoostNewTrees(&tmp, p_fmat, gid, &ret);
       new_trees.push_back(std::move(ret));

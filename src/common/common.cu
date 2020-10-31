@@ -19,8 +19,8 @@ int AllVisibleGPUs() {
   return n_visgpus;
 }
 
-void DeviceStridedCopyf32(Span<GradientPair> out, Span<GradientPair const> in,
-                          size_t stride, size_t step, int device) {
+void DeviceStridedCopyGradient(Span<GradientPair> out, Span<GradientPair const> in,
+                               size_t stride, size_t step, int device) {
   dh::LaunchN(device, out.size(), [=] XGBOOST_DEVICE(size_t idx) {
     size_t in_idx = idx * stride + step;
     out[idx] = in[in_idx];

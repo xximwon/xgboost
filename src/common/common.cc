@@ -30,8 +30,8 @@ int AllVisibleGPUs() {
 #endif  // !defined(XGBOOST_USE_CUDA)
 
 #if defined(XGBOOST_USE_CUDA)
-void DeviceStridedCopyf32(Span<GradientPair> dst, Span<GradientPair const> in,
-                          size_t stride, size_t step, int device);
+void DeviceStridedCopyGradient(Span<GradientPair> dst, Span<GradientPair const> in,
+                               size_t stride, size_t step, int device);
 #endif  // defined(XGBOOST_USE_CUDA)
 
 void StridedCopy(HostDeviceVector<GradientPair> *out,
@@ -42,7 +42,7 @@ void StridedCopy(HostDeviceVector<GradientPair> *out,
 #if defined(XGBOOST_USE_CUDA)
   if (device != GenericParameter::kCpuId) {
     out->SetDevice(device);
-    DeviceStridedCopyf32(out->DeviceSpan(), in.ConstDeviceSpan(), stride, step, device);
+    DeviceStridedCopyGradient(out->DeviceSpan(), in.ConstDeviceSpan(), stride, step, device);
     return;
   }
 #endif  // defined(XGBOOST_USE_CUDA)

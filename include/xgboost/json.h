@@ -666,7 +666,9 @@ Args FromJson(Json const& obj, Parameter* param) {
   auto const& j_param = get<Object const>(obj);
   std::map<std::string, std::string> m;
   for (auto const& kv : j_param) {
-    m[kv.first] = get<String const>(kv.second);
+    if (!IsA<Null>(kv.second)) {
+      m[kv.first] = get<String const>(kv.second);
+    }
   }
   return param->UpdateAllowUnknown(m);
 }

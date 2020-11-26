@@ -1,4 +1,6 @@
-// Copyright by Contributors
+/**
+ * Copyright 2016-2023 by XGBoost Contributors
+ */
 #include <xgboost/metric.h>
 
 #include "../helpers.h"
@@ -47,64 +49,6 @@ TEST(Metric, DeclareUnifiedTest(Precision)) {
               0.5f, 0.001f);
 
   EXPECT_ANY_THROW(GetMetricEval(metric, {0, 1}, {}));
-
-  delete metric;
-}
-
-TEST(Metric, DeclareUnifiedTest(NDCG)) {
-  auto ctx = xgboost::CreateEmptyGenericParam(GPUIDX);
-  xgboost::Metric * metric = xgboost::Metric::Create("ndcg", &ctx);
-  ASSERT_STREQ(metric->Name(), "ndcg");
-  EXPECT_ANY_THROW(GetMetricEval(metric, {0, 1}, {}));
-  EXPECT_NEAR(GetMetricEval(metric,
-                            xgboost::HostDeviceVector<xgboost::bst_float>{},
-                            {}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric, {0, 1}, {0, 1}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric,
-                            {0.1f, 0.9f, 0.1f, 0.9f},
-                            {  0,   0,   1,   1}),
-              0.6509f, 0.001f);
-
-  delete metric;
-  metric = xgboost::Metric::Create("ndcg@2", &ctx);
-  ASSERT_STREQ(metric->Name(), "ndcg@2");
-  EXPECT_NEAR(GetMetricEval(metric, {0, 1}, {0, 1}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric,
-                            {0.1f, 0.9f, 0.1f, 0.9f},
-                            {  0,   0,   1,   1}),
-              0.3868f, 0.001f);
-
-  delete metric;
-  metric = xgboost::Metric::Create("ndcg@-", &ctx);
-  ASSERT_STREQ(metric->Name(), "ndcg-");
-  EXPECT_NEAR(GetMetricEval(metric,
-                            xgboost::HostDeviceVector<xgboost::bst_float>{},
-                            {}), 0, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric, {0, 1}, {0, 1}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric,
-                            {0.1f, 0.9f, 0.1f, 0.9f},
-                            {  0,   0,   1,   1}),
-              0.6509f, 0.001f);
-  delete metric;
-  metric = xgboost::Metric::Create("ndcg-", &ctx);
-  ASSERT_STREQ(metric->Name(), "ndcg-");
-  EXPECT_NEAR(GetMetricEval(metric,
-                            xgboost::HostDeviceVector<xgboost::bst_float>{},
-                            {}), 0, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric, {0, 1}, {0, 1}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric,
-                            {0.1f, 0.9f, 0.1f, 0.9f},
-                            {  0,   0,   1,   1}),
-              0.6509f, 0.001f);
-
-  delete metric;
-  metric = xgboost::Metric::Create("ndcg@2-", &ctx);
-  ASSERT_STREQ(metric->Name(), "ndcg@2-");
-  EXPECT_NEAR(GetMetricEval(metric, {0, 1}, {0, 1}), 1, 1e-10);
-  EXPECT_NEAR(GetMetricEval(metric,
-                            {0.1f, 0.9f, 0.1f, 0.9f},
-                            {  0,   0,   1,   1}),
-              0.3868f, 0.001f);
 
   delete metric;
 }

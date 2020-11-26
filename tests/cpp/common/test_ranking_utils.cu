@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
-#include "../../../src/common/ranking_utils.cuh"
+
 #include "../../../src/common/device_helpers.cuh"
+#include "../../../src/common/ranking_utils.cuh"
+#include "xgboost/context.h"
+#include "xgboost/linalg.h"
 
 namespace xgboost {
 namespace common {
@@ -61,6 +64,28 @@ TEST(SegmentedTrapezoidThreads, Unravel) {
   UnravelTrapeziodIdx(27, kN, &i, &j);
   ASSERT_EQ(i, 6);
   ASSERT_EQ(j, 7);
+}
+
+TEST(RankingUtils, CalcQueriesInvIDCG) {
+  Context ctx;
+  ctx.gpu_id = 0;
+
+  std::vector<float> scores{2, 2, 1, 0};
+  dh::device_vector<float> d_scores{scores};
+  dh::device_vector<bst_group_t> group_ptr(2);
+  group_ptr[0] = 0;
+  group_ptr[1] = scores.size();
+
+  dh::device_vector<double> IDCG(1, 0.0f);
+
+  CalcQueriesInvIDCG(&ctx,
+                     linalg::MakeTensorView(dh::ToSpan(d_scores), {d_scores.size()}, ctx.gpu_id),
+                     dh::ToSpan(group_ptr), dh::ToSpan(IDCG), 4);
+  float d_idcg = IDCG[0];
+
+  float h_idcg =
+      CalcInvIDCG(linalg::MakeTensorView(scores, {scores.size()}, Context::kCpuId), scores.size());
+  ASSERT_FLOAT_EQ(h_idcg, d_idcg);
 }
 }  // namespace common
 }  // namespace xgboost

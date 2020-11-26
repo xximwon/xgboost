@@ -21,16 +21,27 @@
 //   This precludes the CPU and GPU logic to coexist inside a .cu file
 
 #include <dmlc/registry.h>
+#include <omp.h>
 #include <xgboost/metric.h>
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
+#include <memory>
+#include <numeric>
 #include <vector>
 
 #include "../collective/communicator-inl.h"
 #include "../common/math.h"
+#include "../common/ranking_utils.h"
 #include "../common/threading_utils.h"
 #include "metric_common.h"
+#include "xgboost/base.h"
+#include "xgboost/context.h"
+#include "xgboost/data.h"
 #include "xgboost/host_device_vector.h"
+#include "xgboost/json.h"
+#include "xgboost/linalg.h"
 
 namespace {
 
@@ -390,10 +401,6 @@ XGBOOST_REGISTER_METRIC(AMS, "ams")
 XGBOOST_REGISTER_METRIC(Precision, "pre")
 .describe("precision@k for rank.")
 .set_body([](const char* param) { return new EvalPrecision("pre", param); });
-
-XGBOOST_REGISTER_METRIC(NDCG, "ndcg")
-.describe("ndcg@k for rank.")
-.set_body([](const char* param) { return new EvalNDCG("ndcg", param); });
 
 XGBOOST_REGISTER_METRIC(MAP, "map")
 .describe("map@k for rank.")

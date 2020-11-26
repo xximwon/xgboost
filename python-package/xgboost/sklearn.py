@@ -1819,8 +1819,8 @@ class XGBRanker(XGBModel, XGBRankerMixIn):
         super().__init__(objective=objective, **kwargs)
         if callable(self.objective):
             raise ValueError("custom objective function not supported by XGBRanker")
-        if "rank:" not in objective:
-            raise ValueError("please use XGBRanker for ranking task")
+        # if "rank:" not in objective:
+        #     raise ValueError("please use XGBRanker for ranking task")
 
     @_deprecate_positional_args
     def fit(

@@ -922,8 +922,7 @@ def train(                      # pylint: disable=unused-argument
     client = _xgb_get_client(client)
     # Get global configuration before transferring computation to another thread or
     # process.
-    global_config = config.get_config()
-    return client.sync(_train_async, **locals())
+    return client.sync(_train_async, global_config=config.get_config(), **locals())
 
 
 def _can_output_df(is_df: bool, output_shape: Tuple) -> bool:

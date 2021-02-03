@@ -79,7 +79,7 @@ int InplacePreidctCuda(BoosterHandle handle, char const *c_json_strs,
   API_END();
 }
 
-XGB_DLL int XGBoosterPredictFromCUDACSR(
+XGB_DLL int XGBoosterPredictFromCudaCSR(
     BoosterHandle handle, char const *indptr, char const *indices,
     char const *data, xgboost::bst_ulong cols, char const *c_json_config,
     DMatrixHandle m, xgboost::bst_ulong const **out_shape,

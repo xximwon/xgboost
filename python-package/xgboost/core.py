@@ -232,7 +232,15 @@ def _array_interface(data: np.ndarray) -> bytes:
     interface = data.__array_interface__
     if "mask" in interface:
         interface["mask"] = interface["mask"].__array_interface__
-    interface_str = bytes(json.dumps(interface, indent=2), "utf-8")
+    interface_str = bytes(json.dumps(interface), "utf-8")
+    return interface_str
+
+
+def _cuda_array_interface(data: np.ndarray) -> bytes:
+    interface = data.__cuda_array_interface__
+    if "mask" in interface:
+        interface["mask"] = interface["mask"].__cuda_array_interface__
+    interface_str = bytes(json.dumps(interface), "utf-8")
     return interface_str
 
 
@@ -1840,6 +1848,23 @@ class Booster(object):
                 _LIB.XGBoosterPredictFromCudaColumnar(
                     self.handle,
                     interfaces_str,
+                    from_pystr_to_cstr(json.dumps(args)),
+                    p_handle,
+                    ctypes.byref(shape),
+                    ctypes.byref(dims),
+                    ctypes.byref(preds),
+                )
+            )
+            return _prediction_output(shape, dims, preds, True)
+        from .data import _is_cupy_csr
+        if _is_cupy_csr(data):
+            _check_call(
+                _LIB.XGBoosterPredictFromCudaCSR(
+                    self.handle,
+                    _cuda_array_interface(csr.indptr),
+                    _cuda_array_interface(csr.indices),
+                    _cuda_array_interface(csr.data),
+                    ctypes.c_size_t(csr.shape[1]),
                     from_pystr_to_cstr(json.dumps(args)),
                     p_handle,
                     ctypes.byref(shape),

@@ -31,7 +31,7 @@ XGB_DLL int XGDMatrixCreateFromArrayInterface(char const* c_json_strs,
   API_END();
 }
 
-XGB_DLL int XGDMatrixCreateFromCUDACSR(BoosterHandle handle, char const *indptr,
+XGB_DLL int XGDMatrixCreateFromCudaCSR(BoosterHandle handle, char const *indptr,
                                        char const *indices, char const *data,
                                        bst_float missing, int nthread,
                                        xgboost::bst_ulong cols,
@@ -45,7 +45,7 @@ XGB_DLL int XGDMatrixCreateFromCUDACSR(BoosterHandle handle, char const *indptr,
 }
 
 template <typename T>
-int InplacePreidctCuda(BoosterHandle handle, char const *c_json_strs,
+int InplacePreidctCuda(BoosterHandle handle, std::shared_ptr<T> x,
                        char const *c_json_config,
                        std::shared_ptr<DMatrix> p_m,
                        xgboost::bst_ulong const **out_shape,
@@ -57,8 +57,6 @@ int InplacePreidctCuda(BoosterHandle handle, char const *c_json_strs,
       << "Cache ID is not supported yet";
   auto *learner = static_cast<Learner *>(handle);
 
-  std::string json_str{c_json_strs};
-  auto x = std::make_shared<T>(json_str);
   HostDeviceVector<float> *p_predt{nullptr};
   auto type = PredictionType(get<Integer const>(config["type"]));
   learner->InplacePredict(x, p_m, type, get<Number const>(config["missing"]),
@@ -86,6 +84,14 @@ XGB_DLL int XGBoosterPredictFromCudaCSR(
     xgboost::bst_ulong *out_dim, const float **out_result) {
   API_BEGIN();
   CHECK_HANDLE();
+  std::shared_ptr<DMatrix> p_m {nullptr};
+  if (m) {
+    p_m = *static_cast<std::shared_ptr<DMatrix> *>(m);
+  }
+  auto x = std::make_shared<data::CupyxCSRAdapter>(
+      StringView{indptr}, StringView{indices}, StringView{data}, cols);
+  return InplacePreidctCuda<data::CupyxCSRAdapter>(
+      handle, x, c_json_config, p_m, out_shape, out_dim, out_result);
   API_END();
 }
 
@@ -97,8 +103,9 @@ XGB_DLL int XGBoosterPredictFromCudaColumnar(
   if (m) {
     p_m = *static_cast<std::shared_ptr<DMatrix> *>(m);
   }
+  auto x = std::make_shared<data::CudfAdapter>(std::string{c_json_strs});
   return InplacePreidctCuda<data::CudfAdapter>(
-      handle, c_json_strs, c_json_config, p_m, out_shape, out_dim, out_result);
+      handle, x, c_json_config, p_m, out_shape, out_dim, out_result);
 }
 
 XGB_DLL int XGBoosterPredictFromCudaArray(
@@ -109,6 +116,7 @@ XGB_DLL int XGBoosterPredictFromCudaArray(
   if (m) {
     p_m = *static_cast<std::shared_ptr<DMatrix> *>(m);
   }
-  return InplacePreidctCuda<data::CupyAdapter>(
-      handle, c_json_strs, c_json_config, p_m, out_shape, out_dim, out_result);
+  auto x = std::make_shared<data::CupyAdapter>(std::string{c_json_strs});
+  return InplacePreidctCuda<data::CupyAdapter>(handle, x, c_json_config, p_m,
+                                               out_shape, out_dim, out_result);
 }

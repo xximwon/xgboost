@@ -447,6 +447,23 @@ def _from_cupy_array(data, missing, nthread, feature_names, feature_types):
     return handle, feature_names, feature_types
 
 
+def _from_cupyx_csr(data, missing, nthread, feature_names, feature_types):
+    from .core import _cuda_array_interface
+    handle = ctypes.c_void_p()
+    _check_call(
+        _LIB.XGDMatrixCreateFromCudaCSR(
+            _cuda_array_interface(data.indptr),
+            _cuda_array_interface(data.indices),
+            _cuda_array_interface(data.data),
+            ctypes.c_float(missing),
+            ctypes.c_int(nthread),
+            data.shape[1],
+            ctypes.byref(handle)
+        )
+    )
+    return handle, feature_names, feature_types
+
+
 def _is_cupy_csr(data):
     try:
         import cupyx
@@ -571,7 +588,7 @@ def dispatch_data_backend(data, missing, threads,
         return _from_cupy_array(data, missing, threads, feature_names,
                                 feature_types)
     if _is_cupy_csr(data):
-        raise TypeError('cupyx CSR is not supported yet.')
+        return _from_cupyx_csr(data, missing, threads, feature_names, feature_types)
     if _is_cupy_csc(data):
         raise TypeError('cupyx CSC is not supported yet.')
     if _is_dlpack(data):

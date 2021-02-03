@@ -206,6 +206,59 @@ class CupyAdapter : public detail::SingleBatchDataIter<CupyAdapterBatch> {
   int device_idx_;
 };
 
+class CupyxCSRAdapterBatch {
+  ArrayInterface indptr_;
+  ArrayInterface indices_;
+  ArrayInterface values_;
+  size_t n_columns_;
+
+public:
+  CupyxCSRAdapterBatch() = default;
+  explicit CupyxCSRAdapterBatch(ArrayInterface indptr, ArrayInterface indices,
+                                ArrayInterface values, size_t cols)
+      : indptr_{std::move(indptr)}, indices_{std::move(indices)},
+        values_{std::move(values)}, n_columns_{cols} {}
+
+  __device__ COOTuple GetElement(size_t idx) const {
+    size_t size = this->NumRows();
+    size_t row = indptr_.DispatchCall([size, idx]XGBOOST_DEVICE(auto const* indptr) {
+      return dh::SegmentId(indptr, indptr + size, idx);
+    });
+    return {row, indices_.GetElement<size_t>(idx), values_.GetElement(idx)};
+  }
+  XGBOOST_DEVICE bst_row_t NumRows() const {
+    return indptr_.num_cols * indptr_.num_rows;
+  }
+  XGBOOST_DEVICE bst_row_t NumCols() const { return n_columns_; }
+  size_t Size() const { return NumRows() * NumCols(); }
+};
+
+class CupyxCSRAdapter : public detail::SingleBatchDataIter<CupyxCSRAdapterBatch> {
+  ArrayInterface indptr_;
+  ArrayInterface indices_;
+  ArrayInterface values_;
+  size_t num_cols_;
+  int device_idx_;
+  CupyxCSRAdapterBatch batch_;
+
+public:
+  CupyxCSRAdapter(StringView indptr, StringView indices, StringView values,
+                  size_t num_cols)
+      : indptr_{indptr}, indices_{indices}, values_{values}, num_cols_{
+                                                                 num_cols} {
+    device_idx_ = dh::CudaGetPointerDevice(values_.data);
+  }
+  const CupyxCSRAdapterBatch &Value() const override { return batch_; }
+
+  size_t NumRows() const {
+    size_t size = indptr_.num_cols * indptr_.num_rows;
+    size = size == 0 ? 0 : size - 1;
+    return size;
+  }
+  size_t NumColumns() const { return num_cols_; }
+  size_t DeviceIdx() const { return device_idx_; }
+};
+
 // Returns maximum row length
 template <typename AdapterBatchT>
 size_t GetRowCounts(const AdapterBatchT batch, common::Span<size_t> offset,

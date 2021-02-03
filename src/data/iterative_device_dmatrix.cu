@@ -26,6 +26,10 @@ decltype(auto) Dispatch(DMatrixProxy const* proxy, Fn fn) {
     auto value = dmlc::get<std::shared_ptr<CudfAdapter>>(
         proxy->Adapter())->Value();
     return fn(value);
+  } else if (proxy->Adapter().type() == typeid(std::shared_ptr<CupyxCSRAdapter>)) {
+    auto value = dmlc::get<std::shared_ptr<CupyxCSRAdapter>>(
+        proxy->Adapter())->Value();
+    return fn(value);
   } else {
     LOG(FATAL) << "Unknown type: " << proxy->Adapter().type().name();
     auto value = dmlc::get<std::shared_ptr<CudfAdapter>>(

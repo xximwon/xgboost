@@ -31,6 +31,19 @@ XGB_DLL int XGDMatrixCreateFromArrayInterface(char const* c_json_strs,
   API_END();
 }
 
+XGB_DLL int XGDMatrixCreateFromCUDACSR(BoosterHandle handle, char const *indptr,
+                                       char const *indices, char const *data,
+                                       bst_float missing, int nthread,
+                                       xgboost::bst_ulong cols,
+                                       DMatrixHandle *out) {
+  API_BEGIN();
+  data::CupyxCSRAdapter adapter(StringView{indptr}, StringView{indices},
+                                StringView{data}, cols);
+  *out =
+      new std::shared_ptr<DMatrix>(DMatrix::Create(&adapter, missing, nthread));
+  API_END();
+}
+
 template <typename T>
 int InplacePreidctCuda(BoosterHandle handle, char const *c_json_strs,
                        char const *c_json_config,
@@ -63,6 +76,16 @@ int InplacePreidctCuda(BoosterHandle handle, char const *c_json_strs,
                    out_dim);
   *out_shape = dmlc::BeginPtr(shape);
   *out_result = p_predt->ConstDevicePointer();
+  API_END();
+}
+
+XGB_DLL int XGBoosterPredictFromCUDACSR(
+    BoosterHandle handle, char const *indptr, char const *indices,
+    char const *data, xgboost::bst_ulong cols, char const *c_json_config,
+    DMatrixHandle m, xgboost::bst_ulong const **out_shape,
+    xgboost::bst_ulong *out_dim, const float **out_result) {
+  API_BEGIN();
+  CHECK_HANDLE();
   API_END();
 }
 

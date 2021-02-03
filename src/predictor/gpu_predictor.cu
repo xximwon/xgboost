@@ -672,6 +672,10 @@ class GPUPredictor : public xgboost::Predictor {
       this->DispatchedInplacePredict<
           data::CudfAdapter, DeviceAdapterLoader<data::CudfAdapterBatch>>(
           x, p_m, model, missing, out_preds, tree_begin, tree_end);
+    } else if (x.type() == typeid(std::shared_ptr<data::CupyxCSRAdapterBatch>)) {
+      this->DispatchedInplacePredict<
+          data::CupyxCSRAdapter, DeviceAdapterLoader<data::CupyxCSRAdapterBatch>>(
+          x, p_m, model, missing, out_preds, tree_begin, tree_end);
     } else {
       return false;
     }

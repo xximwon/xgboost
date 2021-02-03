@@ -222,6 +222,18 @@ XGDeviceQuantileDMatrixSetDataCudaColumnar(DMatrixHandle handle,
   API_END();
 }
 
+XGB_DLL int XGDeviceQuantileDMatrixSetDataCudaCSR(DMatrixHandle handle,
+                                                  char const *c_interface_str) {
+  API_BEGIN();
+  CHECK_HANDLE();
+  auto p_m = static_cast<std::shared_ptr<xgboost::DMatrix> *>(handle);
+  CHECK(p_m);
+  auto m =   static_cast<xgboost::data::DMatrixProxy*>(p_m->get());
+  CHECK(m) << "Current DMatrix type does not support set data.";
+  m->SetData(c_interface_str);
+  API_END();
+}
+
 XGB_DLL int XGDeviceQuantileDMatrixCreateFromCallback(
     DataIterHandle iter, DMatrixHandle proxy, DataIterResetCallback *reset,
     XGDMatrixCallbackNext *next, float missing, int nthread,

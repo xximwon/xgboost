@@ -1821,7 +1821,7 @@ class Booster(object):
                 interface["mask"] = interface["mask"].__cuda_array_interface__
             interface_str = bytes(json.dumps(interface, indent=2), "utf-8")
             _check_call(
-                _LIB.XGBoosterPredictFromCUDAArray(
+                _LIB.XGBoosterPredictFromCudaArray(
                     self.handle,
                     interface_str,
                     from_pystr_to_cstr(json.dumps(args)),
@@ -1837,7 +1837,7 @@ class Booster(object):
 
             interfaces_str = _cudf_array_interfaces(data)
             _check_call(
-                _LIB.XGBoosterPredictFromCUDAColumnar(
+                _LIB.XGBoosterPredictFromCudaColumnar(
                     self.handle,
                     interfaces_str,
                     from_pystr_to_cstr(json.dumps(args)),

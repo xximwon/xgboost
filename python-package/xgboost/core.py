@@ -1022,6 +1022,17 @@ class _ProxyDMatrix(DMatrix):
             )
         )
 
+    def _set_data_from_cuda_csr(self, data):
+        _check_call(
+            _LIB.XGDeviceQuantileDMatrixSetDataCudaCSR(
+                self.handle,
+                _cuda_array_interface(data.indptr),
+                _cuda_array_interface(data.indices),
+                _cuda_array_interface(data.data),
+                ctypes.c_size_t(data.shape[1]),
+            )
+        )
+
 
 class DeviceQuantileDMatrix(DMatrix):
     """Device memory Data Matrix used in XGBoost for training with tree_method='gpu_hist'. Do

@@ -220,17 +220,19 @@ public:
         values_{std::move(values)}, n_columns_{cols} {}
 
   __device__ COOTuple GetElement(size_t idx) const {
-    size_t size = this->NumRows();
+    size_t size = indptr_.num_cols * indptr_.num_rows;
     size_t row = indptr_.DispatchCall([size, idx]XGBOOST_DEVICE(auto const* indptr) {
       return dh::SegmentId(indptr, indptr + size, idx);
     });
     return {row, indices_.GetElement<size_t>(idx), values_.GetElement(idx)};
   }
   XGBOOST_DEVICE bst_row_t NumRows() const {
-    return indptr_.num_cols * indptr_.num_rows;
+    size_t size = indptr_.num_cols * indptr_.num_rows;
+    size = size == 0 ? 0 : size - 1;
+    return size;
   }
   XGBOOST_DEVICE bst_row_t NumCols() const { return n_columns_; }
-  size_t Size() const { return NumRows() * NumCols(); }
+  XGBOOST_DEVICE size_t Size() const { return values_.num_rows * values_.num_cols; }
 };
 
 class CupyxCSRAdapter : public detail::SingleBatchDataIter<CupyxCSRAdapterBatch> {

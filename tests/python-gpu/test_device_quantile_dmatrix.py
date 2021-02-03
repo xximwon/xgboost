@@ -5,7 +5,7 @@ import pytest
 import sys
 
 sys.path.append("tests/python")
-import testing as tm
+import testing as tm            # noqa
 
 
 class TestDeviceQuantileDMatrix:
@@ -33,6 +33,16 @@ class TestDeviceQuantileDMatrix:
         import cupy as cp
         data = cp.random.randn(5, 5)
         xgb.DeviceQuantileDMatrix(data, cp.ones(5, dtype=np.float64))
+
+    @pytest.mark.skipif(**tm.no_cupy())
+    def test_dmatrix_csr_init(self):
+        import cupy as cp
+        from cupyx.scipy import sparse as sp
+        rng = cp.random.RandomState(1994)
+        X = rng.randn(100, 100)
+        csr = sp.csr_matrix(X)
+        from_csr = xgb.DeviceQuantileDMatrix(csr)
+        from_X = xgb.DeviceQuantileDMatrix(X)
 
     @pytest.mark.skipif(**tm.no_cupy())
     def test_metainfo(self) -> None:

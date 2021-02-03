@@ -811,6 +811,8 @@ def _device_quantile_transform(data, feature_names, feature_types):
         return data, feature_names, feature_types
     if _is_dlpack(data):
         return _transform_dlpack(data), feature_names, feature_types
+    if _is_cupy_csr(data):
+        return data, feature_names, feature_types
     raise TypeError('Value type is not supported for data iterator:' +
                     str(type(data)))
 
@@ -829,6 +831,9 @@ def dispatch_device_quantile_dmatrix_set_data(proxy: _ProxyDMatrix, data: Any) -
     if _is_dlpack(data):
         data = _transform_dlpack(data)
         proxy._set_data_from_cuda_interface(data)  # pylint: disable=W0212
+        return
+    if _is_cupy_csr(data):
+        proxy._set_data_from_cuda_csr(data)
         return
     raise TypeError('Value type is not supported for data iterator:' +
                     str(type(data)))

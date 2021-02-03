@@ -247,6 +247,7 @@ public:
       : indptr_{indptr}, indices_{indices}, values_{values}, num_cols_{
                                                                  num_cols} {
     device_idx_ = dh::CudaGetPointerDevice(values_.data);
+    batch_ = CupyxCSRAdapterBatch{indptr_, indices_, values_, num_cols_};
   }
   const CupyxCSRAdapterBatch &Value() const override { return batch_; }
 

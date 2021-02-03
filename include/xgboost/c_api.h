@@ -844,7 +844,7 @@ XGB_DLL int XGBoosterPredictFromCSR(BoosterHandle handle, char const *indptr,
  *
  * \return 0 when success, -1 when failure happens
  */
-XGB_DLL int XGBoosterPredictFromArrayInterface(
+XGB_DLL int XGBoosterPredictFromCUDAArray(
     BoosterHandle handle, char const *values, char const *c_json_config,
     DMatrixHandle m, bst_ulong const **out_shape, bst_ulong *out_dim,
     const float **out_result);
@@ -864,7 +864,7 @@ XGB_DLL int XGBoosterPredictFromArrayInterface(
  *
  * \return 0 when success, -1 when failure happens
  */
-XGB_DLL int XGBoosterPredictFromArrayInterfaceColumns(
+XGB_DLL int XGBoosterPredictFromCUDAColumnar(
     BoosterHandle handle, char const *values, char const *c_json_config,
     DMatrixHandle m, bst_ulong const **out_shape, bst_ulong *out_dim,
     const float **out_result);

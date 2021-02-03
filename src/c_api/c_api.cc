@@ -728,7 +728,7 @@ XGB_DLL int XGBoosterPredictFromCSR(BoosterHandle handle, char const *indptr,
 }
 
 #if !defined(XGBOOST_USE_CUDA)
-XGB_DLL int XGBoosterPredictFromArrayInterface(
+XGB_DLL int XGBoosterPredictFromCUDAArray(
     BoosterHandle handle, char const *c_json_strs, char const *c_json_config,
     DMatrixHandle m, xgboost::bst_ulong const **out_shape, xgboost::bst_ulong *out_dim,
     const float **out_result) {
@@ -738,7 +738,7 @@ XGB_DLL int XGBoosterPredictFromArrayInterface(
   API_END();
 }
 
-XGB_DLL int XGBoosterPredictFromArrayInterfaceColumns(
+XGB_DLL int XGBoosterPredictFromCUDAColumnar(
     BoosterHandle handle, char const *c_json_strs, char const *c_json_config,
     DMatrixHandle m, xgboost::bst_ulong const **out_shape, xgboost::bst_ulong *out_dim,
     const float **out_result) {

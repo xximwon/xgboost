@@ -26,20 +26,6 @@ struct ScanElem {
   }
 };
 
-template <typename GradientSumT>
-struct ValueOp {
-  EvaluateSplitInputs<GradientSumT> left;
-  EvaluateSplitInputs<GradientSumT> right;
-  XGBOOST_DEVICE GradientSumT operator()(size_t idx) const {
-    if (idx < left.gradient_histogram.size()) {
-      return left.gradient_histogram[idx];
-    } else {
-      idx -= left.gradient_histogram.size();
-      return right.gradient_histogram[idx];
-    };
-  }
-};
-
 // FIXME: add bool need_backward.
 template <typename GradientSumT, typename ItemTy = ScanElem<GradientSumT>>
 struct ScanOp : public thrust::binary_function<ItemTy, ItemTy, ItemTy> {
@@ -65,8 +51,12 @@ struct ScanOp : public thrust::binary_function<ItemTy, ItemTy, ItemTy> {
     float loss_chg = gain - parent_gain;
     float fvalue = input.feature_values[idx];
     if (forward) {
-      best.Update(loss_chg, kRightDir, fvalue, fidx, GradientPair{l_gpair},
-                  GradientPair{r_gpair}, is_cat, input.param);
+      bool replaced =
+          best.Update(loss_chg, kRightDir, fvalue, fidx, GradientPair{l_gpair},
+                      GradientPair{r_gpair}, is_cat, input.param);
+      if (idx == 1) {
+        printf("replaced: %d, be: %f, af: %f \n", int(replaced), best.loss_chg, loss_chg);
+      }
     } else {
       best.Update(loss_chg, kLeftDir, fvalue, fidx, GradientPair{r_gpair},
                   GradientPair{l_gpair}, is_cat, input.param);
@@ -94,8 +84,8 @@ struct ScanOp : public thrust::binary_function<ItemTy, ItemTy, ItemTy> {
        */
       if (l_fidx != r_fidx) {
         // Segmented scan
-        // if (!forward) {
-        //   printf("segmented l.idx: %d, r.idx: %d \n", int(l.idx), int(r.idx));
+        // if (forward) {
+        //   printf("segment: l.idx: %lu, r.idx: %lu, %f\n", l.idx, r.idx, r.candidate.loss_chg);
         // }
         return r;
       }
@@ -116,10 +106,10 @@ struct ScanOp : public thrust::binary_function<ItemTy, ItemTy, ItemTy> {
       } else {
         auto l_gpair = l.grad;
         auto r_gpair = left.parent_sum - l_gpair;
-        auto best = DoIt<forward, false>(left, l.idx, l_gpair, r_gpair, l_split, l_fidx);
-        // if (!forward) {
+        DeviceSplitCandidate best = DoIt<forward, false>(left, l.idx, l_gpair, r_gpair, l_split, l_fidx);
+        // if (forward && best.IsValid() && l.idx != 0) {
         //   auto g = l_gpair + r.grad;
-        //   printf("l_idx: %d, g: %f, h: %f\n", int(l.idx), l_gpair.GetGrad(), l_gpair.GetHess());
+        //   printf("l_idx: %d, g: %f, h: %f, chg: %f\n", int(l.idx), l_gpair.GetGrad(), l_gpair.GetHess(), best.loss_chg);
         // }
         return {r_idx, l_gpair + r.grad, best};
       }
@@ -203,6 +193,9 @@ struct WriteScan {
       end_idx = beg_idx + f_size;
       offset = n_features * 2;
     }
+    // printf("idx: %lu, fidx: %d, beg: %lu, end: %lu, chg: %f, g: %f, f: %d \n",
+    //        idx, int(fidx), beg_idx, end_idx, candidate.candidate.loss_chg,
+    //        candidate.grad.GetGrad(), int(forward));
     if (forward) {
       if (end_idx == idx) {
         d_out_scan[offset + fidx] = candidate;
@@ -224,6 +217,53 @@ struct WriteScan {
       DoIt<false>(bw);
     }
     return {};  // discard
+  }
+};
+
+template <typename GradientSumT, bool forward>
+struct ScanValueOp {
+  EvaluateSplitInputs<GradientSumT> left;
+  EvaluateSplitInputs<GradientSumT> right;
+  TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator;
+
+  XGBOOST_DEVICE ScanElem<GradientSumT> operator()(size_t idx) {
+    ScanElem<GradientSumT> ret;
+    ret.idx = idx;
+    float fvalue;
+    size_t fidx;
+    bool is_cat;
+    if (idx < left.gradient_histogram.size()) {
+      ret.grad = left.gradient_histogram[idx];
+      fvalue = left.feature_values[idx];
+      fidx = dh::SegmentId(left.feature_segments, idx);
+      is_cat = common::IsCat(left.feature_types, fidx);
+    } else {
+      idx -= left.gradient_histogram.size();
+      ret.grad = right.gradient_histogram[idx];
+      fvalue = right.feature_values[idx];
+      fidx = dh::SegmentId(right.feature_segments, idx);
+      is_cat = common::IsCat(right.feature_types, fidx);
+    };
+    if (forward) {
+      float parent_gain =
+          CalcGain(left.param, left.parent_sum); // FIXME: get it out
+      float gain = evaluator.CalcSplitGain(left.param, left.nidx, fidx,
+                                           GradStats{ret.grad},
+                                           GradStats{left.parent_sum - ret.grad});
+      float loss_chg = gain - parent_gain;
+      ret.candidate.Update(loss_chg, kRightDir, fvalue, fidx, GradientPair{ret.grad},
+                           GradientPair{left.parent_sum - ret.grad}, is_cat, left.param);
+    } else {
+      float parent_gain =
+          CalcGain(right.param, right.parent_sum); // FIXME: get it out
+      float gain = evaluator.CalcSplitGain(right.param, right.nidx, fidx,
+                                           GradStats{ret.grad},
+                                           GradStats{left.parent_sum - ret.grad});
+      float loss_chg = gain - parent_gain;
+      ret.candidate.Update(loss_chg, kLeftDir, fvalue, fidx, GradientPair{left.parent_sum - ret.grad},
+                           GradientPair{ret.grad}, is_cat, left.param);
+    }
+    return ret;
   }
 };
 }  // anonymous namespace
@@ -261,28 +301,12 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
   auto for_counting = thrust::make_counting_iterator(0ul);
   auto rev_counting =
       thrust::make_reverse_iterator(thrust::make_counting_iterator(size));
-
-  using Tuple = thrust::tuple<size_t, GradientSumT, DeviceSplitCandidate>;
   auto for_value_iter = dh::MakeTransformIterator<ScanElem<GradientSumT>>(
-      thrust::make_zip_iterator(thrust::make_tuple(
-          for_counting,
-          thrust::make_transform_iterator(thrust::make_counting_iterator(0ul),
-                                          ValueOp<GradientSumT>{left, right}),
-          thrust::make_constant_iterator(DeviceSplitCandidate{}))),
-      [] __device__(Tuple const &tu) { return ScanElem<GradientSumT>{tu}; });
-  auto rev_value_iter =  dh::MakeTransformIterator<ScanElem<GradientSumT>>(
-       thrust::make_zip_iterator(thrust::make_tuple(
-           rev_counting,
-           thrust::make_transform_iterator(rev_counting,
-                                           ValueOp<GradientSumT>{left, right}),
-           thrust::make_constant_iterator(DeviceSplitCandidate{}))),
-       [] __device__(Tuple const &tu) { return ScanElem<GradientSumT>{tu}; });
-  dh::LaunchN(dh::CurrentDevice(), 1, [=]__device__(size_t) {
-    ScanElem<GradientSumT> first = *rev_value_iter;
-    printf("first idx: %d, g: %f, h: %f\n", int(first.idx), first.grad.GetGrad(), first.grad.GetHess());
-  });
-  auto value_iter = thrust::make_zip_iterator(thrust::make_tuple(for_value_iter, rev_value_iter));
+      for_counting, ScanValueOp<GradientSumT, true>{left, right, evaluator});
+  auto rev_value_iter = dh::MakeTransformIterator<ScanElem<GradientSumT>>(
+      rev_counting, ScanValueOp<GradientSumT, false>{left, right, evaluator});
 
+  auto value_iter = thrust::make_zip_iterator(thrust::make_tuple(for_value_iter, rev_value_iter));
   using FBTuple = thrust::tuple<ScanElem<GradientSumT>, ScanElem<GradientSumT>>;
   dh::device_vector<ScanElem<GradientSumT>> out_scan(n_features * 2); // x2 due to forward and backward
   auto d_out_scan = dh::ToSpan(out_scan);
@@ -299,6 +323,28 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
   cub::DeviceScan::InclusiveScan(
       temp.data().get(), temp_bytes, value_iter, out_it,
       ScanOp<GradientSumT>{left, right, evaluator}, size);
+
+  {
+    // debug
+    std::cout << "beg debug" << std::endl;
+    dh::device_vector<FBTuple> out_scan(size);
+    size_t temp_bytes = 0;
+    cub::DeviceScan::InclusiveScan(nullptr, temp_bytes, value_iter, out_scan.begin(),
+                                   ScanOp<GradientSumT>{left, right, evaluator},
+                                   size);
+    dh::TemporaryArray<int8_t> temp(temp_bytes);
+    cub::DeviceScan::InclusiveScan(
+        temp.data().get(), temp_bytes, value_iter, out_scan.begin(),
+        ScanOp<GradientSumT>{left, right, evaluator}, size);
+    dh::DebugSyncDevice();
+    for (size_t i = 0; i < out_scan.size(); ++i) {
+      auto fw = thrust::get<0>(FBTuple(out_scan[i]));
+      auto bw = thrust::get<1>(FBTuple(out_scan[i]));
+      std::cout << "i: " << i << ", grad: " << fw.grad << "\n"
+                << fw.candidate << bw.candidate << std::endl;
+    }
+    std::cout << "end debug" << std::endl;
+  }
 
   dh::DebugSyncDevice();
   for (size_t i = 0; i < out_scan.size(); ++i) {

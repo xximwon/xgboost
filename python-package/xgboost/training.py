@@ -527,8 +527,9 @@ def make_fold(skf, Xy):
     labels = Xy.get_label()
     data_folds = []
     for i, (train_index, test_index) in enumerate(skf.split(labels, labels)):
-        f_i = Xy.slice(train_index)
-        data_folds.append((f_i, str(i)))
+        f_i_train = Xy.slice(train_index)
+        f_i_test = Xy.slice(test_index)
+        data_folds.append([(f_i_train, str(i)), (f_i_test, str(i) + "test")])
     return data_folds
 
 
@@ -537,22 +538,25 @@ def kfold_cross_validation(
     dtrain: DMatrix,
     num_boost_round=10,
     kfold=3,
+    folds=None,
     early_stopping_rounds=None,
     feval=None,
     show_stdv=False,
     callbacks=[],
 ):
     """Cross validation with callbacks support."""
-    from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
-    seed = params.get("seed", None)
-    if params.get("num_class", None):
-        kf = StratifiedKFold(n_splits=kfold, shuffle=True, random_state=seed)
-    elif dtrain.get_uint_info("group_ptr").size != 0:
-        kf = GroupKFold(n_splits=kfold, shuffle=True, random_state=seed)
+    if folds is not None:
+        data_folds = [(Xy_train, Xy_test) for Xy_train, Xy_test in folds]
     else:
-        kf = KFold(n_splits=kfold, shuffle=True, random_state=seed)
-
-    data_folds = make_fold(kf, dtrain)
+        from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
+        seed = params.get("seed", None)
+        if params.get("num_class", None):
+            kf = StratifiedKFold(n_splits=kfold, shuffle=True, random_state=seed)
+        elif dtrain.get_uint_info("group_ptr").size != 0:
+            kf = GroupKFold(n_splits=kfold, shuffle=True, random_state=seed)
+        else:
+            kf = KFold(n_splits=kfold, shuffle=True, random_state=seed)
+        data_folds = make_fold(kf, dtrain)
 
     assert all(
         isinstance(c, callback.TrainingCallback) for c in callbacks
@@ -570,10 +574,10 @@ def kfold_cross_validation(
     results = {}
     obj = None
 
+    matrics = [(data_folds[i][0][0], data_folds[i][1][0]) for i in range(kfold)]
     booster = _PackedBooster(
-        [Booster(params=params, cache=(data_folds[i][0], )) for i in range(kfold)]
+        [Booster(params=params, cache=matrics) for i in range(kfold)]
     )
-    matrics = [data_folds[i][0] for i in range(kfold)]
     callbacks.before_training(booster)
 
     for i in range(num_boost_round):

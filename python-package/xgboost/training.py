@@ -5,7 +5,7 @@
 import warnings
 import copy
 import numpy as np
-from .core import Booster, XGBoostError, _get_booster_layer_trees
+from .core import Booster, XGBoostError, _get_booster_layer_trees, DMatrix
 from .compat import (SKLEARN_INSTALLED, XGBStratifiedKFold)
 from . import callback
 
@@ -225,14 +225,14 @@ class _PackedBooster:
     def __init__(self, cvfolds) -> None:
         self.cvfolds = cvfolds
 
-    def update(self, iteration, obj):
+    def update(self, iteration, data_fold, obj):
         '''Iterate through folds for update'''
-        for fold in self.cvfolds:
-            fold.update(iteration, obj)
+        for i, fold in enumerate(self.cvfolds):
+            fold.update(data_fold[i], iteration, obj)
 
-    def eval(self, iteration, feval):
+    def eval(self, data_folds, iteration, feval):
         '''Iterate through folds for eval'''
-        result = [f.eval(iteration, feval) for f in self.cvfolds]
+        result = [f.eval_set(data_folds, iteration, feval) for f in self.cvfolds]
         return result
 
     def set_attr(self, **kwargs):
@@ -347,7 +347,10 @@ def mknfold(dall, nfold, param, seed, evals=(), fpreproc=None, stratified=False,
         nfold = len(out_idset)
     else:
         # Do standard stratefied shuffle k-fold split
-        sfk = XGBStratifiedKFold(n_splits=nfold, shuffle=True, random_state=seed)
+        from sklearn.model_selection import StratifiedKFold
+        sfk: StratifiedKFold = XGBStratifiedKFold(
+            n_splits=nfold, shuffle=True, random_state=seed
+        )
         splits = list(sfk.split(X=dall.get_label(), y=dall.get_label()))
         in_idset = [x[0] for x in splits]
         out_idset = [x[1] for x in splits]
@@ -518,3 +521,83 @@ def cv(params, dtrain, num_boost_round=10, nfold=3, stratified=False, folds=None
     callbacks.after_training(booster)
 
     return results
+
+
+def make_fold(skf, Xy):
+    labels = Xy.get_label()
+    data_folds = []
+    for i, (train_index, test_index) in enumerate(skf.split(labels, labels)):
+        f_i = Xy.slice(train_index)
+        data_folds.append((f_i, str(i)))
+    return data_folds
+
+
+def kfold_cross_validation(
+    params,
+    dtrain: DMatrix,
+    num_boost_round=10,
+    kfold=3,
+    early_stopping_rounds=None,
+    feval=None,
+    show_stdv=False,
+    callbacks=[],
+):
+    """Cross validation with callbacks support."""
+    from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
+    seed = params.get("seed", None)
+    if params.get("num_class", None):
+        kf = StratifiedKFold(n_splits=kfold, shuffle=True, random_state=seed)
+    elif dtrain.get_uint_info("group_ptr").size != 0:
+        kf = GroupKFold(n_splits=kfold, shuffle=True, random_state=seed)
+    else:
+        kf = KFold(n_splits=kfold, shuffle=True, random_state=seed)
+
+    data_folds = make_fold(kf, dtrain)
+
+    assert all(
+        isinstance(c, callback.TrainingCallback) for c in callbacks
+    ), "Old callback functions are not supported."
+
+    verbose_eval = True
+    if isinstance(verbose_eval, bool) and verbose_eval:
+        monitor = callback.EvaluationMonitor(period=verbose_eval, show_stdv=show_stdv)
+        callbacks.append(monitor)
+    if early_stopping_rounds is not None:
+        early_stop = callback.EarlyStopping(rounds=early_stopping_rounds)
+        callbacks.append(early_stop)
+    callbacks = callback.CallbackContainer(callbacks, metric=feval, is_cv=True)
+
+    results = {}
+    obj = None
+
+    booster = _PackedBooster(
+        [Booster(params=params, cache=(data_folds[i][0], )) for i in range(kfold)]
+    )
+    matrics = [data_folds[i][0] for i in range(kfold)]
+    callbacks.before_training(booster)
+
+    for i in range(num_boost_round):
+        if callbacks.before_iteration(booster, i, data_folds, None):
+            break
+        booster.update(i, matrics, obj)
+
+        should_break = callbacks.after_iteration(booster, i, data_folds, None)
+        res = callbacks.aggregated_cv
+
+        for key, mean, std in res:
+            if key + "-mean" not in results:
+                results[key + "-mean"] = []
+            if key + "-std" not in results:
+                results[key + "-std"] = []
+
+            results[key + "-mean"].append(mean)
+            results[key + "-std"].append(std)
+
+        if should_break:
+            for k in results:
+                results[k] = results[k][: (booster.best_iteration + 1)]
+            break
+
+    callbacks.after_training(booster)
+
+    return booster.cvfolds, results

@@ -421,7 +421,7 @@ class CallbackContainer:
     def after_iteration(self, model, epoch, dtrain, evals) -> bool:
         '''Function called after training iteration.'''
         if self.is_cv:
-            scores = model.eval(epoch, self.metric)
+            scores = model.eval(dtrain, epoch, self.metric)
             scores = _aggcv(scores)
             self.aggregated_cv = scores
             self._update_history(scores, epoch)

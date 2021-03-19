@@ -51,6 +51,19 @@ size_t RequiredSampleCuts(bst_row_t num_rows, bst_feature_t num_columns,
   return result;
 }
 
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
+                               size_t num_bins, size_t nnz) {
+  // 0. Allocate cut pointer in quantile container by increasing: n_columns + 1
+  size_t total = (num_columns + 1) * sizeof(SketchContainer::OffsetT);
+  // 3. Allocate colomn size scan by increasing: n_columns + 1
+  total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
+  // 4. Allocate cut pointer by increasing: n_columns + 1
+  total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
+  // 5. Allocate cuts: assuming rows is greater than bins: n_columns * limit_size
+  total += RequiredSampleCuts(num_rows, num_bins, num_bins, nnz) * sizeof(SketchEntry);
+  return total;
+}
+
 size_t RequiredMemory(bst_row_t num_rows, bst_feature_t num_columns, size_t nnz,
                       size_t num_bins, bool with_weights) {
   size_t peak = 0;
@@ -290,38 +303,46 @@ HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins,
   bool has_weights = dmat->Info().weights_.Size() > 0;
   size_t num_cuts_per_feature =
       detail::RequiredSampleCutsPerColumn(max_bins, dmat->Info().num_row_);
-  sketch_batch_num_elements = detail::SketchBatchNumElements(
-      sketch_batch_num_elements,
-      dmat->Info().num_row_,
-      dmat->Info().num_col_,
-      dmat->Info().num_nonzero_,
-      device, num_cuts_per_feature, has_weights);
 
   HistogramCuts cuts;
-  SketchContainer sketch_container(dmat->Info().feature_types, max_bins, dmat->Info().num_col_,
-                                   dmat->Info().num_row_, device);
+  SketchContainer sketch_container(dmat->Info().feature_types, max_bins,
+                                   dmat->Info().num_col_, dmat->Info().num_row_,
+                                   device);
 
   dmat->Info().weights_.SetDevice(device);
-  for (const auto& batch : dmat->GetBatches<SparsePage>()) {
+  for (const auto &batch : dmat->GetBatches<SparsePage>()) {
     size_t batch_nnz = batch.data.Size();
-    auto const& info = dmat->Info();
-    for (auto begin = 0ull; begin < batch_nnz; begin += sketch_batch_num_elements) {
+    auto const &info = dmat->Info();
+
+    size_t remaining = batch_nnz;
+    size_t begin = 0;
+
+    do {
+      size_t avail = dh::AvailableMemory(device) -
+                     detail::ConstantMemoryPerWindow(
+                         dmat->Info().num_row_, dmat->Info().num_col_,
+                         num_cuts_per_feature, batch_nnz);
+      sketch_batch_num_elements =
+          sketch_batch_num_elements == 0
+              ? avail / detail::BytesPerElement(has_weights)
+              : sketch_batch_num_elements;
       size_t end = std::min(batch_nnz, size_t(begin + sketch_batch_num_elements));
+
       if (has_weights) {
         bool is_ranking = HostSketchContainer::UseGroup(dmat->Info());
         dh::caching_device_vector<uint32_t> groups(info.group_ptr_.cbegin(),
                                                    info.group_ptr_.cend());
-        ProcessWeightedBatch(
-            device, batch, dmat->Info(), begin, end,
-            &sketch_container,
-            num_cuts_per_feature,
-            dmat->Info().num_col_,
-            is_ranking, dh::ToSpan(groups));
+        ProcessWeightedBatch(device, batch, dmat->Info(), begin, end,
+                             &sketch_container, num_cuts_per_feature,
+                             dmat->Info().num_col_, is_ranking,
+                             dh::ToSpan(groups));
       } else {
         ProcessBatch(device, dmat->Info(), batch, begin, end, &sketch_container,
                      num_cuts_per_feature, dmat->Info().num_col_);
       }
-    }
+      remaining -= (end - begin);
+      begin = end;
+    } while (remaining > 0);
   }
   sketch_container.MakeCuts(&cuts);
   return cuts;

@@ -73,6 +73,9 @@ size_t SketchBatchNumElements(size_t sketch_batch_num_elements,
                               size_t nnz, int device,
                               size_t num_cuts, bool has_weight);
 
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
+                               size_t num_bins, size_t nnz);
+
 // Compute number of sample cuts needed on local node to maintain accuracy
 // We take more cuts than needed and then reduce them later
 size_t RequiredSampleCutsPerColumn(int max_bins, size_t num_rows);
@@ -256,29 +259,31 @@ void AdapterDeviceSketch(Batch batch, int num_bins,
   int32_t device = sketch_container->DeviceIdx();
   bool weighted = info.weights_.Size() != 0;
 
-  if (weighted) {
-    sketch_batch_num_elements = detail::SketchBatchNumElements(
-        sketch_batch_num_elements,
-        num_rows, num_cols, std::numeric_limits<size_t>::max(),
-        device, num_cuts_per_feature, true);
-    for (auto begin = 0ull; begin < batch.Size(); begin += sketch_batch_num_elements) {
-      size_t end = std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
-      ProcessWeightedSlidingWindow(batch, info,
-                                   num_cuts_per_feature,
-                                   HostSketchContainer::UseGroup(info), missing, device, num_cols, begin, end,
+  size_t remaining = batch.Size();
+  size_t begin = 0;
+  do {
+    size_t avail = dh::AvailableMemory(device) -
+                   detail::ConstantMemoryPerWindow(
+                       num_rows, num_cols, num_cuts_per_feature, batch.Size());
+    sketch_batch_num_elements = sketch_batch_num_elements == 0
+                                    ? avail / detail::BytesPerElement(weighted)
+                                    : sketch_batch_num_elements;
+    size_t end =
+        std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
+
+    if (weighted) {
+      ProcessWeightedSlidingWindow(batch, info, num_cuts_per_feature,
+                                   HostSketchContainer::UseGroup(info), missing,
+                                   device, num_cols, begin, end,
                                    sketch_container);
+    } else {
+      ProcessSlidingWindow(batch, device, num_cols, begin, end, missing,
+                           sketch_container, num_cuts_per_feature);
     }
-  } else {
-    sketch_batch_num_elements = detail::SketchBatchNumElements(
-        sketch_batch_num_elements,
-        num_rows, num_cols, std::numeric_limits<size_t>::max(),
-        device, num_cuts_per_feature, false);
-    for (auto begin = 0ull; begin < batch.Size(); begin += sketch_batch_num_elements) {
-      size_t end = std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
-      ProcessSlidingWindow(batch, device, num_cols,
-                           begin, end, missing, sketch_container, num_cuts_per_feature);
-    }
-  }
+
+    remaining -= (end - begin);
+    begin = end;
+  } while (remaining > 0);
 }
 }      // namespace common
 }      // namespace xgboost

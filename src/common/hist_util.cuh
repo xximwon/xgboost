@@ -68,12 +68,10 @@ inline size_t constexpr BytesPerElement(bool has_weight) {
 
 /* \brief The memory needed for each sliding window disregarding the window size.
  */
-size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
-                               size_t num_bins, size_t nnz);
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns);
 
 inline size_t AvailableMemory(size_t memory_limit, size_t lower_bound, int32_t device) {
-  size_t avail = dh::AvailableMemory(device) - lower_bound;
-  avail = memory_limit == 0 ? avail : memory_limit;
+  size_t avail = (memory_limit == 0 ? dh::AvailableMemory(device) : memory_limit) - lower_bound;
   return avail;
 }
 
@@ -83,9 +81,13 @@ inline size_t Remaining(size_t remaining, size_t begin, size_t end) {
   return remaining;
 }
 
+size_t EstimateBatchSize(size_t num_rows, bst_feature_t num_columns,
+                         size_t num_bins, size_t nnz, size_t memory_limit,
+                         int32_t device, bool weighted);
+
 // Compute number of sample cuts needed on local node to maintain accuracy
 // We take more cuts than needed and then reduce them later
-size_t RequiredSampleCutsPerColumn(int max_bins, size_t num_rows);
+size_t RequiredSampleCutsPerColumn(int max_bins_per_feature, size_t num_rows);
 
 // Count the valid entries in each column and copy them out.
 template <typename AdapterBatch, typename BatchIter>
@@ -251,13 +253,9 @@ void AdapterDeviceSketch(Batch batch, int num_bins,
   size_t remaining = batch.Size();
   size_t begin = 0;
   do {
-    size_t avail = detail::AvailableMemory(
-        memory_limit,
-        detail::ConstantMemoryPerWindow(num_rows, num_cols,
-                                        num_cuts_per_feature, batch.Size()),
-        device);
-    size_t sketch_batch_num_elements =
-        avail / detail::BytesPerElement(weighted);
+    size_t sketch_batch_num_elements = detail::EstimateBatchSize(
+        num_rows, num_cols, num_cuts_per_feature, num_rows * num_cols,
+        memory_limit, device, weighted);
     size_t end =
         std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
 

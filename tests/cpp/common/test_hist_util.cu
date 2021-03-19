@@ -225,13 +225,13 @@ TEST(HistUtil, DeviceSketchExternalMemoryWithWeights) {
 }
 
 template <typename Adapter>
-auto MakeUnweightedCutsForTest(Adapter adapter, int32_t num_bins, float missing, size_t batch_size = 0) {
+auto MakeUnweightedCutsForTest(Adapter adapter, int32_t num_bins, float missing, size_t memory_limit = 0) {
   common::HistogramCuts batched_cuts;
   HostDeviceVector<FeatureType> ft;
   SketchContainer sketch_container(ft, num_bins, adapter.NumColumns(), adapter.NumRows(), 0);
   MetaInfo info;
   AdapterDeviceSketch(adapter.Value(), num_bins, info, std::numeric_limits<float>::quiet_NaN(),
-                      &sketch_container);
+                      &sketch_container, memory_limit);
   sketch_container.MakeCuts(&batched_cuts);
   return batched_cuts;
 }
@@ -263,6 +263,27 @@ TEST(HistUtil, AdapterDeviceSketch) {
   EXPECT_EQ(device_cuts.Values(), host_cuts.Values());
   EXPECT_EQ(device_cuts.Ptrs(), host_cuts.Ptrs());
   EXPECT_EQ(device_cuts.MinValues(), host_cuts.MinValues());
+}
+
+
+TEST(HistUtil, AdapterDeviceSketchMemory) {
+  int num_columns = 100;
+  int num_rows = 1000;
+  int num_bins = 16;
+  auto x = GenerateRandom(num_rows, num_columns);
+  auto x_device = thrust::device_vector<float>(x);
+  auto adapter = AdapterFromData(x_device, num_rows, num_columns);
+
+  dh::GlobalMemoryLogger().Clear();
+  ConsoleLogger::Configure({{"verbosity", "3"}});
+  size_t limit =
+      2000 + detail::ConstantMemoryPerWindow(num_rows, num_columns);
+  auto cuts = MakeUnweightedCutsForTest(
+      adapter, num_bins, std::numeric_limits<float>::quiet_NaN(), limit);
+  ConsoleLogger::Configure({{"verbosity", "0"}});
+
+  EXPECT_LE(dh::GlobalMemoryLogger().PeakMemory(), limit);
+  EXPECT_GE(dh::GlobalMemoryLogger().PeakMemory(), limit * 0.95);
 }
 
 TEST(HistUtil, AdapterDeviceSketchCategorical) {

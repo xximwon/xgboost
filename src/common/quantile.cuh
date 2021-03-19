@@ -149,6 +149,16 @@ class SketchContainer {
 
   Span<OffsetT const> ColumnsPtr() const { return this->columns_ptr_.ConstDeviceSpan(); }
 
+  size_t MemoryUsage() const {
+    size_t total = 0;
+    total += this->feature_types_.ConstDeviceSpan().size_bytes();
+    total += columns_ptr_.ConstDeviceSpan().size_bytes();
+    total += columns_ptr_b_.ConstDeviceSpan().size_bytes();
+    total += entries_a_.size() * sizeof(SketchEntry);
+    total += entries_b_.size() * sizeof(SketchEntry);
+    return total;
+  }
+
   SketchContainer(SketchContainer&&) = default;
   SketchContainer& operator=(SketchContainer&&) = default;
 

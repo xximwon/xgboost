@@ -34,8 +34,8 @@ namespace common {
 constexpr float SketchContainer::kFactor;
 
 namespace detail {
-size_t RequiredSampleCutsPerColumn(int max_bins, size_t num_rows) {
-  double eps = 1.0 / (WQSketch::kFactor * max_bins);
+size_t RequiredSampleCutsPerColumn(int max_bins_per_feature, size_t num_rows) {
+  double eps = 1.0 / (WQSketch::kFactor * max_bins_per_feature);
   size_t dummy_nlevel;
   size_t num_cuts;
   WQuantileSketch<bst_float, bst_float>::LimitSizeLevel(
@@ -44,23 +44,20 @@ size_t RequiredSampleCutsPerColumn(int max_bins, size_t num_rows) {
 }
 
 size_t RequiredSampleCuts(bst_row_t num_rows, bst_feature_t num_columns,
-                          size_t max_bins, size_t nnz) {
-  auto per_column = RequiredSampleCutsPerColumn(max_bins, num_rows);
+                          size_t max_bins_per_feature, size_t nnz) {
+  auto per_column = RequiredSampleCutsPerColumn(max_bins_per_feature, num_rows);
   auto if_dense = num_columns * per_column;
   auto result = std::min(nnz, if_dense);
   return result;
 }
 
-size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
-                               size_t num_bins, size_t nnz) {
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns) {
   // 0. Allocate cut pointer in quantile container by increasing: n_columns + 1
   size_t total = (num_columns + 1) * sizeof(SketchContainer::OffsetT);
   // 3. Allocate colomn size scan by increasing: n_columns + 1
   total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
   // 4. Allocate cut pointer by increasing: n_columns + 1
   total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 5. Allocate cuts: assuming rows is greater than bins: n_columns * limit_size
-  total += RequiredSampleCuts(num_rows, num_bins, num_bins, nnz) * sizeof(SketchEntry);
   return total;
 }
 
@@ -136,6 +133,23 @@ void RemoveDuplicatedCategories(
     thrust::exclusive_scan(thrust::device, new_cuts_size.cbegin(),
                            new_cuts_size.cend(), d_cuts_ptr.data());
   }
+}
+
+size_t EstimateBatchSize(size_t num_rows, bst_feature_t num_columns,
+                         size_t max_bins_per_feature, size_t nnz,
+                         size_t memory_limit, int32_t device, bool weighted) {
+  // assuming dense cuts
+  int64_t avail =
+      memory_limit == 0 ? dh::AvailableMemory(device) : memory_limit;
+  size_t n_cuts =
+      RequiredSampleCuts(num_rows, num_columns, max_bins_per_feature, nnz);
+  int64_t a = static_cast<int64_t>(BytesPerElement(weighted));
+  int64_t c =
+      (-avail +
+       static_cast<int64_t>(ConstantMemoryPerWindow(num_rows, num_columns)) +
+       static_cast<int64_t>(n_cuts * sizeof(SketchEntry)));
+  size_t n_elements = std::sqrt(-4 * a * c) / 2 * a;
+  return n_elements;
 }
 }  // namespace detail
 
@@ -262,13 +276,9 @@ HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins, size_t memor
     size_t begin = 0;
 
     do {
-      size_t avail = detail::AvailableMemory(
-          memory_limit,
-          detail::ConstantMemoryPerWindow(dmat->Info().num_row_,
-                                          dmat->Info().num_col_,
-                                          num_cuts_per_feature, batch.Size()),
-          device);
-      size_t sketch_batch_num_elements = avail / detail::BytesPerElement(has_weights);
+      size_t sketch_batch_num_elements = detail::EstimateBatchSize(
+          info.num_row_, info.num_col_, num_cuts_per_feature, info.num_nonzero_,
+          memory_limit, device, has_weights);
       size_t end =
           std::min(batch_nnz, size_t(begin + sketch_batch_num_elements));
 

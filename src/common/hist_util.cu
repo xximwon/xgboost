@@ -51,13 +51,17 @@ size_t RequiredSampleCuts(bst_row_t num_rows, bst_feature_t num_columns,
   return result;
 }
 
-size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns) {
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
+                               size_t max_bins_per_feature, size_t nnz) {
   // 0. Allocate cut pointer in quantile container by increasing: n_columns + 1
   size_t total = (num_columns + 1) * sizeof(SketchContainer::OffsetT);
   // 3. Allocate colomn size scan by increasing: n_columns + 1
   total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
   // 4. Allocate cut pointer by increasing: n_columns + 1
   total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
+  total +=
+      RequiredSampleCuts(num_rows, num_columns, max_bins_per_feature, nnz) *
+      sizeof(SketchEntry);
   return total;
 }
 
@@ -141,13 +145,11 @@ size_t EstimateBatchSize(size_t num_rows, bst_feature_t num_columns,
   // assuming dense cuts
   int64_t avail =
       memory_limit == 0 ? dh::AvailableMemory(device) : memory_limit;
-  size_t n_cuts =
-      RequiredSampleCuts(num_rows, num_columns, max_bins_per_feature, nnz);
+  size_t lower_bound =
+      ConstantMemoryPerWindow(num_rows, num_columns, max_bins_per_feature, nnz);
+  CHECK_LT(static_cast<int64_t>(lower_bound), avail);
   int64_t a = static_cast<int64_t>(BytesPerElement(weighted));
-  int64_t c =
-      (-avail +
-       static_cast<int64_t>(ConstantMemoryPerWindow(num_rows, num_columns)) +
-       static_cast<int64_t>(n_cuts * sizeof(SketchEntry)));
+  int64_t c = (-avail + static_cast<int64_t>(lower_bound));
   size_t n_elements = std::sqrt(-4 * a * c) / 2 * a;
   return n_elements;
 }

@@ -68,7 +68,8 @@ inline size_t constexpr BytesPerElement(bool has_weight) {
 
 /* \brief The memory needed for each sliding window disregarding the window size.
  */
-size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns);
+size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
+                               size_t max_bins_per_feature, size_t nnz);
 
 inline size_t AvailableMemory(size_t memory_limit, size_t lower_bound, int32_t device) {
   size_t avail = (memory_limit == 0 ? dh::AvailableMemory(device) : memory_limit) - lower_bound;
@@ -243,7 +244,7 @@ template <typename Batch>
 void AdapterDeviceSketch(Batch batch, int num_bins,
                          MetaInfo const& info,
                          float missing, SketchContainer* sketch_container,
-                         size_t memory_limit = 0) {
+                         size_t memory_limit_for_test = 0) {
   size_t num_rows = batch.NumRows();
   size_t num_cols = batch.NumCols();
   size_t num_cuts_per_feature = detail::RequiredSampleCutsPerColumn(num_bins, num_rows);
@@ -252,10 +253,13 @@ void AdapterDeviceSketch(Batch batch, int num_bins,
 
   size_t remaining = batch.Size();
   size_t begin = 0;
+
+  size_t staged_memory_for_test = 0;
+
   do {
     size_t sketch_batch_num_elements = detail::EstimateBatchSize(
         num_rows, num_cols, num_cuts_per_feature, num_rows * num_cols,
-        memory_limit, device, weighted);
+        memory_limit_for_test, device, weighted);
     size_t end =
         std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
 
@@ -271,6 +275,13 @@ void AdapterDeviceSketch(Batch batch, int num_bins,
 
     remaining -= (end - begin);
     begin = end;
+
+    if (memory_limit_for_test != 0) {
+      size_t staged = sketch_container->MemoryUsage() - staged_memory_for_test;
+      staged_memory_for_test = sketch_container->MemoryUsage();
+
+      memory_limit_for_test -= staged;
+    }
   } while (remaining > 0);
 }
 }      // namespace common

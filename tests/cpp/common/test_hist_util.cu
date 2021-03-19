@@ -276,8 +276,11 @@ TEST(HistUtil, AdapterDeviceSketchMemory) {
 
   dh::GlobalMemoryLogger().Clear();
   ConsoleLogger::Configure({{"verbosity", "3"}});
+  size_t max_cuts = detail::RequiredSampleCutsPerColumn(num_bins, num_rows);
+
   size_t limit =
-      2000 + detail::ConstantMemoryPerWindow(num_rows, num_columns);
+      2000 + detail::ConstantMemoryPerWindow(num_rows, num_columns, max_cuts,
+                                             num_rows * num_columns);
   auto cuts = MakeUnweightedCutsForTest(
       adapter, num_bins, std::numeric_limits<float>::quiet_NaN(), limit);
   ConsoleLogger::Configure({{"verbosity", "0"}});

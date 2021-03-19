@@ -71,6 +71,12 @@ inline size_t constexpr BytesPerElement(bool has_weight) {
 size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
                                size_t num_bins, size_t nnz);
 
+inline size_t AvailableMemory(size_t memory_limit, size_t lower_bound, int32_t device) {
+  size_t avail = dh::AvailableMemory(device) - lower_bound;
+  avail = memory_limit == 0 ? avail : memory_limit;
+  return avail;
+}
+
 inline size_t Remaining(size_t remaining, size_t begin, size_t end) {
   CHECK_LE(end - begin, remaining);
   remaining -= (end - begin);
@@ -113,10 +119,11 @@ void SortByWeight(dh::device_vector<float>* weights,
                   dh::device_vector<Entry>* sorted_entries);
 }  // namespace detail
 
-// Compute sketch on DMatrix.
-// sketch_batch_num_elements 0 means autodetect. Only modify this for testing.
-HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins,
-                           size_t sketch_batch_num_elements = 0);
+/*!
+ * \param Compute sketch on DMatrix.
+ * \param memory_limit   Limit the memory usage for testing, specified in bytes.
+ */
+HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins, size_t memory_limit = 0);
 
 template <typename AdapterBatch>
 void ProcessSlidingWindow(AdapterBatch const& batch, int device, size_t columns,
@@ -228,14 +235,13 @@ void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info,
  * \param info             Metainfo used for sketching.
  * \param missing          Floating point value that represents invalid value.
  * \param sketch_container Container for output sketch.
- * \param sketch_batch_num_elements Number of element per-sliding window, use it only for
- *                                  testing.
+ * \param memory_limit     Limit the memory usage for testing, specified in bytes.
  */
 template <typename Batch>
 void AdapterDeviceSketch(Batch batch, int num_bins,
                          MetaInfo const& info,
                          float missing, SketchContainer* sketch_container,
-                         size_t sketch_batch_num_elements = 0) {
+                         size_t memory_limit = 0) {
   size_t num_rows = batch.NumRows();
   size_t num_cols = batch.NumCols();
   size_t num_cuts_per_feature = detail::RequiredSampleCutsPerColumn(num_bins, num_rows);
@@ -245,12 +251,13 @@ void AdapterDeviceSketch(Batch batch, int num_bins,
   size_t remaining = batch.Size();
   size_t begin = 0;
   do {
-    size_t avail = dh::AvailableMemory(device) -
-                   detail::ConstantMemoryPerWindow(
-                       num_rows, num_cols, num_cuts_per_feature, batch.Size());
-    sketch_batch_num_elements = sketch_batch_num_elements == 0
-                                    ? avail / detail::BytesPerElement(weighted)
-                                    : sketch_batch_num_elements;
+    size_t avail = detail::AvailableMemory(
+        memory_limit,
+        detail::ConstantMemoryPerWindow(num_rows, num_cols,
+                                        num_cuts_per_feature, batch.Size()),
+        device);
+    size_t sketch_batch_num_elements =
+        avail / detail::BytesPerElement(weighted);
     size_t end =
         std::min(batch.Size(), size_t(begin + sketch_batch_num_elements));
 

@@ -240,8 +240,7 @@ void ProcessWeightedBatch(int device, const SparsePage& page,
   sorted_entries.shrink_to_fit();
 }
 
-HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins,
-                           size_t sketch_batch_num_elements) {
+HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins, size_t memory_limit) {
   dmat->Info().feature_types.SetDevice(device);
   dmat->Info().feature_types.ConstDevicePointer();  // pull to device early
   // Configure batch size based on available memory
@@ -263,15 +262,15 @@ HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins,
     size_t begin = 0;
 
     do {
-      size_t avail = dh::AvailableMemory(device) -
-                     detail::ConstantMemoryPerWindow(
-                         dmat->Info().num_row_, dmat->Info().num_col_,
-                         num_cuts_per_feature, batch_nnz);
-      sketch_batch_num_elements =
-          sketch_batch_num_elements == 0
-              ? avail / detail::BytesPerElement(has_weights)
-              : sketch_batch_num_elements;
-      size_t end = std::min(batch_nnz, size_t(begin + sketch_batch_num_elements));
+      size_t avail = detail::AvailableMemory(
+          memory_limit,
+          detail::ConstantMemoryPerWindow(dmat->Info().num_row_,
+                                          dmat->Info().num_col_,
+                                          num_cuts_per_feature, batch.Size()),
+          device);
+      size_t sketch_batch_num_elements = avail / detail::BytesPerElement(has_weights);
+      size_t end =
+          std::min(batch_nnz, size_t(begin + sketch_batch_num_elements));
 
       if (has_weights) {
         bool is_ranking = HostSketchContainer::UseGroup(dmat->Info());

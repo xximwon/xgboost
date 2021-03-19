@@ -64,61 +64,6 @@ size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
   return total;
 }
 
-size_t RequiredMemory(bst_row_t num_rows, bst_feature_t num_columns, size_t nnz,
-                      size_t num_bins, bool with_weights) {
-  size_t peak = 0;
-  // 0. Allocate cut pointer in quantile container by increasing: n_columns + 1
-  size_t total = (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 1. Copy and sort: 2 * bytes_per_element * shape
-  total += BytesPerElement(with_weights) * num_rows * num_columns;
-  peak = std::max(peak, total);
-  // 2. Deallocate bytes_per_element * shape due to reusing memory in sort.
-  total -= BytesPerElement(with_weights) * num_rows * num_columns / 2;
-  // 3. Allocate colomn size scan by increasing: n_columns + 1
-  total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 4. Allocate cut pointer by increasing: n_columns + 1
-  total += (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 5. Allocate cuts: assuming rows is greater than bins: n_columns * limit_size
-  total += RequiredSampleCuts(num_rows, num_bins, num_bins, nnz) * sizeof(SketchEntry);
-  // 6. Deallocate copied entries by reducing: bytes_per_element * shape.
-  peak = std::max(peak, total);
-  total -= (BytesPerElement(with_weights) * num_rows * num_columns) / 2;
-  // 7. Deallocate column size scan.
-  peak = std::max(peak, total);
-  total -= (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 8. Deallocate cut size scan.
-  total -= (num_columns + 1) * sizeof(SketchContainer::OffsetT);
-  // 9. Allocate final cut values, min values, cut ptrs: std::min(rows, bins + 1) *
-  //    n_columns + n_columns + n_columns + 1
-  total += std::min(num_rows, num_bins) * num_columns * sizeof(float);
-  total += num_columns *
-           sizeof(std::remove_reference_t<decltype(
-                      std::declval<HistogramCuts>().MinValues())>::value_type);
-  total += (num_columns + 1) *
-           sizeof(std::remove_reference_t<decltype(
-                      std::declval<HistogramCuts>().Ptrs())>::value_type);
-  peak = std::max(peak, total);
-
-  return peak;
-}
-
-size_t SketchBatchNumElements(size_t sketch_batch_num_elements,
-                              bst_row_t num_rows, bst_feature_t columns,
-                              size_t nnz, int device,
-                              size_t num_cuts, bool has_weight) {
-  if (sketch_batch_num_elements == 0) {
-    auto required_memory = RequiredMemory(num_rows, columns, nnz, num_cuts, has_weight);
-    // use up to 80% of available space
-    auto avail = dh::AvailableMemory(device) * 0.8;
-    if (required_memory > avail) {
-      sketch_batch_num_elements = avail / BytesPerElement(has_weight);
-    } else {
-      sketch_batch_num_elements = std::min(num_rows * static_cast<size_t>(columns), nnz);
-    }
-  }
-  return sketch_batch_num_elements;
-}
-
 void SortByWeight(dh::device_vector<float>* weights,
                   dh::device_vector<Entry>* sorted_entries) {
   // Sort both entries and wegihts.

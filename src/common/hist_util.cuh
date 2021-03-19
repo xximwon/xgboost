@@ -9,6 +9,7 @@
 
 #include <thrust/host_vector.h>
 
+#include "xgboost/logging.h"
 #include "hist_util.h"
 #include "quantile.cuh"
 #include "device_helpers.cuh"
@@ -65,38 +66,20 @@ inline size_t constexpr BytesPerElement(bool has_weight) {
   return (has_weight ? sizeof(Entry) + sizeof(float) : sizeof(Entry)) * 2;
 }
 
-/* \brief Calcuate the length of sliding window. Returns `sketch_batch_num_elements`
- *        directly if it's not 0.
+/* \brief The memory needed for each sliding window disregarding the window size.
  */
-size_t SketchBatchNumElements(size_t sketch_batch_num_elements,
-                              bst_row_t num_rows, bst_feature_t columns,
-                              size_t nnz, int device,
-                              size_t num_cuts, bool has_weight);
-
 size_t ConstantMemoryPerWindow(size_t num_rows, bst_feature_t num_columns,
                                size_t num_bins, size_t nnz);
+
+inline size_t Remaining(size_t remaining, size_t begin, size_t end) {
+  CHECK_LE(end - begin, remaining);
+  remaining -= (end - begin);
+  return remaining;
+}
 
 // Compute number of sample cuts needed on local node to maintain accuracy
 // We take more cuts than needed and then reduce them later
 size_t RequiredSampleCutsPerColumn(int max_bins, size_t num_rows);
-
-/* \brief Estimate required memory for each sliding window.
- *
- *   It's not precise as to obtain exact memory usage for sparse dataset we need to walk
- *   through the whole dataset first.  Also if data is from host DMatrix, we copy the
- *   weight, group and offset on first batch, which is not considered in the function.
- *
- * \param num_rows     Number of rows in this worker.
- * \param num_columns  Number of columns for this dataset.
- * \param nnz          Number of non-zero element.  Put in something greater than rows *
- *                     cols if nnz is unknown.
- * \param num_bins     Number of histogram bins.
- * \param with_weights Whether weight is used, works the same for ranking and other models.
- *
- * \return The estimated bytes
- */
-size_t RequiredMemory(bst_row_t num_rows, bst_feature_t num_columns, size_t nnz,
-                      size_t num_bins, bool with_weights);
 
 // Count the valid entries in each column and copy them out.
 template <typename AdapterBatch, typename BatchIter>

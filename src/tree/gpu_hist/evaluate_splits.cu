@@ -182,11 +182,13 @@ struct WriteScan {
     auto idx = candidate.idx;
 
     if (idx < left.gradient_histogram.size()) {
+      // left node
       beg_idx = left.feature_segments[fidx];
       auto f_size = left.feature_segments[fidx + 1] - beg_idx;
       f_size = f_size == 0 ? 0 : f_size - 1;
       end_idx = beg_idx + f_size;
     } else {
+      // right node
       beg_idx = right.feature_segments[fidx];
       auto f_size = right.feature_segments[fidx + 1] - beg_idx;
       f_size = f_size == 0 ? 0 : f_size - 1;
@@ -232,35 +234,42 @@ struct ScanValueOp {
     float fvalue;
     size_t fidx;
     bool is_cat;
+    float loss_chg;
     if (idx < left.gradient_histogram.size()) {
+      // left node
       ret.grad = left.gradient_histogram[idx];
       fvalue = left.feature_values[idx];
       fidx = dh::SegmentId(left.feature_segments, idx);
       is_cat = common::IsCat(left.feature_types, fidx);
-    } else {
-      idx -= left.gradient_histogram.size();
-      ret.grad = right.gradient_histogram[idx];
-      fvalue = right.feature_values[idx];
-      fidx = dh::SegmentId(right.feature_segments, idx);
-      is_cat = common::IsCat(right.feature_types, fidx);
-    };
-    if (forward) {
+
       float parent_gain =
           CalcGain(left.param, left.parent_sum); // FIXME: get it out
       float gain = evaluator.CalcSplitGain(left.param, left.nidx, fidx,
                                            GradStats{ret.grad},
                                            GradStats{left.parent_sum - ret.grad});
-      float loss_chg = gain - parent_gain;
-      ret.candidate.Update(loss_chg, kRightDir, fvalue, fidx, GradientPair{ret.grad},
-                           GradientPair{left.parent_sum - ret.grad}, is_cat, left.param);
+      loss_chg = gain - parent_gain;
     } else {
+      // right node
+      idx -= left.gradient_histogram.size();
+      ret.grad = right.gradient_histogram[idx];
+      fvalue = right.feature_values[idx];
+      fidx = dh::SegmentId(right.feature_segments, idx);
+      is_cat = common::IsCat(right.feature_types, fidx);
+
       float parent_gain =
           CalcGain(right.param, right.parent_sum); // FIXME: get it out
       float gain = evaluator.CalcSplitGain(right.param, right.nidx, fidx,
                                            GradStats{ret.grad},
                                            GradStats{left.parent_sum - ret.grad});
-      float loss_chg = gain - parent_gain;
-      ret.candidate.Update(loss_chg, kLeftDir, fvalue, fidx, GradientPair{left.parent_sum - ret.grad},
+      loss_chg = gain - parent_gain;
+    };
+    if (forward) {
+      ret.candidate.Update(
+          loss_chg, kRightDir, fvalue, fidx, GradientPair{ret.grad},
+          GradientPair{left.parent_sum - ret.grad}, is_cat, left.param);
+    } else {
+      ret.candidate.Update(loss_chg, kLeftDir, fvalue, fidx,
+                           GradientPair{left.parent_sum - ret.grad},
                            GradientPair{ret.grad}, is_cat, left.param);
     }
     return ret;
@@ -273,6 +282,9 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
                     TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
                     EvaluateSplitInputs<GradientSumT> left,
                     EvaluateSplitInputs<GradientSumT> right) {
+  /**
+   * Validate inputs
+   */
   CHECK(left.gradient_histogram.size() == right.gradient_histogram.size() ||
         right.gradient_histogram.empty());
   CHECK(left.feature_segments.size() == right.feature_segments.size() ||
@@ -283,10 +295,15 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
   if (right.feature_segments.empty()) {
     CHECK(right.gradient_histogram.empty());
   }
+
   auto l_n_features = left.feature_segments.empty() ? 0 : left.feature_segments.size() - 1;
   auto r_n_features = right.feature_segments.empty() ? 0 : right.feature_segments.size() - 1;
   CHECK(r_n_features == 0 || l_n_features == r_n_features);
   auto n_features = l_n_features + r_n_features;
+
+  /**
+   * Handle trivial input
+   */
   if (n_features == 0) {
     dh::LaunchN(dh::CurrentDevice(), out_splits.size(), [=]XGBOOST_DEVICE(size_t idx) {
       out_splits[idx] = DeviceSplitCandidate{};

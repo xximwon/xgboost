@@ -408,6 +408,9 @@ TEST(GpuHist, UniformSampling) {
   RegTree tree;
   HostDeviceVector<bst_float> preds(kRows, 0.0, 0);
   UpdateTree(&gpair, dmat.get(), 0, &tree, &preds, 1.0, "uniform", kRows);
+
+  std::cout << "Start second tree build." << std::endl;
+
   // Build another tree using sampling.
   RegTree tree_sampling;
   HostDeviceVector<bst_float> preds_sampling(kRows, 0.0, 0);

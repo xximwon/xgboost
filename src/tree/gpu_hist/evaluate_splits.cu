@@ -115,6 +115,12 @@ struct ScanOp : public thrust::binary_function<ItemTy, ItemTy, ItemTy> {
       }
     } else {
       // Right node
+      if (left.gradient_histogram.size() != right.gradient_histogram.size()) {
+        printf("left.gradient_histogram.size(): %lu, "
+               "right.gradient_histogram.size(): %lu, idx: %lu, forward: %d\n",
+               left.gradient_histogram.size(), right.gradient_histogram.size(),
+               l.idx, int(forward));
+      }
       assert(left.gradient_histogram.size() == right.gradient_histogram.size());
       auto l_idx = l.idx - left.gradient_histogram.size();
       auto r_idx = r.idx - left.gradient_histogram.size();
@@ -296,6 +302,9 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
     CHECK(right.gradient_histogram.empty());
   }
 
+  std::cout << "left: " << left.gradient_histogram.size()
+            << ", right: " << right.gradient_histogram.size() << std::endl;
+
   auto l_n_features = left.feature_segments.empty() ? 0 : left.feature_segments.size() - 1;
   auto r_n_features = right.feature_segments.empty() ? 0 : right.feature_segments.size() - 1;
   CHECK(r_n_features == 0 || l_n_features == r_n_features);
@@ -341,27 +350,27 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
       temp.data().get(), temp_bytes, value_iter, out_it,
       ScanOp<GradientSumT>{left, right, evaluator}, size);
 
-  {
-    // debug
-    std::cout << "beg debug" << std::endl;
-    dh::device_vector<FBTuple> out_scan(size);
-    size_t temp_bytes = 0;
-    cub::DeviceScan::InclusiveScan(nullptr, temp_bytes, value_iter, out_scan.begin(),
-                                   ScanOp<GradientSumT>{left, right, evaluator},
-                                   size);
-    dh::TemporaryArray<int8_t> temp(temp_bytes);
-    cub::DeviceScan::InclusiveScan(
-        temp.data().get(), temp_bytes, value_iter, out_scan.begin(),
-        ScanOp<GradientSumT>{left, right, evaluator}, size);
-    dh::DebugSyncDevice();
-    for (size_t i = 0; i < out_scan.size(); ++i) {
-      auto fw = thrust::get<0>(FBTuple(out_scan[i]));
-      auto bw = thrust::get<1>(FBTuple(out_scan[i]));
-      std::cout << "i: " << i << ", grad: " << fw.grad << "\n"
-                << fw.candidate << bw.candidate << std::endl;
-    }
-    std::cout << "end debug" << std::endl;
-  }
+  // {
+  //   // debug
+  //   std::cout << "beg debug" << std::endl;
+  //   dh::device_vector<FBTuple> out_scan(size);
+  //   size_t temp_bytes = 0;
+  //   cub::DeviceScan::InclusiveScan(nullptr, temp_bytes, value_iter, out_scan.begin(),
+  //                                  ScanOp<GradientSumT>{left, right, evaluator},
+  //                                  size);
+  //   dh::TemporaryArray<int8_t> temp(temp_bytes);
+  //   cub::DeviceScan::InclusiveScan(
+  //       temp.data().get(), temp_bytes, value_iter, out_scan.begin(),
+  //       ScanOp<GradientSumT>{left, right, evaluator}, size);
+  //   dh::DebugSyncDevice();
+  //   for (size_t i = 0; i < out_scan.size(); ++i) {
+  //     auto fw = thrust::get<0>(FBTuple(out_scan[i]));
+  //     auto bw = thrust::get<1>(FBTuple(out_scan[i]));
+  //     std::cout << "i: " << i << ", grad: " << fw.grad << "\n"
+  //               << fw.candidate << bw.candidate << std::endl;
+  //   }
+  //   std::cout << "end debug" << std::endl;
+  // }
 
   dh::DebugSyncDevice();
   for (size_t i = 0; i < out_scan.size(); ++i) {

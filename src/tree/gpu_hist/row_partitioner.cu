@@ -11,15 +11,6 @@
 namespace xgboost {
 namespace tree {
 
-struct IndicateLeftTransform {
-  bst_node_t left_nidx;
-  explicit IndicateLeftTransform(bst_node_t left_nidx) : left_nidx(left_nidx) {}
-  __host__ __device__ __forceinline__ size_t
-  operator()(const bst_node_t& x) const {
-    return x == left_nidx ? 1 : 0;
-  }
-};
-
 struct IndexFlagTuple {
   size_t idx;
   size_t flag;
@@ -131,7 +122,7 @@ common::Span<const RowPartitioner::RowIndexT> RowPartitioner::GetRows(
   // Return empty span here as a valid result
   // Will error if we try to construct a span from a pointer with size 0
   if (segment.Size() == 0) {
-    return common::Span<const RowPartitioner::RowIndexT>();
+    return {};
   }
   return ridx_.CurrentSpan().subspan(segment.begin, segment.Size());
 }

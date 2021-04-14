@@ -577,6 +577,11 @@ class DoubleBuffer {
   }
 
   T *Other() { return buff.Alternate(); }
+
+  void Alternate() {
+    std::swap(a, b);
+    buff = cub::DoubleBuffer<T>(a.data(), b.data());
+  }
 };
 
 /**

@@ -4,6 +4,7 @@
 #include <limits>
 #include "evaluate_splits.cuh"
 #include "../../common/categorical.h"
+#include "../../common/algorithm.cuh"
 
 namespace xgboost {
 namespace tree {

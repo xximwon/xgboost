@@ -1,5 +1,5 @@
 /*!
- * Copyright (c) 2015~2020 by Contributors
+ * Copyright (c) 2015~2021 by Contributors
  * \file c_api.h
  * \author Tianqi Chen
  * \brief C API of XGBoost, used for interfacing to other languages.
@@ -129,6 +129,22 @@ XGB_DLL int XGDMatrixCreateFromCSR(char const *indptr,
                                    bst_ulong ncol,
                                    char const* json_config,
                                    DMatrixHandle* out);
+
+
+/*!
+ * \brief Create a matrix from dense array.
+ * \param data  JSON encoded __array_interface__ to array values.
+ * \param json_config JSON encoded configuration.  Required values are:
+ *
+ *          - missing
+ *          - nthread
+ *
+ * \param out created dmatrix
+ * \return 0 when success, -1 when failure happens
+ */
+XGB_DLL int XGDMatrixCreateFromDense(char const *data,
+                                     char const *json_config,
+                                     DMatrixHandle *out);
 
 /*!
  * \brief create a matrix content from CSC format
@@ -324,7 +340,7 @@ XGB_DLL int XGProxyDMatrixCreate(DMatrixHandle* out);
 XGB_EXTERN_C typedef int XGDMatrixCallbackNext(DataIterHandle iter);  // NOLINT(*)
 
 /*!
- * \brief Callback function prototype for reseting external iterator
+ * \brief Callback function prototype for resetting external iterator
  */
 XGB_EXTERN_C typedef void DataIterResetCallback(DataIterHandle handle); // NOLINT(*)
 
@@ -333,8 +349,8 @@ XGB_EXTERN_C typedef void DataIterResetCallback(DataIterHandle handle); // NOLIN
  *
  * \param iter     A handle to external data iterator.
  * \param proxy    A DMatrix proxy handle created by `XGProxyDMatrixCreate`.
- * \param reset    Callback function reseting the iterator state.
- * \param next     Callback function yieling the next batch of data.
+ * \param reset    Callback function resetting the iterator state.
+ * \param next     Callback function yielding the next batch of data.
  * \param missing  Which value to represent missing value
  * \param nthread  Number of threads to use, 0 for default.
  * \param max_bin  Maximum number of bins for building histogram.
@@ -461,7 +477,7 @@ XGB_DLL int XGDMatrixSetUIntInfo(DMatrixHandle handle,
  *   - feature_type
  *
  * \param handle    An instance of data matrix
- * \param field     Feild name
+ * \param field     Field name
  * \param features  Pointer to array of strings.
  * \param size      Size of `features` pointer (number of strings passed in).
  *
@@ -493,7 +509,7 @@ XGB_DLL int XGDMatrixSetStrFeatureInfo(DMatrixHandle handle, const char *field,
  * XGBoost.
  *
  * \param handle       An instance of data matrix
- * \param field        Feild name
+ * \param field        Field name
  * \param size         Size of output pointer `features` (number of strings returned).
  * \param out_features Address of a pointer to array of strings.  Result is stored in
  *                     thread local memory.
@@ -533,7 +549,7 @@ XGB_DLL int XGDMatrixGetStrFeatureInfo(DMatrixHandle handle, const char *field,
  *  - feature_weights
  *
  * \param handle An instance of data matrix
- * \param field  Feild name
+ * \param field  Field name
  * \param data   Pointer to consecutive memory storing data.
  * \param size   Size of the data, this is relative to size of type.  (Meaning NOT number
  *               of bytes.)
@@ -744,13 +760,13 @@ XGB_DLL int XGBoosterPredict(BoosterHandle handle,
  *                      following available fields in the JSON object:
  *
  *    "type": [0, 6]
- *      0: normal prediction
- *      1: output margin
- *      2: predict contribution
- *      3: predict approximated contribution
- *      4: predict feature interaction
- *      5: predict approximated feature interaction
- *      6: predict leaf
+ *      - 0: normal prediction
+ *      - 1: output margin
+ *      - 2: predict contribution
+ *      - 3: predict approximated contribution
+ *      - 4: predict feature interaction
+ *      - 5: predict approximated feature interaction
+ *      - 6: predict leaf
  *    "training": bool
  *      Whether the prediction function is used as part of a training loop.  **Not used
  *      for inplace prediction**.
@@ -773,7 +789,8 @@ XGB_DLL int XGBoosterPredict(BoosterHandle handle,
  *      disregarding the use of multi-class model, and leaf prediction will output 4-dim
  *      array representing: (n_samples, n_iterations, n_classes, n_trees_in_forest)
  *
- *   Run a normal prediction with strict output shape, 2 dim for softprob , 1 dim for others.
+ *   Example JSON input for running a normal prediction with strict output shape, 2 dim
+ *   for softprob , 1 dim for others.
  *   \code
  *      {
  *         "type": 0,
@@ -911,7 +928,7 @@ XGB_DLL int XGBoosterPredictFromCudaColumnar(
  *
  * - Functions with the term "Config" handles save/loading configuration.  It helps user
  *   to study the internal of XGBoost.  Also user can use the load method for specifying
- *   paramters in a structured way.  These functions are introduced in 1.0.0, and are not
+ *   parameters in a structured way.  These functions are introduced in 1.0.0, and are not
  *   yet stable.
  *
  * - Functions with the term "Serialization" are combined of above two.  They are used in
@@ -1144,7 +1161,7 @@ XGB_DLL int XGBoosterGetAttrNames(BoosterHandle handle,
  *   - feature_type
  *
  * \param handle    An instance of Booster
- * \param field     Feild name
+ * \param field     Field name
  * \param features  Pointer to array of strings.
  * \param size      Size of `features` pointer (number of strings passed in).
  *
@@ -1166,7 +1183,7 @@ XGB_DLL int XGBoosterSetStrFeatureInfo(BoosterHandle handle, const char *field,
  * function of XGBoost.
  *
  * \param handle       An instance of Booster
- * \param field        Feild name
+ * \param field        Field name
  * \param size         Size of output pointer `features` (number of strings returned).
  * \param out_features Address of a pointer to array of strings. Result is stored in
  *        thread local memory.
@@ -1176,4 +1193,36 @@ XGB_DLL int XGBoosterSetStrFeatureInfo(BoosterHandle handle, const char *field,
 XGB_DLL int XGBoosterGetStrFeatureInfo(BoosterHandle handle, const char *field,
                                        bst_ulong *len,
                                        const char ***out_features);
+
+/*!
+ * \brief Calculate feature scores for tree models.  When used on linear model, only the
+ * `weight` importance type is defined, and output scores is a row major matrix with shape
+ * [n_features, n_classes] for multi-class model.  For tree model, out_n_feature is always
+ * equal to out_n_scores and has multiple definitions of importance type.
+ *
+ * \param handle          An instance of Booster
+ * \param json_config     Parameters for computing scores.  Accepted JSON keys are:
+ *   - importance_type: A JSON string with following possible values:
+ *       * 'weight': the number of times a feature is used to split the data across all trees.
+ *       * 'gain': the average gain across all splits the feature is used in.
+ *       * 'cover': the average coverage across all splits the feature is used in.
+ *       * 'total_gain': the total gain across all splits the feature is used in.
+ *       * 'total_cover': the total coverage across all splits the feature is used in.
+ *   - feature_map: An optional JSON string with URI or path to the feature map file.
+ *   - feature_names: An optional JSON array with string names for each feature.
+ *
+ * \param out_n_features  Length of output feature names.
+ * \param out_features    An array of string as feature names, ordered the same as output scores.
+ * \param out_dim         Dimension of output feature scores.
+ * \param out_shape       Shape of output feature scores with length of `out_dim`.
+ * \param out_scores      An array of floating point as feature scores with shape of `out_shape`.
+ *
+ * \return 0 when success, -1 when failure happens
+ */
+XGB_DLL int XGBoosterFeatureScore(BoosterHandle handle, const char *json_config,
+                                  bst_ulong *out_n_features,
+                                  char const ***out_features,
+                                  bst_ulong *out_dim,
+                                  bst_ulong const **out_shape,
+                                  float const **out_scores);
 #endif  // XGBOOST_C_API_H_

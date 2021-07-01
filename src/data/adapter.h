@@ -42,7 +42,7 @@ namespace data {
  * This abstraction allows us to read through different sparse matrix formats
  * using the same interface. In particular we can write a DMatrix constructor
  * that uses the same code to construct itself from a CSR matrix, CSC matrix,
- * dense matrix, csv, libsvm file, or potentially other formats. To see why this
+ * dense matrix, CSV, LIBSVM file, or potentially other formats. To see why this
  * is necessary, imagine we have 5 external matrix formats and 5 internal
  * DMatrix types where each DMatrix needs a custom constructor for each possible
  * input. The number of constructors is 5*5=25. Using an abstraction over the
@@ -231,6 +231,10 @@ class DenseAdapter : public detail::SingleBatchDataIter<DenseAdapterBatch> {
 };
 
 class ArrayAdapterBatch : public detail::NoMetaInfo {
+ public:
+  static constexpr bool kIsRowMajor = true;
+
+ private:
   ArrayInterface array_interface_;
 
   class Line {
@@ -253,6 +257,7 @@ class ArrayAdapterBatch : public detail::NoMetaInfo {
   Line const GetLine(size_t idx) const {
     return Line{array_interface_, idx};
   }
+  size_t Size() const { return array_interface_.num_rows; }
 
   explicit ArrayAdapterBatch(ArrayInterface array_interface)
       : array_interface_{std::move(array_interface)} {}
@@ -736,7 +741,7 @@ class IteratorAdapter : public dmlc::DataIter<FileAdapterBatch> {
 
   size_t columns_;
   size_t row_offset_;
-  // at the beinning.
+  // at the beginning.
   bool at_first_;
   // handle to the iterator,
   DataIterHandle data_handle_;

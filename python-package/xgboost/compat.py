@@ -1,6 +1,7 @@
 # coding: utf-8
 # pylint: disable= invalid-name,  unused-import
 """For compatibility and optional dependencies."""
+from typing import Any
 import sys
 import types
 import importlib.util
@@ -19,9 +20,13 @@ def py_str(x):
 
 
 def lazy_isinstance(instance, module, name):
-    '''Use string representation to identify a type.'''
-    module = type(instance).__module__ == module
-    name = type(instance).__name__ == name
+    """Use string representation to identify a type."""
+
+    # Notice, we use .__class__ as opposed to type() in order
+    # to support object proxies such as weakref.proxy
+    cls = instance.__class__
+    module = cls.__module__ == module
+    name = cls.__name__ == name
     return module and name
 
 
@@ -36,7 +41,7 @@ except ImportError:
 
     MultiIndex = object
     Int64Index = object
-    DataFrame = object
+    DataFrame: Any = object
     Series = object
     pandas_concat = None
     PANDAS_INSTALLED = False
@@ -109,10 +114,12 @@ except pkg_resources.DistributionNotFound:
 try:
     import sparse
     import scipy.sparse as scipy_sparse
+    from scipy.sparse import csr_matrix as scipy_csr
     SCIPY_INSTALLED = True
 except ImportError:
     sparse = False
     scipy_sparse = False
+    scipy_csr: Any = object
     SCIPY_INSTALLED = False
 
 

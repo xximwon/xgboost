@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.13)
-project(xgboost LANGUAGES CXX C VERSION 1.4.0)
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+project(xgboost LANGUAGES CXX C VERSION 1.5.0)
 include(cmake/Utils.cmake)
 list(APPEND CMAKE_MODULE_PATH "${xgboost_SOURCE_DIR}/cmake/modules")
 cmake_policy(SET CMP0022 NEW)
@@ -197,7 +197,9 @@ endif (USE_CUDA)
 #-- Hide all C++ symbols
 if (HIDE_CXX_SYMBOLS)
   foreach(target objxgboost xgboost dmlc)
+    set_target_properties(${target} PROPERTIES C_VISIBILITY_PRESET hidden)
     set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden)
+    set_target_properties(${target} PROPERTIES CUDA_VISIBILITY_PRESET hidden)
   endforeach()
 endif (HIDE_CXX_SYMBOLS)
 

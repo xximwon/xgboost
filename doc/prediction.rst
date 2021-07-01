@@ -6,7 +6,7 @@ Prediction
 
 There are a number of prediction functions in XGBoost with various parameters.  This
 document attempts to clarify some of confusions around prediction with a focus on the
-Python binding.
+Python binding, R package is similar when ``strict_shape`` is specified (see below).
 
 ******************
 Prediction Options
@@ -54,9 +54,16 @@ After 1.4 release, we added a new parameter called ``strict_shape``, one can set
   Output is a 4-dim array with ``(n_samples, n_iterations, n_classes, n_trees_in_forest)``
   as shape.  ``n_trees_in_forest`` is specified by the ``numb_parallel_tree`` during
   training.  When strict shape is set to False, output is a 2-dim array with last 3 dims
-  concatenated into 1.  When using ``apply`` method in scikit learn interface, this is set
-  to False by default.
+  concatenated into 1.  Also the last dimension is dropped if it eqauls to 1. When using
+  ``apply`` method in scikit learn interface, this is set to False by default.
 
+
+For R package, when ``strict_shape`` is specified, an ``array`` is returned, with the same
+value as Python except R array is column-major while Python numpy array is row-major, so
+all the dimensions are reversed.  For example, for a Python ``predict_leaf`` output
+obtained by having ``strict_shape=True`` has 4 dimensions: ``(n_samples, n_iterations,
+n_classes, n_trees_in_forest)``, while R with ``strict_shape=TRUE`` outputs
+``(n_trees_in_forest, n_classes, n_iterations, n_samples)``.
 
 Other than these prediction types, there's also a parameter called ``iteration_range``,
 which is similar to model slicing.  But instead of actually splitting up the model into
@@ -67,6 +74,18 @@ the 3-class classification dataset, and want to use the first 2 iterations of tr
 prediction, you need to provide ``iteration_range=(0, 2)``.  Then the first :math:`2
 \times 3 \times 4` trees will be used in this prediction.
 
+**************
+Early Stopping
+**************
+
+When a model is trained with early stopping, there is an inconsistent behavior between
+native Python interface and sklearn/R interfaces.  By default on R and sklearn interfaces,
+the ``best_iteration`` is automatically used so prediction comes from the best model.  But
+with the native Python interface :py:meth:`xgboost.Booster.predict` and
+:py:meth:`xgboost.Booster.inplace_predict` uses the full model.  Users can use
+``best_iteration`` attribute with ``iteration_range`` parameter to achieve the same
+behavior.  Also the ``save_best`` parameter from :py:obj:`xgboost.callback.EarlyStopping`
+might be useful.
 
 *********
 Predictor

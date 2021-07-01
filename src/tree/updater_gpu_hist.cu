@@ -25,6 +25,7 @@
 #include "../data/ellpack_page.cuh"
 
 #include "param.h"
+#include "driver.h"
 #include "updater_gpu_common.cuh"
 #include "split_evaluator.h"
 #include "constraints.cuh"
@@ -33,7 +34,7 @@
 #include "gpu_hist/row_partitioner.cuh"
 #include "gpu_hist/histogram.cuh"
 #include "gpu_hist/evaluate_splits.cuh"
-#include "gpu_hist/driver.cuh"
+#include "gpu_hist/expand_entry.cuh"
 
 namespace xgboost {
 namespace tree {
@@ -93,8 +94,8 @@ class DeviceHistogram {
 
   void Reset() {
     auto d_data = data_.data().get();
-      dh::LaunchN(device_id_, data_.size(),
-                  [=] __device__(size_t idx) { d_data[idx] = 0.0f; });
+    dh::LaunchN(data_.size(),
+                [=] __device__(size_t idx) { d_data[idx] = 0.0f; });
     nidx_map_.clear();
   }
   bool HistogramExists(int nidx) const {
@@ -129,7 +130,7 @@ class DeviceHistogram {
       }
       // Zero recycled memory
       auto d_data = data_.data().get() + nidx_map_[nidx];
-      dh::LaunchN(device_id_, n_bins_ * 2,
+      dh::LaunchN(n_bins_ * 2,
                   [=] __device__(size_t idx) { d_data[idx] = 0.0f; });
     } else {
       // Append new node histogram
@@ -273,9 +274,9 @@ struct GPUHistMakerDevice {
     if (d_gpair.size() != dh_gpair->Size()) {
       d_gpair.resize(dh_gpair->Size());
     }
-    thrust::copy(thrust::device, dh_gpair->ConstDevicePointer(),
-                 dh_gpair->ConstDevicePointer() + dh_gpair->Size(),
-                 d_gpair.begin());
+    dh::safe_cuda(cudaMemcpyAsync(
+        d_gpair.data().get(), dh_gpair->ConstDevicePointer(),
+        dh_gpair->Size() * sizeof(GradientPair), cudaMemcpyDeviceToDevice));
     auto sample = sampler->Sample(dh::ToSpan(d_gpair), dmat);
     page = sample.page;
     gpair = sample.gpair;
@@ -321,8 +322,8 @@ struct GPUHistMakerDevice {
   }
 
   void EvaluateLeftRightSplits(
-      ExpandEntry candidate, int left_nidx, int right_nidx, const RegTree& tree,
-      common::Span<ExpandEntry> pinned_candidates_out) {
+      GPUExpandEntry candidate, int left_nidx, int right_nidx, const RegTree& tree,
+      common::Span<GPUExpandEntry> pinned_candidates_out) {
     dh::TemporaryArray<DeviceSplitCandidate> splits_out(2);
     GPUTrainingParam gpu_param(param);
     auto left_sampled_features =
@@ -363,10 +364,10 @@ struct GPUHistMakerDevice {
         hist.GetNodeHistogram(right_nidx)};
     auto d_splits_out = dh::ToSpan(splits_out);
     EvaluateSplits(d_splits_out, tree_evaluator.GetEvaluator<GPUTrainingParam>(), left, right);
-    dh::TemporaryArray<ExpandEntry> entries(2);
+    dh::TemporaryArray<GPUExpandEntry> entries(2);
     auto evaluator = tree_evaluator.GetEvaluator<GPUTrainingParam>();
     auto d_entries = entries.data().get();
-    dh::LaunchN(device_id, 2, [=] __device__(size_t idx) {
+    dh::LaunchN(2, [=] __device__(size_t idx) {
       auto split = d_splits_out[idx];
       auto nidx = idx == 0 ? left_nidx : right_nidx;
 
@@ -378,12 +379,12 @@ struct GPUHistMakerDevice {
           nidx, gpu_param, GradStats{split.right_sum});
 
       d_entries[idx] =
-          ExpandEntry{nidx,        candidate.depth + 1, d_splits_out[idx],
+          GPUExpandEntry{nidx,        candidate.depth + 1, d_splits_out[idx],
                       base_weight, left_weight,         right_weight};
     });
     dh::safe_cuda(cudaMemcpyAsync(
         pinned_candidates_out.data(), entries.data().get(),
-        sizeof(ExpandEntry) * entries.size(), cudaMemcpyDeviceToHost));
+        sizeof(GPUExpandEntry) * entries.size(), cudaMemcpyDeviceToHost));
   }
 
   void BuildHist(int nidx) {
@@ -401,7 +402,7 @@ struct GPUHistMakerDevice {
     auto d_node_hist_histogram = hist.GetNodeHistogram(nidx_histogram);
     auto d_node_hist_subtraction = hist.GetNodeHistogram(nidx_subtraction);
 
-    dh::LaunchN(device_id, page->Cuts().TotalBins(), [=] __device__(size_t idx) {
+    dh::LaunchN(page->Cuts().TotalBins(), [=] __device__(size_t idx) {
       d_node_hist_subtraction[idx] =
           d_node_hist_parent[idx] - d_node_hist_histogram[idx];
     });
@@ -528,8 +529,9 @@ struct GPUHistMakerDevice {
         });
   }
 
-  void UpdatePredictionCache(common::Span<bst_float> out_preds_d) {
+  void UpdatePredictionCache(VectorView<float> out_preds_d) {
     dh::safe_cuda(cudaSetDevice(device_id));
+    CHECK_EQ(out_preds_d.DeviceIdx(), device_id);
     auto d_ridx = row_partitioner->GetRows();
 
     GPUTrainingParam param_d(param);
@@ -543,14 +545,14 @@ struct GPUHistMakerDevice {
     auto d_node_sum_gradients = device_node_sum_gradients.data().get();
     auto evaluator = tree_evaluator.GetEvaluator<GPUTrainingParam>();
 
-    dh::LaunchN(
-        device_id, out_preds_d.size(), [=] __device__(int local_idx) {
-          int pos = d_position[local_idx];
-          bst_float weight = evaluator.CalcWeight(pos, param_d,
-                                                  GradStats{d_node_sum_gradients[pos]});
-          out_preds_d[d_ridx[local_idx]] +=
-              weight * param_d.learning_rate;
-        });
+    dh::LaunchN(d_ridx.size(), [=] __device__(int local_idx) {
+      int pos = d_position[local_idx];
+      bst_float weight = evaluator.CalcWeight(
+          pos, param_d, GradStats{d_node_sum_gradients[pos]});
+      static_assert(!std::is_const<decltype(out_preds_d)>::value, "");
+      auto v_predt = out_preds_d;  // for some reason out_preds_d is const by both nvcc and clang.
+      v_predt[d_ridx[local_idx]] += weight * param_d.learning_rate;
+    });
     row_partitioner.reset();
   }
 
@@ -568,7 +570,7 @@ struct GPUHistMakerDevice {
   /**
    * \brief Build GPU local histograms for the left and right child of some parent node
    */
-  void BuildHistLeftRight(const ExpandEntry &candidate, int nidx_left,
+  void BuildHistLeftRight(const GPUExpandEntry &candidate, int nidx_left,
         int nidx_right, dh::AllReducer* reducer) {
     auto build_hist_nidx = nidx_left;
     auto subtraction_trick_nidx = nidx_right;
@@ -598,7 +600,7 @@ struct GPUHistMakerDevice {
     }
   }
 
-  void ApplySplit(const ExpandEntry& candidate, RegTree* p_tree) {
+  void ApplySplit(const GPUExpandEntry& candidate, RegTree* p_tree) {
     RegTree& tree = *p_tree;
     auto evaluator = tree_evaluator.GetEvaluator();
     auto parent_sum = candidate.split.left_sum + candidate.split.right_sum;
@@ -646,7 +648,7 @@ struct GPUHistMakerDevice {
                                   tree[candidate.nid].RightChild());
   }
 
-  ExpandEntry InitRoot(RegTree* p_tree, dh::AllReducer* reducer) {
+  GPUExpandEntry InitRoot(RegTree* p_tree, dh::AllReducer* reducer) {
     constexpr bst_node_t kRootNIdx = 0;
     dh::XGBCachingDeviceAllocator<char> alloc;
     GradientPair root_sum = dh::Reduce(
@@ -669,31 +671,31 @@ struct GPUHistMakerDevice {
 
     // Generate first split
     auto split = this->EvaluateRootSplit(root_sum);
-    dh::TemporaryArray<ExpandEntry> entries(1);
+    dh::TemporaryArray<GPUExpandEntry> entries(1);
     auto d_entries = entries.data().get();
     auto evaluator = tree_evaluator.GetEvaluator<GPUTrainingParam>();
     GPUTrainingParam gpu_param(param);
     auto depth = p_tree->GetDepth(kRootNIdx);
-    dh::LaunchN(device_id, 1, [=] __device__(size_t idx) {
+    dh::LaunchN(1, [=] __device__(size_t idx) {
       float left_weight = evaluator.CalcWeight(kRootNIdx, gpu_param,
                                                GradStats{split.left_sum});
       float right_weight = evaluator.CalcWeight(
           kRootNIdx, gpu_param, GradStats{split.right_sum});
       d_entries[0] =
-          ExpandEntry(kRootNIdx, depth, split,
+          GPUExpandEntry(kRootNIdx, depth, split,
                       weight, left_weight, right_weight);
     });
-    ExpandEntry root_entry;
+    GPUExpandEntry root_entry;
     dh::safe_cuda(cudaMemcpyAsync(
         &root_entry, entries.data().get(),
-        sizeof(ExpandEntry) * entries.size(), cudaMemcpyDeviceToHost));
+        sizeof(GPUExpandEntry) * entries.size(), cudaMemcpyDeviceToHost));
     return root_entry;
   }
 
   void UpdateTree(HostDeviceVector<GradientPair>* gpair_all, DMatrix* p_fmat,
                   RegTree* p_tree, dh::AllReducer* reducer) {
     auto& tree = *p_tree;
-    Driver driver(static_cast<TrainParam::TreeGrowPolicy>(param.grow_policy));
+    Driver<GPUExpandEntry> driver(static_cast<TrainParam::TreeGrowPolicy>(param.grow_policy));
 
     monitor.Start("Reset");
     this->Reset(gpair_all, p_fmat, p_fmat->Info().num_col_);
@@ -709,7 +711,7 @@ struct GPUHistMakerDevice {
     auto expand_set = driver.Pop();
     while (!expand_set.empty()) {
       auto new_candidates =
-          pinned.GetSpan<ExpandEntry>(expand_set.size() * 2, ExpandEntry());
+          pinned.GetSpan<GPUExpandEntry>(expand_set.size() * 2, GPUExpandEntry());
 
       for (auto i = 0ull; i < expand_set.size(); i++) {
         auto candidate = expand_set.at(i);
@@ -723,7 +725,7 @@ struct GPUHistMakerDevice {
         int left_child_nidx = tree[candidate.nid].LeftChild();
         int right_child_nidx = tree[candidate.nid].RightChild();
         // Only create child entries if needed
-        if (ExpandEntry::ChildIsValid(param, tree.GetDepth(left_child_nidx),
+        if (GPUExpandEntry::ChildIsValid(param, tree.GetDepth(left_child_nidx),
                                       num_leaves)) {
           monitor.Start("UpdatePosition");
           this->UpdatePosition(candidate.nid, p_tree);
@@ -740,8 +742,8 @@ struct GPUHistMakerDevice {
           monitor.Stop("EvaluateSplits");
         } else {
           // Set default
-          new_candidates[i * 2] = ExpandEntry();
-          new_candidates[i * 2 + 1] = ExpandEntry();
+          new_candidates[i * 2] = GPUExpandEntry();
+          new_candidates[i * 2 + 1] = GPUExpandEntry();
         }
       }
       dh::safe_cuda(cudaDeviceSynchronize());
@@ -862,13 +864,12 @@ class GPUHistMakerSpecialised {
     maker->UpdateTree(gpair, p_fmat, p_tree, &reducer_);
   }
 
-  bool UpdatePredictionCache(const DMatrix* data, HostDeviceVector<bst_float>* p_out_preds) {
+  bool UpdatePredictionCache(const DMatrix* data, VectorView<bst_float> p_out_preds) {
     if (maker == nullptr || p_last_fmat_ == nullptr || p_last_fmat_ != data) {
       return false;
     }
     monitor_.Start("UpdatePredictionCache");
-    p_out_preds->SetDevice(device_);
-    maker->UpdatePredictionCache(p_out_preds->DeviceSpan());
+    maker->UpdatePredictionCache(p_out_preds);
     monitor_.Stop("UpdatePredictionCache");
     return true;
   }
@@ -947,8 +948,8 @@ class GPUHistMaker : public TreeUpdater {
     }
   }
 
-  bool UpdatePredictionCache(
-      const DMatrix* data, HostDeviceVector<bst_float>* p_out_preds) override {
+  bool UpdatePredictionCache(const DMatrix *data,
+                             VectorView<bst_float> p_out_preds) override {
     if (hist_maker_param_.single_precision_histogram) {
       return float_maker_->UpdatePredictionCache(data, p_out_preds);
     } else {

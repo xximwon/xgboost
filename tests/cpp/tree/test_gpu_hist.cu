@@ -132,7 +132,7 @@ TEST(GpuHist, BuildHistSharedMem) {
 
 TEST(GpuHist, ApplySplit) {
   RegTree tree;
-  ExpandEntry candidate;
+  GPUExpandEntry candidate;
   candidate.nid = 0;
   candidate.left_weight = 1.0f;
   candidate.right_weight = 2.0f;
@@ -390,7 +390,10 @@ void UpdateTree(HostDeviceVector<GradientPair>* gpair, DMatrix* dmat,
   hist_maker.Configure(args, &generic_param);
 
   hist_maker.Update(gpair, dmat, {tree});
-  hist_maker.UpdatePredictionCache(dmat, preds);
+  hist_maker.UpdatePredictionCache(
+      dmat,
+      VectorView<float>{
+          MatrixView<float>(preds, {preds->Size(), 1}, preds->DeviceIdx()), 0});
 }
 
 TEST(GpuHist, UniformSampling) {

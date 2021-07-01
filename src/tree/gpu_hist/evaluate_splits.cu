@@ -315,7 +315,7 @@ void EvaluateSplits(common::Span<DeviceSplitCandidate> out_splits,
    * Handle trivial input
    */
   if (n_features == 0) {
-    dh::LaunchN(dh::CurrentDevice(), out_splits.size(), [=]XGBOOST_DEVICE(size_t idx) {
+    dh::LaunchN(out_splits.size(), [=]XGBOOST_DEVICE(size_t idx) {
       out_splits[idx] = DeviceSplitCandidate{};
     });
     return;

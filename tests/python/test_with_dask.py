@@ -28,7 +28,6 @@ if tm.no_dask()['condition']:
     pytest.skip(msg=tm.no_dask()['reason'], allow_module_level=True)
 
 from distributed import LocalCluster, Client
-from distributed.utils_test import client, loop, cluster_fixture
 import dask.dataframe as dd
 import dask.array as da
 from xgboost.dask import DaskDMatrix
@@ -38,6 +37,20 @@ if hasattr(HealthCheck, 'function_scoped_fixture'):
     suppress = [HealthCheck.function_scoped_fixture]
 else:
     suppress = hypothesis.utils.conventions.not_set  # type:ignore
+
+
+@pytest.fixture(scope='module')
+def cluster():
+    with LocalCluster(
+        n_workers=2, threads_per_worker=2, dashboard_address=None
+    ) as dask_cluster:
+        yield dask_cluster
+
+
+@pytest.fixture
+def client(cluster):
+    with Client(cluster) as dask_client:
+        yield dask_client
 
 
 kRows = 1000
@@ -99,6 +112,12 @@ def test_from_dask_dataframe() -> None:
             assert isinstance(series_predictions, dd.Series)
             np.testing.assert_allclose(series_predictions.compute().values,
                                        from_dmatrix)
+
+            # Make sure the output can be integrated back to original dataframe
+            X["predict"] = prediction
+            X["inplace_predict"] = series_predictions
+
+            assert bool(X.isnull().values.any().compute()) is False
 
 
 def test_from_dask_array() -> None:
@@ -317,6 +336,7 @@ def run_dask_classifier(
     y: xgb.dask._DaskCollection,
     w: xgb.dask._DaskCollection,
     model: str,
+    tree_method: Optional[str],
     client: "Client",
     n_classes,
 ) -> None:
@@ -324,11 +344,11 @@ def run_dask_classifier(
 
     if model == "boosting":
         classifier = xgb.dask.DaskXGBClassifier(
-            verbosity=1, n_estimators=2, eval_metric=metric
+            verbosity=1, n_estimators=2, eval_metric=metric, tree_method=tree_method
         )
     else:
         classifier = xgb.dask.DaskXGBRFClassifier(
-            verbosity=1, n_estimators=2, eval_metric=metric
+            verbosity=1, n_estimators=2, eval_metric=metric, tree_method=tree_method
         )
 
     assert classifier._estimator_type == "classifier"
@@ -397,12 +417,12 @@ def run_dask_classifier(
 def test_dask_classifier(model: str, client: "Client") -> None:
     X, y, w = generate_array(with_weights=True)
     y = (y * 10).astype(np.int32)
-    run_dask_classifier(X, y, w, model, client, 10)
+    run_dask_classifier(X, y, w, model, None, client, 10)
 
     y_bin = y.copy()
     y_bin[y > 5] = 1.0
     y_bin[y <= 5] = 0.0
-    run_dask_classifier(X, y_bin, w, model, client, 2)
+    run_dask_classifier(X, y_bin, w, model, None, client, 2)
 
 
 @pytest.mark.skipif(**tm.no_sklearn())
@@ -568,22 +588,26 @@ def run_empty_dmatrix_auc(client: "Client", tree_method: str, n_workers: int) ->
     # multiclass
     X_, y_ = make_classification(
         n_samples=n_samples,
-        n_classes=10,
+        n_classes=n_workers,
         n_informative=n_features,
         n_redundant=0,
         n_repeated=0
     )
+    for i in range(y_.shape[0]):
+        y_[i] = i % n_workers
     X = dd.from_array(X_, chunksize=10)
     y = dd.from_array(y_, chunksize=10)
 
     n_samples = n_workers - 1
     valid_X_, valid_y_ = make_classification(
         n_samples=n_samples,
-        n_classes=10,
+        n_classes=n_workers,
         n_informative=n_features,
         n_redundant=0,
         n_repeated=0
     )
+    for i in range(valid_y_.shape[0]):
+        valid_y_[i] = i % n_workers
     valid_X = dd.from_array(valid_X_, chunksize=n_samples)
     valid_y = dd.from_array(valid_y_, chunksize=n_samples)
 
@@ -594,9 +618,9 @@ def run_empty_dmatrix_auc(client: "Client", tree_method: str, n_workers: int) ->
 
 
 def test_empty_dmatrix_auc() -> None:
-    with LocalCluster(n_workers=2) as cluster:
+    with LocalCluster(n_workers=8) as cluster:
         with Client(cluster) as client:
-            run_empty_dmatrix_auc(client, "hist", 2)
+            run_empty_dmatrix_auc(client, "hist", 8)
 
 
 def run_auc(client: "Client", tree_method: str) -> None:
@@ -941,6 +965,39 @@ def test_dask_predict_leaf(booster: str, client: "Client") -> None:
     verify_leaf_output(leaf, num_parallel_tree)
 
 
+def test_dask_iteration_range(client: "Client"):
+    X, y, _ = generate_array()
+    n_rounds = 10
+
+    Xy = xgb.DMatrix(X.compute(), y.compute())
+
+    dXy = xgb.dask.DaskDMatrix(client, X, y)
+    booster = xgb.dask.train(
+        client, {"tree_method": "hist"}, dXy, num_boost_round=n_rounds
+    )["booster"]
+
+    for i in range(0, n_rounds):
+        iter_range = (0, i)
+        native_predt = booster.predict(Xy, iteration_range=iter_range)
+
+        with_dask_dmatrix = xgb.dask.predict(
+            client, booster, dXy, iteration_range=iter_range
+        )
+        with_dask_collection = xgb.dask.predict(
+            client, booster, X, iteration_range=iter_range
+        )
+        with_inplace = xgb.dask.inplace_predict(
+            client, booster, X, iteration_range=iter_range
+        )
+        np.testing.assert_allclose(native_predt, with_dask_dmatrix.compute())
+        np.testing.assert_allclose(native_predt, with_dask_collection.compute())
+        np.testing.assert_allclose(native_predt, with_inplace.compute())
+
+    full_predt = xgb.dask.predict(client, booster, X, iteration_range=(0, n_rounds))
+    default = xgb.dask.predict(client, booster, X)
+    np.testing.assert_allclose(full_predt.compute(), default.compute())
+
+
 class TestWithDask:
     @pytest.mark.parametrize('config_key,config_value', [('verbosity', 0), ('use_rmm', True)])
     def test_global_config(
@@ -1023,7 +1080,17 @@ class TestWithDask:
                                  evals=[(m, 'train')])['history']
         note(history)
         history = history['train'][dataset.metric]
-        assert tm.non_increasing(history)
+
+        def is_stump():
+            return params["max_depth"] == 1 or params["max_leaves"] == 1
+
+        def minimum_bin():
+            return "max_bin" in params and params["max_bin"] == 2
+
+        if minimum_bin() and is_stump():
+            assert tm.non_increasing(history, tolerance=1e-3)
+        else:
+            assert tm.non_increasing(history)
         # Make sure that it's decreasing
         assert history[-1] < history[0]
 

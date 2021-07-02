@@ -1,7 +1,5 @@
 #!/bin/bash
 
-make -f dmlc-core/scripts/packages.mk lz4
-
 source $HOME/miniconda/bin/activate
 
 if [ ${TASK} == "python_sdist_test" ]; then
@@ -105,5 +103,5 @@ if [ ${TASK} == "s390x_test" ]; then
     # Run model compatibility tests
     cd ..
     python3 -m pip install --user pytest hypothesis
-    PYTHONPATH=./python-package python3 -m pytest --fulltrace -v -rxXs tests/python/ -k 'test_model'
+    PYTHONPATH=./python-package python3 -m pytest --fulltrace -v -rxXs tests/python/test_basic.py
 fi

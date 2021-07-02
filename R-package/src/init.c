@@ -17,6 +17,7 @@ Check these declarations against the C/Fortran source code.
 /* .Call calls */
 extern SEXP XGBoosterBoostOneIter_R(SEXP, SEXP, SEXP, SEXP);
 extern SEXP XGBoosterCreate_R(SEXP);
+extern SEXP XGBoosterCreateInEmptyObj_R(SEXP, SEXP);
 extern SEXP XGBoosterDumpModel_R(SEXP, SEXP, SEXP, SEXP);
 extern SEXP XGBoosterEvalOneIter_R(SEXP, SEXP, SEXP, SEXP);
 extern SEXP XGBoosterGetAttrNames_R(SEXP);
@@ -29,6 +30,7 @@ extern SEXP XGBoosterSerializeToBuffer_R(SEXP handle);
 extern SEXP XGBoosterUnserializeFromBuffer_R(SEXP handle, SEXP raw);
 extern SEXP XGBoosterModelToRaw_R(SEXP);
 extern SEXP XGBoosterPredict_R(SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP XGBoosterPredictFromDMatrix_R(SEXP, SEXP, SEXP);
 extern SEXP XGBoosterSaveModel_R(SEXP, SEXP);
 extern SEXP XGBoosterSetAttr_R(SEXP, SEXP, SEXP);
 extern SEXP XGBoosterSetParam_R(SEXP, SEXP, SEXP);
@@ -45,10 +47,12 @@ extern SEXP XGDMatrixSetInfo_R(SEXP, SEXP, SEXP);
 extern SEXP XGDMatrixSliceDMatrix_R(SEXP, SEXP);
 extern SEXP XGBSetGlobalConfig_R(SEXP);
 extern SEXP XGBGetGlobalConfig_R();
+extern SEXP XGBoosterFeatureScore_R(SEXP, SEXP);
 
 static const R_CallMethodDef CallEntries[] = {
   {"XGBoosterBoostOneIter_R",     (DL_FUNC) &XGBoosterBoostOneIter_R,     4},
   {"XGBoosterCreate_R",           (DL_FUNC) &XGBoosterCreate_R,           1},
+  {"XGBoosterCreateInEmptyObj_R", (DL_FUNC) &XGBoosterCreateInEmptyObj_R, 2},
   {"XGBoosterDumpModel_R",        (DL_FUNC) &XGBoosterDumpModel_R,        4},
   {"XGBoosterEvalOneIter_R",      (DL_FUNC) &XGBoosterEvalOneIter_R,      4},
   {"XGBoosterGetAttrNames_R",     (DL_FUNC) &XGBoosterGetAttrNames_R,     1},
@@ -61,6 +65,7 @@ static const R_CallMethodDef CallEntries[] = {
   {"XGBoosterUnserializeFromBuffer_R", (DL_FUNC) &XGBoosterUnserializeFromBuffer_R, 2},
   {"XGBoosterModelToRaw_R",       (DL_FUNC) &XGBoosterModelToRaw_R,       1},
   {"XGBoosterPredict_R",          (DL_FUNC) &XGBoosterPredict_R,          5},
+  {"XGBoosterPredictFromDMatrix_R", (DL_FUNC) &XGBoosterPredictFromDMatrix_R, 3},
   {"XGBoosterSaveModel_R",        (DL_FUNC) &XGBoosterSaveModel_R,        2},
   {"XGBoosterSetAttr_R",          (DL_FUNC) &XGBoosterSetAttr_R,          3},
   {"XGBoosterSetParam_R",         (DL_FUNC) &XGBoosterSetParam_R,         3},
@@ -77,6 +82,7 @@ static const R_CallMethodDef CallEntries[] = {
   {"XGDMatrixSliceDMatrix_R",     (DL_FUNC) &XGDMatrixSliceDMatrix_R,     2},
   {"XGBSetGlobalConfig_R",        (DL_FUNC) &XGBSetGlobalConfig_R,        1},
   {"XGBGetGlobalConfig_R",        (DL_FUNC) &XGBGetGlobalConfig_R,        0},
+  {"XGBoosterFeatureScore_R",     (DL_FUNC) &XGBoosterFeatureScore_R,     2},
   {NULL, NULL, 0}
 };
 

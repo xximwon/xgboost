@@ -75,6 +75,11 @@ def run_predict_leaf(predictor):
     first = sliced[0, ...]
 
     assert np.prod(first.shape) == classes * num_parallel_tree * ntree_limit
+
+    # When there's only 1 tree, the output is a 1 dim vector
+    booster = xgb.train({"tree_method": "hist"}, num_boost_round=1, dtrain=m)
+    assert booster.predict(m, pred_leaf=True).shape == (rows, )
+
     return leaf
 
 
@@ -140,6 +145,7 @@ class TestInplacePredict:
         dtrain = xgb.DMatrix(cls.X, cls.y)
         cls.test = xgb.DMatrix(cls.X[:10, ...], missing=cls.missing)
 
+        cls.num_boost_round = 10
         cls.booster = xgb.train({'tree_method': 'hist'}, dtrain, num_boost_round=10)
 
     def test_predict(self):
@@ -150,6 +156,14 @@ class TestInplacePredict:
         predt_from_array = booster.inplace_predict(X[:10, ...], missing=self.missing)
         predt_from_dmatrix = booster.predict(test)
 
+        X_obj = X.copy().astype(object)
+
+        assert X_obj.dtype.hasobject is True
+        assert X.dtype.hasobject is False
+        np.testing.assert_allclose(
+            booster.inplace_predict(X_obj), booster.inplace_predict(X)
+        )
+
         np.testing.assert_allclose(predt_from_dmatrix, predt_from_array)
 
         predt_from_array = booster.inplace_predict(
@@ -158,6 +172,25 @@ class TestInplacePredict:
         predt_from_dmatrix = booster.predict(test, ntree_limit=4)
 
         np.testing.assert_allclose(predt_from_dmatrix, predt_from_array)
+
+        with pytest.raises(ValueError):
+            booster.predict(test, ntree_limit=booster.best_ntree_limit + 1)
+        with pytest.raises(ValueError):
+            booster.predict(test, iteration_range=(0, booster.best_iteration + 2))
+
+        default = booster.predict(test)
+
+        range_full = booster.predict(test, iteration_range=(0, self.num_boost_round))
+        ntree_full = booster.predict(test, ntree_limit=self.num_boost_round)
+        np.testing.assert_allclose(range_full, default)
+        np.testing.assert_allclose(ntree_full, default)
+
+        range_full = booster.predict(
+            test, iteration_range=(0, booster.best_iteration + 1)
+        )
+        ntree_full = booster.predict(test, ntree_limit=booster.best_ntree_limit)
+        np.testing.assert_allclose(range_full, default)
+        np.testing.assert_allclose(ntree_full, default)
 
         def predict_dense(x):
             inplace_predt = booster.inplace_predict(x)
@@ -187,8 +220,13 @@ class TestInplacePredict:
         arr_predt = booster.inplace_predict(X)
         dmat_predt = booster.predict(xgb.DMatrix(X))
 
+        X = df.values
+        X = np.asfortranarray(X)
+        fort_predt = booster.inplace_predict(X)
+
         np.testing.assert_allclose(dmat_predt, arr_predt)
         np.testing.assert_allclose(df_predt, arr_predt)
+        np.testing.assert_allclose(fort_predt, arr_predt)
 
     def test_base_margin(self):
         booster = self.booster
@@ -199,3 +237,51 @@ class TestInplacePredict:
         dtrain = xgb.DMatrix(self.X, self.y, base_margin=base_margin)
         from_dmatrix = booster.predict(dtrain)
         np.testing.assert_allclose(from_dmatrix, from_inplace)
+
+    def test_dtypes(self):
+        orig = self.rng.randint(low=0, high=127, size=self.rows * self.cols).reshape(
+            self.rows, self.cols
+        )
+        predt_orig = self.booster.inplace_predict(orig)
+        # all primitive types in numpy
+        for dtype in [
+            np.signedinteger,
+            np.byte,
+            np.short,
+            np.intc,
+            np.int_,
+            np.longlong,
+            np.unsignedinteger,
+            np.ubyte,
+            np.ushort,
+            np.uintc,
+            np.uint,
+            np.ulonglong,
+            np.floating,
+            np.half,
+            np.single,
+            np.double,
+        ]:
+            X = np.array(orig, dtype=dtype)
+            predt = self.booster.inplace_predict(X)
+            np.testing.assert_allclose(predt, predt_orig)
+
+        # boolean
+        orig = self.rng.binomial(1, 0.5, size=self.rows * self.cols).reshape(
+            self.rows, self.cols
+        )
+        predt_orig = self.booster.inplace_predict(orig)
+        for dtype in [np.bool8, np.bool_]:
+            X = np.array(orig, dtype=dtype)
+            predt = self.booster.inplace_predict(X)
+            np.testing.assert_allclose(predt, predt_orig)
+
+        # unsupported types
+        for dtype in [
+            np.string_,
+            np.complex64,
+            np.complex128,
+        ]:
+            X = np.array(orig, dtype=dtype)
+            with pytest.raises(ValueError):
+                self.booster.inplace_predict(X)

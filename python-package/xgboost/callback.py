@@ -165,9 +165,7 @@ def early_stop(stopping_rounds, maximize=False, verbose=True):
     If there's more than one, will use the last.
     Returns the model from the last iteration (not the best one).
     If early stopping occurs, the model will have three additional fields:
-    ``bst.best_score``, ``bst.best_iteration`` and ``bst.best_ntree_limit``.
-    (Use ``bst.best_ntree_limit`` to get the correct value if ``num_parallel_tree``
-    and/or ``num_class`` appears in the parameters)
+    ``bst.best_score``, ``bst.best_iteration``.
 
     Parameters
     ----------
@@ -276,6 +274,9 @@ class TrainingCallback(ABC):
     .. versionadded:: 1.3.0
 
     '''
+
+    EvalsLog = Dict[str, Dict[str, Union[List[float], List[Tuple[float, float]]]]]
+
     def __init__(self):
         pass
 
@@ -287,13 +288,11 @@ class TrainingCallback(ABC):
         '''Run after training is finished.'''
         return model
 
-    def before_iteration(self, model, epoch: int,
-                         evals_log: 'CallbackContainer.EvalsLog') -> bool:
+    def before_iteration(self, model, epoch: int, evals_log: EvalsLog) -> bool:
         '''Run before each iteration.  Return True when training should stop.'''
         return False
 
-    def after_iteration(self, model, epoch: int,
-                        evals_log: 'CallbackContainer.EvalsLog') -> bool:
+    def after_iteration(self, model, epoch: int, evals_log: EvalsLog) -> bool:
         '''Run after each iteration.  Return True when training should stop.'''
         return False
 
@@ -351,7 +350,7 @@ class CallbackContainer:
 
     '''
 
-    EvalsLog = Dict[str, Dict[str, Union[List[float], List[Tuple[float, float]]]]]
+    EvalsLog = TrainingCallback.EvalsLog
 
     def __init__(self,
                  callbacks: List[TrainingCallback],
@@ -486,25 +485,44 @@ class EarlyStopping(TrainingCallback):
         Whether to maximize evaluation metric.  None means auto (discouraged).
     save_best
         Whether training should return the best model or the last model.
+    abs_tol
+        Absolute tolerance for early stopping condition.
+
+        .. versionadded:: 1.5.0
+
+        .. code-block:: python
+
+            clf = xgboost.XGBClassifier(tree_method="gpu_hist")
+            es = xgboost.callback.EarlyStopping(
+                rounds=2,
+                abs_tol=1e-3,
+                save_best=True,
+                maximize=False,
+                data_name="validation_0",
+                metric_name="mlogloss",
+            )
+
+            X, y = load_digits(return_X_y=True)
+            clf.fit(X, y, eval_set=[(X, y)], callbacks=[es])
     """
     def __init__(self,
                  rounds: int,
                  metric_name: Optional[str] = None,
                  data_name: Optional[str] = None,
                  maximize: Optional[bool] = None,
-                 save_best: Optional[bool] = False) -> None:
+                 save_best: Optional[bool] = False,
+                 abs_tol: float = 0) -> None:
         self.data = data_name
         self.metric_name = metric_name
         self.rounds = rounds
         self.save_best = save_best
         self.maximize = maximize
         self.stopping_history: CallbackContainer.EvalsLog = {}
+        self._tol = abs_tol
+        if self._tol < 0:
+            raise ValueError("tolerance must be greater or equal to 0.")
 
-        if self.maximize is not None:
-            if self.maximize:
-                self.improve_op = lambda x, y: x > y
-            else:
-                self.improve_op = lambda x, y: x < y
+        self.improve_op = None
 
         self.current_rounds: int = 0
         self.best_scores: dict = {}
@@ -516,17 +534,32 @@ class EarlyStopping(TrainingCallback):
         return model
 
     def _update_rounds(self, score, name, metric, model, epoch) -> bool:
-        # Just to be compatibility with old behavior before 1.3.  We should let
-        # user to decide.
+        def get_s(x):
+            """get score if it's cross validation history."""
+            return x[0] if isinstance(x, tuple) else x
+
+        def maximize(new, best):
+            return numpy.greater(get_s(new) + self._tol, get_s(best))
+
+        def minimize(new, best):
+            return numpy.greater(get_s(best) + self._tol, get_s(new))
+
         if self.maximize is None:
+            # Just to be compatibility with old behavior before 1.3.  We should let
+            # user to decide.
             maximize_metrics = ('auc', 'aucpr', 'map', 'ndcg', 'auc@',
                                 'aucpr@', 'map@', 'ndcg@')
-            if any(metric.startswith(x) for x in maximize_metrics):
-                self.improve_op = lambda x, y: x > y
+            if metric != 'mape' and any(metric.startswith(x) for x in maximize_metrics):
                 self.maximize = True
             else:
-                self.improve_op = lambda x, y: x < y
                 self.maximize = False
+
+        if self.maximize:
+            self.improve_op = maximize
+        else:
+            self.improve_op = minimize
+
+        assert self.improve_op
 
         if not self.stopping_history:  # First round
             self.current_rounds = 0

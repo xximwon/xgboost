@@ -215,7 +215,7 @@ test_that("train and predict RF with softprob", {
   bst <- xgboost(data = as.matrix(iris[, -5]), label = lb,
                  max_depth = 3, eta = 0.9, nthread = 2, nrounds = nrounds,
                  objective = "multi:softprob", eval_metric = "merror",
-                 num_class = 3, verbose = 0,
+                 num_class = 3, verbosity = 0,
                  num_parallel_tree = 4, subsample = 0.5, colsample_bytree = 0.5)
   expect_equal(bst$niter, 15)
   expect_equal(xgb.ntree(bst), 15 * 3 * 4)
@@ -246,29 +246,29 @@ test_that("use of multiple eval metrics works", {
 test_that("training continuation works", {
   dtrain <- xgb.DMatrix(train$data, label = train$label)
   watchlist <- list(train = dtrain)
-  param <- list(objective = "binary:logistic", max_depth = 2, eta = 1, nthread = 2)
+  param <- list(objective = "binary:logistic", max_depth = 2, eta = 1, nthread = 2, verbosity = 0)
 
   # for the reference, use 4 iterations at once:
   set.seed(11)
-  bst <- xgb.train(param, dtrain, nrounds = 4, watchlist, verbose = 0)
+  bst <- xgb.train(param, dtrain, nrounds = 4, watchlist)
   # first two iterations:
   set.seed(11)
-  bst1 <- xgb.train(param, dtrain, nrounds = 2, watchlist, verbose = 0)
+  bst1 <- xgb.train(param, dtrain, nrounds = 2, watchlist)
   # continue for two more:
-  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, verbose = 0, xgb_model = bst1)
+  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, xgb_model = bst1)
   if (!windows_flag && !solaris_flag)
     expect_equal(bst$raw, bst2$raw)
   expect_false(is.null(bst2$evaluation_log))
   expect_equal(dim(bst2$evaluation_log), c(4, 2))
   expect_equal(bst2$evaluation_log, bst$evaluation_log)
   # test continuing from raw model data
-  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, verbose = 0, xgb_model = bst1$raw)
+  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, xgb_model = bst1$raw)
   if (!windows_flag && !solaris_flag)
     expect_equal(bst$raw, bst2$raw)
   expect_equal(dim(bst2$evaluation_log), c(2, 2))
   # test continuing from a model in file
   xgb.save(bst1, "xgboost.json")
-  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, verbose = 0, xgb_model = "xgboost.json")
+  bst2 <- xgb.train(param, dtrain, nrounds = 2, watchlist, xgb_model = "xgboost.json")
   if (!windows_flag && !solaris_flag)
     expect_equal(bst$raw, bst2$raw)
   expect_equal(dim(bst2$evaluation_log), c(2, 2))
@@ -296,7 +296,7 @@ test_that("xgb.cv works", {
   expect_output(
     cv <- xgb.cv(data = train$data, label = train$label, max_depth = 2, nfold = 5,
                  eta = 1., nthread = 2, nrounds = 2, objective = "binary:logistic",
-                 eval_metric = "error", verbose = TRUE)
+                 eval_metric = "error", verbosity = TRUE)
   , "train-error:")
   expect_is(cv, 'xgb.cv.synchronous')
   expect_false(is.null(cv$evaluation_log))
@@ -315,11 +315,11 @@ test_that("xgb.cv works with stratified folds", {
   set.seed(314159)
   cv <- xgb.cv(data = dtrain, max_depth = 2, nfold = 5,
                eta = 1., nthread = 2, nrounds = 2, objective = "binary:logistic",
-               verbose = TRUE, stratified = FALSE)
+               verbosity = TRUE, stratified = FALSE)
   set.seed(314159)
   cv2 <- xgb.cv(data = dtrain, max_depth = 2, nfold = 5,
                 eta = 1., nthread = 2, nrounds = 2, objective = "binary:logistic",
-                verbose = TRUE, stratified = TRUE)
+                verbosity = TRUE, stratified = TRUE)
   # Stratified folds should result in a different evaluation logs
   expect_true(all(cv$evaluation_log[, test_logloss_mean] != cv2$evaluation_log[, test_logloss_mean]))
 })
@@ -328,7 +328,7 @@ test_that("train and predict with non-strict classes", {
   # standard dense matrix input
   train_dense <- as.matrix(train$data)
   bst <- xgboost(data = train_dense, label = train$label, max_depth = 2,
-                 eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 0)
+                 eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbosity = 0)
   pr0 <- predict(bst, train_dense)
 
   # dense matrix-like input of non-matrix class
@@ -336,7 +336,7 @@ test_that("train and predict with non-strict classes", {
   expect_true(is.matrix(train_dense))
   expect_error(
     bst <- xgboost(data = train_dense, label = train$label, max_depth = 2,
-                   eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 0)
+                   eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbosity = 0)
     , regexp = NA)
   expect_error(pr <- predict(bst, train_dense), regexp = NA)
   expect_equal(pr0, pr)
@@ -346,7 +346,7 @@ test_that("train and predict with non-strict classes", {
   expect_true(is.matrix(train_dense))
   expect_error(
     bst <- xgboost(data = train_dense, label = train$label, max_depth = 2,
-                   eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 0)
+                   eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbosity = 0)
     , regexp = NA)
   expect_error(pr <- predict(bst, train_dense), regexp = NA)
   expect_equal(pr0, pr)
@@ -360,12 +360,14 @@ test_that("train and predict with non-strict classes", {
 test_that("max_delta_step works", {
   dtrain <- xgb.DMatrix(agaricus.train$data, label = agaricus.train$label)
   watchlist <- list(train = dtrain)
-  param <- list(objective = "binary:logistic", eval_metric = "logloss", max_depth = 2, nthread = 2, eta = 0.5)
+  param <- list(
+      objective = "binary:logistic", eval_metric = "logloss", max_depth = 2, nthread = 2, eta = 0.5, verbosity = 1
+  )
   nrounds <- 5
   # model with no restriction on max_delta_step
-  bst1 <- xgb.train(param, dtrain, nrounds, watchlist, verbose = 1)
+  bst1 <- xgb.train(param, dtrain, nrounds, watchlist)
   # model with restricted max_delta_step
-  bst2 <- xgb.train(param, dtrain, nrounds, watchlist, verbose = 1, max_delta_step = 1)
+  bst2 <- xgb.train(param, dtrain, nrounds, watchlist, max_delta_step = 1)
   # the no-restriction model is expected to have consistently lower loss during the initial iterations
   expect_true(all(bst1$evaluation_log$train_logloss < bst2$evaluation_log$train_logloss))
   expect_lt(mean(bst1$evaluation_log$train_logloss) / mean(bst2$evaluation_log$train_logloss), 0.8)
@@ -389,7 +391,7 @@ test_that("colsample_bytree works", {
                 colsample_bytree = 0.01, objective = "binary:logistic",
                 eval_metric = "auc")
   set.seed(2)
-  bst <- xgb.train(param, dtrain, nrounds = 100, watchlist, verbose = 0)
+  bst <- xgb.train(param, dtrain, nrounds = 100, watchlist)
   xgb.importance(model = bst)
   # If colsample_bytree works properly, a variety of features should be used
   # in the 100 trees

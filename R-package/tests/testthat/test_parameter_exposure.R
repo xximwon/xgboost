@@ -13,7 +13,7 @@ bst <- xgboost(data = dtrain,
                eta = 1,
                nrounds = 10,
                nthread = 1,
-               verbose = 0,
+               verbosity = 0,
                objective = "binary:logistic")
 
 test_that("call is exposed to R", {

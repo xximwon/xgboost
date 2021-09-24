@@ -22,11 +22,11 @@ label <- df[, ifelse(Improved == "Marked", 1, 0)]
 # binary
 nrounds <- 12
 bst.Tree <- xgboost(data = sparse_matrix, label = label, max_depth = 9,
-                    eta = 1, nthread = 2, nrounds = nrounds, verbose = 0,
+                    eta = 1, nthread = 2, nrounds = nrounds, verbosity = 0,
                     objective = "binary:logistic", booster = "gbtree")
 
 bst.GLM <- xgboost(data = sparse_matrix, label = label,
-                   eta = 1, nthread = 1, nrounds = nrounds, verbose = 0,
+                   eta = 1, nthread = 1, nrounds = nrounds, verbosity = 0,
                    objective = "binary:logistic", booster = "gblinear")
 
 feature.names <- colnames(sparse_matrix)
@@ -34,11 +34,11 @@ feature.names <- colnames(sparse_matrix)
 # multiclass
 mlabel <- as.numeric(iris$Species) - 1
 nclass <- 3
-mbst.Tree <- xgboost(data = as.matrix(iris[, -5]), label = mlabel, verbose = 0,
+mbst.Tree <- xgboost(data = as.matrix(iris[, -5]), label = mlabel, verbosity = 0,
                      max_depth = 3, eta = 0.5, nthread = 2, nrounds = nrounds,
                      objective = "multi:softprob", num_class = nclass, base_score = 0)
 
-mbst.GLM <- xgboost(data = as.matrix(iris[, -5]), label = mlabel, verbose = 0,
+mbst.GLM <- xgboost(data = as.matrix(iris[, -5]), label = mlabel, verbosity = 0,
                     booster = "gblinear", eta = 0.1, nthread = 1, nrounds = nrounds,
                     objective = "multi:softprob", num_class = nclass, base_score = 0)
 
@@ -330,7 +330,7 @@ test_that("xgb.importance works with GLM model", {
 
 test_that("xgb.model.dt.tree and xgb.importance work with a single split model", {
   bst1 <- xgboost(data = sparse_matrix, label = label, max_depth = 1,
-                  eta = 1, nthread = 2, nrounds = 1, verbose = 0,
+                  eta = 1, nthread = 2, nrounds = 1, verbosity = 0,
                   objective = "binary:logistic")
   expect_error(dt <- xgb.model.dt.tree(model = bst1), regexp = NA) # no error
   expect_equal(nrow(dt), 3)

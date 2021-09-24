@@ -25,7 +25,7 @@ evalerror <- function(preds, dtrain) {
 }
 
 param <- list(max_depth = 2, eta = 1, nthread = 2,
-              objective = logregobj, eval_metric = evalerror)
+              objective = logregobj, eval_metric = evalerror, verbosity = 0)
 num_round <- 2
 
 test_that("custom objective works", {
@@ -37,7 +37,7 @@ test_that("custom objective works", {
 })
 
 test_that("custom objective in CV works", {
-  cv <- xgb.cv(param, dtrain, num_round, nfold = 10, verbose = FALSE)
+  cv <- xgb.cv(param, dtrain, num_round, nfold = 10)
   expect_false(is.null(cv$evaluation_log))
   expect_equal(dim(cv$evaluation_log), c(2, 5))
   expect_lt(cv$evaluation_log[num_round, test_error_mean], 0.03)

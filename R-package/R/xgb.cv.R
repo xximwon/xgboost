@@ -126,6 +126,8 @@ xgb.cv <- function(params=list(), data, nrounds, nfold, label = NULL, missing = 
   check.deprecation(...)
 
   params <- check.booster.params(params, ...)
+  verbose <- NVL(params$verbosity, 1)
+
   # TODO: should we deprecate the redundant 'metrics' parameter?
   for (m in metrics)
     params <- c(params, list("eval_metric" = m))

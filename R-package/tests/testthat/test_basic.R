@@ -296,7 +296,7 @@ test_that("xgb.cv works", {
   expect_output(
     cv <- xgb.cv(data = train$data, label = train$label, max_depth = 2, nfold = 5,
                  eta = 1., nthread = 2, nrounds = 2, objective = "binary:logistic",
-                 eval_metric = "error", verbosity = TRUE)
+                 eval_metric = "error", verbosity = 1)
   , "train-error:")
   expect_is(cv, 'xgb.cv.synchronous')
   expect_false(is.null(cv$evaluation_log))

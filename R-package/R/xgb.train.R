@@ -10,6 +10,7 @@
 #' 1. General Parameters
 #'
 #' \itemize{
+#'   \item \code{verbosity} The level of verbose output. If 1, it will print information about performance. If 2, some additional information will be printed out.
 #'   \item \code{booster} which booster to use, can be \code{gbtree} or \code{gblinear}. Default: \code{gbtree}.
 #' }
 #'
@@ -73,7 +74,7 @@
 #' @param watchlist named list of xgb.DMatrix datasets to use for evaluating model performance.
 #'        Metrics specified in either \code{eval_metric} or \code{feval} will be computed for each
 #'        of these datasets during each boosting iteration, and stored in the end as a field named
-#'        \code{evaluation_log} in the resulting object. When either \code{verbose>=1} or
+#'        \code{evaluation_log} in the resulting object. When either \code{verbosity>=1} or
 #'        \code{\link{cb.print.evaluation}} callback is engaged, the performance results are continuously
 #'        printed out during the training.
 #'        E.g., specifying \code{watchlist=list(validation1=mat1, validation2=mat2)} allows to track
@@ -83,11 +84,10 @@
 #' @param feval customized evaluation function. Returns
 #'        \code{list(metric='metric-name', value='metric-value')} with given
 #'        prediction and dtrain.
-#' @param verbose If 0, xgboost will stay silent. If 1, it will print information about performance.
-#'        If 2, some additional information will be printed out.
-#'        Note that setting \code{verbose > 0} automatically engages the
+#' @param verbose Deprecated, use \code{verbosity} in training parameters instead.
+#'        Note that setting \code{verbosity > 0} automatically engages the
 #'        \code{cb.print.evaluation(period=1)} callback function.
-#' @param print_every_n Print each n-th iteration evaluation messages when \code{verbose>0}.
+#' @param print_every_n Print each n-th iteration evaluation messages when \code{verbosity>0}.
 #'        Default is 1 which means all messages are printed. This parameter is passed to the
 #'        \code{\link{cb.print.evaluation}} callback.
 #' @param early_stopping_rounds If \code{NULL}, the early stopping function is not triggered.
@@ -148,7 +148,7 @@
 #'
 #' The following callbacks are automatically created when certain parameters are set:
 #' \itemize{
-#'   \item \code{cb.print.evaluation} is turned on when \code{verbose > 0};
+#'   \item \code{cb.print.evaluation} is turned on when \code{verbosity > 0};
 #'         and the \code{print_every_n} parameter is passed to it.
 #'   \item \code{cb.evaluation.log} is on when \code{watchlist} is present.
 #'   \item \code{cb.early.stop}: when \code{early_stopping_rounds} is set.
@@ -197,7 +197,7 @@
 #' watchlist <- list(train = dtrain, eval = dtest)
 #'
 #' ## A simple xgb.train example:
-#' param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2,
+#' param <- list(max_depth = 2, eta = 1, verbosity = 0, nthread = 2,
 #'               objective = "binary:logistic", eval_metric = "auc")
 #' bst <- xgb.train(param, dtrain, nrounds = 2, watchlist)
 #'
@@ -218,12 +218,12 @@
 #'
 #' # These functions could be used by passing them either:
 #' #  as 'objective' and 'eval_metric' parameters in the params list:
-#' param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2,
+#' param <- list(max_depth = 2, eta = 1, verbosity = 0, nthread = 2,
 #'               objective = logregobj, eval_metric = evalerror)
 #' bst <- xgb.train(param, dtrain, nrounds = 2, watchlist)
 #'
 #' #  or through the ... arguments:
-#' param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2)
+#' param <- list(max_depth = 2, eta = 1, verbosity = 0, nthread = 2)
 #' bst <- xgb.train(param, dtrain, nrounds = 2, watchlist,
 #'                  objective = logregobj, eval_metric = evalerror)
 #'
@@ -233,7 +233,7 @@
 #'
 #'
 #' ## An xgb.train example of using variable learning rates at each iteration:
-#' param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2,
+#' param <- list(max_depth = 2, eta = 1, verbosity = 0, nthread = 2,
 #'               objective = "binary:logistic", eval_metric = "auc")
 #' my_etas <- list(eta = c(0.5, 0.1))
 #' bst <- xgb.train(param, dtrain, nrounds = 2, watchlist,
@@ -252,7 +252,7 @@
 #' @rdname xgb.train
 #' @export
 xgb.train <- function(params = list(), data, nrounds, watchlist = list(),
-                      obj = NULL, feval = NULL, verbose = 1, print_every_n = 1L,
+                      obj = NULL, feval = NULL, verbose = NULL, print_every_n = 1L,
                       early_stopping_rounds = NULL, maximize = NULL,
                       save_period = NULL, save_name = "xgboost.model",
                       xgb_model = NULL, callbacks = list(), ...) {
@@ -260,6 +260,10 @@ xgb.train <- function(params = list(), data, nrounds, watchlist = list(),
   check.deprecation(...)
 
   params <- check.booster.params(params, ...)
+  if (!missing("verbose")) {
+    warning("`verbose` is deprecaated, use `verbosity` in training parameters instead.")
+  }
+  verbose <- NVL(params$verbosity, 1)
 
   check.custom.obj()
   check.custom.eval()

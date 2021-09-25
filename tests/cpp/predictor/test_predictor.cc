@@ -229,7 +229,8 @@ void TestCategoricalPrediction(std::string name) {
   std::vector<FeatureType> types(10, FeatureType::kCategorical);
   m->Info().feature_types.HostVector() = types;
 
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions,
+                                *model.learner_model_param);
   predictor->PredictBatch(m.get(), &out_predictions, model, 0);
   ASSERT_EQ(out_predictions.predictions.Size(), 1ul);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0],
@@ -238,7 +239,8 @@ void TestCategoricalPrediction(std::string name) {
   row[split_ind] = split_cat + 1;
   m = GetDMatrixFromData(row, 1, kCols);
   out_predictions.version = 0;
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions,
+                                *model.learner_model_param);
   predictor->PredictBatch(m.get(), &out_predictions, model, 0);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0],
             left_weight + param.base_score);
@@ -278,7 +280,8 @@ void TestCategoricalPredictLeaf(StringView name) {
   row[split_ind] = split_cat + 1;
   m = GetDMatrixFromData(row, 1, kCols);
   out_predictions.version = 0;
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions,
+                                *model.learner_model_param);
   predictor->PredictLeaf(m.get(), &out_predictions.predictions, model);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0], 1);
 }

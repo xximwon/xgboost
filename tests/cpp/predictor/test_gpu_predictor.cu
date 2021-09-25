@@ -44,9 +44,13 @@ TEST(GPUPredictor, Basic) {
     PredictionCacheEntry gpu_out_predictions;
     PredictionCacheEntry cpu_out_predictions;
 
-    gpu_predictor->InitOutPredictions(dmat->Info(), &gpu_out_predictions.predictions, model);
+    gpu_predictor->InitOutPredictions(dmat->Info(),
+                                      &gpu_out_predictions.predictions,
+                                      *model.learner_model_param);
     gpu_predictor->PredictBatch(dmat.get(), &gpu_out_predictions, model, 0);
-    cpu_predictor->InitOutPredictions(dmat->Info(), &cpu_out_predictions.predictions, model);
+    cpu_predictor->InitOutPredictions(dmat->Info(),
+                                      &cpu_out_predictions.predictions,
+                                      *model.learner_model_param);
     cpu_predictor->PredictBatch(dmat.get(), &cpu_out_predictions, model, 0);
 
     std::vector<float>& gpu_out_predictions_h = gpu_out_predictions.predictions.HostVector();
@@ -110,7 +114,8 @@ TEST(GPUPredictor, ExternalMemoryTest) {
   for (const auto& dmat: dmats) {
     dmat->Info().base_margin_.Resize(dmat->Info().num_row_ * n_classes, 0.5);
     PredictionCacheEntry out_predictions;
-    gpu_predictor->InitOutPredictions(dmat->Info(), &out_predictions.predictions, model);
+    gpu_predictor->InitOutPredictions(
+        dmat->Info(), &out_predictions.predictions, *model.learner_model_param);
     gpu_predictor->PredictBatch(dmat.get(), &out_predictions, model, 0);
     EXPECT_EQ(out_predictions.predictions.Size(), dmat->Info().num_row_ * n_classes);
     const std::vector<float> &host_vector = out_predictions.predictions.ConstHostVector();

@@ -758,11 +758,12 @@ class GPUPredictor : public xgboost::Predictor {
         << "but data is on: " << m->DeviceIdx();
     if (p_m) {
       p_m->Info().num_row_ = m->NumRows();
-      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions), model);
+      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions),
+                               *model.learner_model_param);
     } else {
       MetaInfo info;
       info.num_row_ = m->NumRows();
-      this->InitOutPredictions(info, &(out_preds->predictions), model);
+      this->InitOutPredictions(info, &(out_preds->predictions), *model.learner_model_param);
     }
     out_preds->predictions.SetDevice(m->DeviceIdx());
 
@@ -931,8 +932,8 @@ class GPUPredictor : public xgboost::Predictor {
  protected:
   void InitOutPredictions(const MetaInfo& info,
                           HostDeviceVector<bst_float>* out_preds,
-                          const gbm::GBTreeModel& model) const override {
-    size_t n_classes = model.learner_model_param->num_output_group;
+                          LearnerModelParam const &model) const override {
+    size_t n_classes = model.num_output_group;
     size_t n = n_classes * info.num_row_;
     const HostDeviceVector<bst_float>& base_margin = info.base_margin_;
     out_preds->SetDevice(generic_param_->gpu_id);
@@ -941,7 +942,7 @@ class GPUPredictor : public xgboost::Predictor {
       CHECK_EQ(base_margin.Size(), n);
       out_preds->Copy(base_margin);
     } else {
-      out_preds->Fill(model.learner_model_param->base_score);
+      out_preds->Fill(model.base_score);
     }
   }
 

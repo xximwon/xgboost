@@ -503,7 +503,7 @@ void GBTree::PredictBatch(DMatrix* p_fmat,
     // out_preds->Size() can be non-zero as it's initialized here before any
     // tree is built at the 0^th iterator.
     predictor->InitOutPredictions(p_fmat->Info(), &out_preds->predictions,
-                                  model_);
+                                  *model_.learner_model_param);
   }
 
   uint32_t tree_begin, tree_end;
@@ -715,7 +715,7 @@ class Dart : public GBTree {
     auto &predictor = this->GetPredictor(&p_out_preds->predictions, p_fmat);
     CHECK(predictor);
     predictor->InitOutPredictions(p_fmat->Info(), &p_out_preds->predictions,
-                                  model_);
+                                  *model_.learner_model_param);
     p_out_preds->version = 0;
     uint32_t tree_begin, tree_end;
     std::tie(tree_begin, tree_end) =
@@ -827,10 +827,11 @@ class Dart : public GBTree {
         if (p_m) {
           p_m->Info().num_row_ = n_rows;
           predictor->InitOutPredictions(p_m->Info(), &out_preds->predictions,
-                                        model_);
+                                        *model_.learner_model_param);
         } else {
           info.num_row_ = n_rows;
-          predictor->InitOutPredictions(info, &out_preds->predictions, model_);
+          predictor->InitOutPredictions(info, &out_preds->predictions,
+                                        *model_.learner_model_param);
         }
       }
 

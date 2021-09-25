@@ -282,11 +282,11 @@ class CPUPredictor : public Predictor {
     }
   }
 
-  void InitOutPredictions(const MetaInfo& info,
-                          HostDeviceVector<bst_float>* out_preds,
-                          const gbm::GBTreeModel& model) const override {
-    CHECK_NE(model.learner_model_param->num_output_group, 0);
-    size_t n = model.learner_model_param->num_output_group * info.num_row_;
+  void InitOutPredictions(const MetaInfo &info,
+                          HostDeviceVector<bst_float> *out_preds,
+                          LearnerModelParam const &model) const override {
+    CHECK_NE(model.num_output_group, 0);
+    size_t n = model.num_output_group * info.num_row_;
     const auto& base_margin = info.base_margin_.HostVector();
     out_preds->Resize(n);
     std::vector<bst_float>& out_preds_h = out_preds->HostVector();
@@ -298,19 +298,18 @@ class CPUPredictor : public Predictor {
         std::ostringstream oss;
         oss << "Ignoring the base margin, since it has incorrect length. "
             << "The base margin must be an array of length ";
-        if (model.learner_model_param->num_output_group > 1) {
+        if (model.num_output_group > 1) {
           oss << "[num_class] * [number of data points], i.e. "
-              << model.learner_model_param->num_output_group << " * " << info.num_row_
+              << model.num_output_group << " * " << info.num_row_
               << " = " << n << ". ";
         } else {
           oss << "[number of data points], i.e. " << info.num_row_ << ". ";
         }
         oss << "Instead, all data points will use "
-            << "base_score = " << model.learner_model_param->base_score;
+            << "base_score = " << model.base_score;
         LOG(WARNING) << oss.str();
       }
-      std::fill(out_preds_h.begin(), out_preds_h.end(),
-                model.learner_model_param->base_score);
+      std::fill(out_preds_h.begin(), out_preds_h.end(), model.base_score);
     }
   }
 
@@ -342,11 +341,13 @@ class CPUPredictor : public Predictor {
         << "Number of columns in data must equal to trained model.";
     if (p_m) {
       p_m->Info().num_row_ = m->NumRows();
-      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions), model);
+      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions),
+                               *model.learner_model_param);
     } else {
       MetaInfo info;
       info.num_row_ = m->NumRows();
-      this->InitOutPredictions(info, &(out_preds->predictions), model);
+      this->InitOutPredictions(info, &(out_preds->predictions),
+                               *model.learner_model_param);
     }
     std::vector<Entry> workspace(m->NumColumns() * 8 * threads);
     auto &predictions = out_preds->predictions.HostVector();

@@ -21,6 +21,7 @@
 // Forward declarations
 namespace xgboost {
 class TreeUpdater;
+struct LearnerModelParam;
 namespace gbm {
 struct GBTreeModel;
 }  // namespace gbm
@@ -128,7 +129,7 @@ class Predictor {
    */
   virtual void InitOutPredictions(const MetaInfo &info,
                                   HostDeviceVector<bst_float> *out_predt,
-                                  const gbm::GBTreeModel &model) const = 0;
+                                  LearnerModelParam const &model) const = 0;
 
   /**
    * \brief Generate batch predictions for a given feature matrix. May use

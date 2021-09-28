@@ -146,3 +146,40 @@ Multi-class objective function
 A similar demo for multi-class objective function is also available, see
 `demo/guide-python/custom_softmax.py <https://github.com/dmlc/xgboost/tree/master/demo/guide-python/custom_softmax.py>`_
 for details.
+
+Following is a brief summary for `#1825 <https://github.com/dmlc/xgboost/issues/1825>`_,
+which arises from defining custom multi-class objectives.  Normally one doesn't need to
+understand the implication in order to use XGBoost.  The document is only for better
+understanding of how things work under the hood.  In the `reference paper
+<http://arxiv.org/abs/1603.02754>`_ second order Taylor expansion of negative
+log-likelihood :math:`l(y, x, \phi)` is used:
+
+.. math::
+
+   l(y, x, \phi + \delta) \approx l(y, x, \phi) + \delta^T g + \frac{1}{2}\delta^T h \delta
+
+Where :math:`\delta` is the appended base model.  We follows the notation in [GBCRF]_
+instead of the one in reference and the reason will be clear soon. But this approximation
+doesn't always work. For instance, the second order gradient for softmax link is a matrix
+and cannot be efficiently optimized.  XGBoost employs the diagonal Hessian as an
+approximation to the original matrix.  To use such approximation, an upper bound proof is
+given in [GBCRF]_ in the context of conditional random fields.  We will briefly sketch the
+idea here for accessibility, for details please refer to the original document.
+
+The approximate objective we use defines an upper bound of the original loss function:
+
+.. math::
+
+   \tilde{L}_D(\phi, \delta) = L_D(\phi) + \sum\sum G\delta + \sum\frac{1}{2}\sum\gamma H_{ii} \delta^2 + C
+
+Where :math:`H_{ii}` is the entries at diagonal of Hessian. We iteratively optimize this
+upper bound during training.  For softmax function, the :math:`\gamma` term is just
+:math:`2` (edge potential in CRF is 0 in logistic). Hence you will find the Hessian value
+defined in XGBoost (and in the demo) for softmax is :math:`2p(1 - p)` but the Hessian for
+negative log likelihood is :math:`p(1 - p)`.
+
+There's a parameter called ``max_delta_step``, and the ``delta`` refers to :math:`\delta`
+in above equation, which is just the leaf weights added to previous model during boosting.
+The parameter controls the leaf weight so that the approximation holds.
+
+.. [GBCRF] Efficient Second-Order Gradient Boosting for Conditional Random Fields

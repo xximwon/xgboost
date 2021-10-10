@@ -76,7 +76,7 @@ PredValueByOneTree(const RegTree::FVec &p_feats, RegTree const &tree,
   return tree[leaf].LeafValue();
 }
 
-void PredictByAllTrees(gbm::GBTreeModel const &model, const size_t tree_begin,
+void PredictByAllTrees(GBTrees model, const size_t tree_begin,
                        const size_t tree_end, std::vector<bst_float> *out_preds,
                        const size_t predict_offset, const size_t num_group,
                        const std::vector<RegTree::FVec> &thread_temp,
@@ -185,13 +185,13 @@ class AdapterView {
 template <typename DataView, size_t block_of_rows_size>
 void PredictBatchByBlockOfRowsKernel(
     DataView batch, std::vector<bst_float> *out_preds,
-    gbm::GBTreeModel const &model, int32_t tree_begin, int32_t tree_end,
+    GBTrees model, int32_t tree_begin, int32_t tree_end,
     std::vector<RegTree::FVec> *p_thread_temp) {
   auto &thread_temp = *p_thread_temp;
   int32_t const num_group = model.learner_model_param->num_output_group;
 
-  CHECK_EQ(model.param.size_leaf_vector, 0)
-      << "size_leaf_vector is enforced to 0 so far";
+  // CHECK_EQ(model.param.size_leaf_vector, 0)
+  //     << "size_leaf_vector is enforced to 0 so far";
   // parallel over local batch
   const auto nsize = static_cast<bst_omp_uint>(batch.Size());
   const int num_feature = model.learner_model_param->num_feature;
@@ -250,7 +250,7 @@ class CPUPredictor : public Predictor {
   }
 
   void PredictDMatrix(DMatrix *p_fmat, std::vector<bst_float> *out_preds,
-                      gbm::GBTreeModel const &model, int32_t tree_begin,
+                      GBTrees model, int32_t tree_begin,
                       int32_t tree_end) const {
     const int threads = omp_get_max_threads();
     constexpr double kDensityThresh = .5;
@@ -318,7 +318,7 @@ class CPUPredictor : public Predictor {
       Predictor::Predictor{generic_param} {}
 
   void PredictBatch(DMatrix *dmat, PredictionCacheEntry *predts,
-                    const gbm::GBTreeModel &model, uint32_t tree_begin,
+                    GBTrees model, uint32_t tree_begin,
                     uint32_t tree_end = 0) const override {
     auto* out_preds = &predts->predictions;
     // This is actually already handled in gbm, but large amount of tests rely on the
@@ -332,7 +332,7 @@ class CPUPredictor : public Predictor {
 
   template <typename Adapter, size_t kBlockSize>
   void DispatchedInplacePredict(dmlc::any const &x, std::shared_ptr<DMatrix> p_m,
-                                const gbm::GBTreeModel &model, float missing,
+                                GBTrees model, float missing,
                                 PredictionCacheEntry *out_preds,
                                 uint32_t tree_begin, uint32_t tree_end) const {
     auto threads = omp_get_max_threads();
@@ -360,7 +360,7 @@ class CPUPredictor : public Predictor {
   }
 
   bool InplacePredict(dmlc::any const &x, std::shared_ptr<DMatrix> p_m,
-                      const gbm::GBTreeModel &model, float missing,
+                      GBTrees model, float missing,
                       PredictionCacheEntry *out_preds, uint32_t tree_begin,
                       unsigned tree_end) const override {
     if (x.type() == typeid(std::shared_ptr<data::DenseAdapter>)) {
@@ -381,9 +381,9 @@ class CPUPredictor : public Predictor {
     return true;
   }
 
-  void PredictInstance(const SparsePage::Inst& inst,
-                       std::vector<bst_float>* out_preds,
-                       const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
+  void PredictInstance(const SparsePage::Inst &inst,
+                       std::vector<bst_float> *out_preds, GBTrees model,
+                       unsigned ntree_limit) const override {
     std::vector<RegTree::FVec> feat_vecs;
     feat_vecs.resize(1, RegTree::FVec());
     feat_vecs[0].Init(model.learner_model_param->num_feature);
@@ -402,7 +402,7 @@ class CPUPredictor : public Predictor {
   }
 
   void PredictLeaf(DMatrix* p_fmat, HostDeviceVector<bst_float>* out_preds,
-                   const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
+                   GBTrees model, unsigned ntree_limit) const override {
     const int nthread = omp_get_max_threads();
     std::vector<RegTree::FVec> feat_vecs;
     const int num_feature = model.learner_model_param->num_feature;
@@ -440,7 +440,7 @@ class CPUPredictor : public Predictor {
 
   void PredictContribution(DMatrix *p_fmat,
                            HostDeviceVector<float> *out_contribs,
-                           const gbm::GBTreeModel &model, uint32_t ntree_limit,
+                           GBTrees model, uint32_t ntree_limit,
                            std::vector<bst_float> const *tree_weights,
                            bool approximate, int condition,
                            unsigned condition_feature) const override {
@@ -520,7 +520,7 @@ class CPUPredictor : public Predictor {
 
   void PredictInteractionContributions(
       DMatrix *p_fmat, HostDeviceVector<bst_float> *out_contribs,
-      const gbm::GBTreeModel &model, unsigned ntree_limit,
+      GBTrees model, unsigned ntree_limit,
       std::vector<bst_float> const *tree_weights,
       bool approximate) const override {
     const MetaInfo& info = p_fmat->Info();

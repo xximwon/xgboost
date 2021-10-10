@@ -9,6 +9,7 @@
 #include <xgboost/data.h>
 #include <xgboost/generic_parameters.h>
 #include <xgboost/host_device_vector.h>
+#include <xgboost/tree_model.h>
 
 #include <functional>
 #include <memory>
@@ -20,11 +21,7 @@
 
 // Forward declarations
 namespace xgboost {
-class TreeUpdater;
 struct LearnerModelParam;
-namespace gbm {
-struct GBTreeModel;
-}  // namespace gbm
 }
 
 namespace xgboost {
@@ -93,11 +90,17 @@ class PredictionContainer {
   decltype(container_) const& Container();
 };
 
+struct GBTrees {
+  common::Span<std::unique_ptr<RegTree> const> trees;
+  common::Span<int const> tree_info;
+  LearnerModelParam const* learner_model_param;
+};
+
 /**
  * \class Predictor
  *
  * \brief Performs prediction on individual training instances or batches of instances for
- *        GBTree. Prediction functions all take a GBTreeModel and a DMatrix as input and
+ *        GBTree. Prediction functions all take a GBTrees and a DMatrix as input and
  *        output a vector of predictions. The predictor does not modify any state of the
  *        model itself.
  */
@@ -142,7 +145,7 @@ class Predictor {
    * \param           tree_end    The tree end index.
    */
   virtual void PredictBatch(DMatrix* dmat, PredictionCacheEntry* out_preds,
-                            const gbm::GBTreeModel& model, uint32_t tree_begin,
+                            GBTrees model, uint32_t tree_begin,
                             uint32_t tree_end = 0) const = 0;
 
   /**
@@ -157,7 +160,7 @@ class Predictor {
    * \return True if the data can be handled by current predictor, false otherwise.
    */
   virtual bool InplacePredict(dmlc::any const &x, std::shared_ptr<DMatrix> p_m,
-                              const gbm::GBTreeModel &model, float missing,
+                              GBTrees model, float missing,
                               PredictionCacheEntry *out_preds,
                               uint32_t tree_begin = 0,
                               uint32_t tree_end = 0) const = 0;
@@ -175,7 +178,7 @@ class Predictor {
 
   virtual void PredictInstance(const SparsePage::Inst& inst,
                                std::vector<bst_float>* out_preds,
-                               const gbm::GBTreeModel& model,
+                               GBTrees model,
                                unsigned tree_end = 0) const = 0;
 
   /**
@@ -189,7 +192,7 @@ class Predictor {
    */
 
   virtual void PredictLeaf(DMatrix* dmat, HostDeviceVector<bst_float>* out_preds,
-                           const gbm::GBTreeModel& model,
+                           GBTrees model,
                            unsigned tree_end = 0) const = 0;
 
   /**
@@ -209,14 +212,14 @@ class Predictor {
 
   virtual void
   PredictContribution(DMatrix *dmat, HostDeviceVector<bst_float> *out_contribs,
-                      const gbm::GBTreeModel &model, unsigned tree_end = 0,
+                      GBTrees model, unsigned tree_end = 0,
                       std::vector<bst_float> const *tree_weights = nullptr,
                       bool approximate = false, int condition = 0,
                       unsigned condition_feature = 0) const = 0;
 
   virtual void PredictInteractionContributions(
       DMatrix *dmat, HostDeviceVector<bst_float> *out_contribs,
-      const gbm::GBTreeModel &model, unsigned tree_end = 0,
+      GBTrees model, unsigned tree_end = 0,
       std::vector<bst_float> const *tree_weights = nullptr,
       bool approximate = false) const = 0;
 

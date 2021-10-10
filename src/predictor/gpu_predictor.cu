@@ -340,10 +340,10 @@ class DeviceModel {
   size_t tree_end_;  // NOLINT
   int num_group;
 
-  void Init(const gbm::GBTreeModel& model, size_t tree_begin, size_t tree_end, int32_t gpu_id) {
+  void Init(GBTrees model, size_t tree_begin, size_t tree_end, int32_t gpu_id) {
     dh::safe_cuda(cudaSetDevice(gpu_id));
 
-    CHECK_EQ(model.param.size_leaf_vector, 0);
+    // CHECK_EQ(model.param.size_leaf_vector, 0);
     // Copy decision trees to device
     tree_segments = std::move(HostDeviceVector<size_t>({}, gpu_id));
     auto& h_tree_segments = tree_segments.HostVector();
@@ -351,7 +351,7 @@ class DeviceModel {
     size_t sum = 0;
     h_tree_segments.push_back(sum);
     for (auto tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
-      sum += model.trees.at(tree_idx)->GetNodes().size();
+      sum += model.trees[tree_idx]->GetNodes().size();
       h_tree_segments.push_back(sum);
     }
 
@@ -362,8 +362,8 @@ class DeviceModel {
     auto d_nodes = nodes.DevicePointer();
     auto d_stats = stats.DevicePointer();
     for (auto tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
-      auto& src_nodes = model.trees.at(tree_idx)->GetNodes();
-      auto& src_stats = model.trees.at(tree_idx)->GetStats();
+      auto& src_nodes = model.trees[tree_idx]->GetNodes();
+      auto& src_stats = model.trees[tree_idx]->GetStats();
       dh::safe_cuda(cudaMemcpyAsync(
           d_nodes + h_tree_segments[tree_idx - tree_begin], src_nodes.data(),
           sizeof(RegTree::Node) * src_nodes.size(), cudaMemcpyDefault));
@@ -381,7 +381,7 @@ class DeviceModel {
     std::vector<FeatureType>& h_split_types = split_types.HostVector();
     h_split_types.resize(h_tree_segments.back());
     for (auto tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
-      auto const& src_st = model.trees.at(tree_idx)->GetSplitTypes();
+      auto const& src_st = model.trees[tree_idx]->GetSplitTypes();
       std::copy(src_st.cbegin(), src_st.cend(),
                 h_split_types.begin() + h_tree_segments[tree_idx - tree_begin]);
     }
@@ -391,7 +391,7 @@ class DeviceModel {
     std::vector<uint32_t> &h_categories = categories.HostVector();
     std::vector<uint32_t> &h_split_cat_segments = categories_tree_segments.HostVector();
     for (auto tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
-      auto const& src_cats = model.trees.at(tree_idx)->GetSplitCategories();
+      auto const& src_cats = model.trees[tree_idx]->GetSplitCategories();
       size_t orig_size = h_categories.size();
       h_categories.resize(orig_size + src_cats.size());
       std::copy(src_cats.cbegin(), src_cats.cend(),
@@ -404,7 +404,7 @@ class DeviceModel {
     std::vector<RegTree::Segment> &h_categories_node_segments =
         categories_node_segments.HostVector();
     for (auto tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
-      auto const &src_cats_ptr = model.trees.at(tree_idx)->GetSplitCategoriesPtr();
+      auto const &src_cats_ptr = model.trees[tree_idx]->GetSplitCategoriesPtr();
       std::copy(src_cats_ptr.cbegin(), src_cats_ptr.cend(),
                 h_categories_node_segments.begin() +
                     h_tree_segments[tree_idx - tree_begin]);
@@ -689,7 +689,7 @@ class GPUPredictor : public xgboost::Predictor {
   }
 
   void DevicePredictInternal(DMatrix* dmat, HostDeviceVector<float>* out_preds,
-                             const gbm::GBTreeModel& model, size_t tree_begin,
+                             GBTrees model, size_t tree_begin,
                              size_t tree_end) const {
     if (tree_end - tree_begin == 0) {
       return;
@@ -732,7 +732,7 @@ class GPUPredictor : public xgboost::Predictor {
   }
 
   void PredictBatch(DMatrix* dmat, PredictionCacheEntry* predts,
-                    const gbm::GBTreeModel& model, uint32_t tree_begin,
+                    GBTrees model, uint32_t tree_begin,
                     uint32_t tree_end = 0) const override {
     int device = generic_param_->gpu_id;
     CHECK_GE(device, 0) << "Set `gpu_id' to positive value for processing GPU data.";
@@ -745,7 +745,7 @@ class GPUPredictor : public xgboost::Predictor {
 
   template <typename Adapter, typename Loader>
   void DispatchedInplacePredict(dmlc::any const &x, std::shared_ptr<DMatrix> p_m,
-                                const gbm::GBTreeModel &model, float missing,
+                                GBTrees model, float missing,
                                 PredictionCacheEntry *out_preds,
                                 uint32_t tree_begin, uint32_t tree_end) const {
     uint32_t const output_groups =  model.learner_model_param->num_output_group;
@@ -791,7 +791,7 @@ class GPUPredictor : public xgboost::Predictor {
   }
 
   bool InplacePredict(dmlc::any const &x, std::shared_ptr<DMatrix> p_m,
-                      const gbm::GBTreeModel &model, float missing,
+                      GBTrees model, float missing,
                       PredictionCacheEntry *out_preds, uint32_t tree_begin,
                       unsigned tree_end) const override {
     if (x.type() == typeid(std::shared_ptr<data::CupyAdapter>)) {
@@ -810,7 +810,7 @@ class GPUPredictor : public xgboost::Predictor {
 
   void PredictContribution(DMatrix* p_fmat,
                            HostDeviceVector<bst_float>* out_contribs,
-                           const gbm::GBTreeModel& model, unsigned tree_end,
+                           GBTrees model, unsigned tree_end,
                            std::vector<bst_float> const* tree_weights,
                            bool approximate, int,
                            unsigned) const override {
@@ -868,7 +868,7 @@ class GPUPredictor : public xgboost::Predictor {
 
   void PredictInteractionContributions(DMatrix* p_fmat,
                                        HostDeviceVector<bst_float>* out_contribs,
-                                       const gbm::GBTreeModel& model,
+                                       GBTrees model,
                                        unsigned tree_end,
                                        std::vector<bst_float> const* tree_weights,
                                        bool approximate) const override {
@@ -946,15 +946,14 @@ class GPUPredictor : public xgboost::Predictor {
     }
   }
 
-  void PredictInstance(const SparsePage::Inst&,
-                       std::vector<bst_float>*,
-                       const gbm::GBTreeModel&, unsigned) const override {
+  void PredictInstance(const SparsePage::Inst &, std::vector<bst_float> *,
+                       GBTrees, unsigned) const override {
     LOG(FATAL) << "[Internal error]: " << __func__
                << " is not implemented in GPU Predictor.";
   }
 
   void PredictLeaf(DMatrix *p_fmat, HostDeviceVector<bst_float> *predictions,
-                   const gbm::GBTreeModel &model,
+                   GBTrees model,
                    unsigned tree_end) const override {
     dh::safe_cuda(cudaSetDevice(generic_param_->gpu_id));
     auto max_shared_memory_bytes = ConfigureDevice(generic_param_->gpu_id);

@@ -109,6 +109,11 @@ struct GBTreeModel : public Model {
   void SaveModel(Json* p_out) const override;
   void LoadModel(Json const& p_out) override;
 
+  operator GBTrees() const {
+    GBTrees model{trees, tree_info, learner_model_param};
+    return model;
+  }
+
   std::vector<std::string> DumpModel(const FeatureMap &fmap, bool with_stats,
                                      std::string format) const {
     std::vector<std::string> dump(trees.size());

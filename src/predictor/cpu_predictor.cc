@@ -42,8 +42,8 @@ bst_node_t GetLeafIndex(RegTree const &tree, const RegTree::FVec &feat,
 }
 
 bst_float PredValue(const SparsePage::Inst &inst,
-                    const std::vector<std::unique_ptr<RegTree>> &trees,
-                    const std::vector<int> &tree_info, int bst_group,
+                    common::Span<std::unique_ptr<RegTree> const> trees,
+                    common::Span<int const> tree_info, int bst_group,
                     RegTree::FVec *p_feats, unsigned tree_begin,
                     unsigned tree_end) {
   bst_float psum = 0.0f;
@@ -391,8 +391,7 @@ class CPUPredictor : public Predictor {
     if (ntree_limit == 0 || ntree_limit > model.trees.size()) {
       ntree_limit = static_cast<unsigned>(model.trees.size());
     }
-    out_preds->resize(model.learner_model_param->num_output_group *
-                      (model.param.size_leaf_vector + 1));
+    out_preds->resize(model.learner_model_param->num_output_group);
     // loop over output groups
     for (uint32_t gid = 0; gid < model.learner_model_param->num_output_group; ++gid) {
       (*out_preds)[gid] = PredValue(inst, model.trees, model.tree_info, gid,

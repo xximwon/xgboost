@@ -17,6 +17,10 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   static int32_t constexpr kCpuId = -1;
   static int64_t constexpr kDefaultSeed = 0;
 
+ protected:
+  // primary device, -1 means no gpu.
+  int gpu_id;  // NOLINT
+
  public:
   // stored random seed
   int64_t seed { kDefaultSeed };
@@ -25,8 +29,6 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   // number of threads to use if OpenMP is enabled
   // if equals 0, use system default
   int nthread;
-  // primary device, -1 means no gpu.
-  int gpu_id;
   // fail when gpu_id is invalid
   bool fail_on_invalid_gpu_id {false};
   bool validate_parameters {false};
@@ -39,6 +41,7 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
    * Return automatically chosen threads.
    */
   int32_t Threads() const;
+  int32_t Ordinal() const;
 
   // declare parameters
   DMLC_DECLARE_PARAMETER(GenericParameter) {

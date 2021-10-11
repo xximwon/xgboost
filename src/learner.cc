@@ -227,6 +227,8 @@ Use `CPU` or `CUDA:x`. e.g.
 )"
   };
   auto device_name = common::Split(lower_case, ':');
+  auto old_gpu_id = this->gpu_id;
+
   if (device_name.size() == 1) {
     CHECK_EQ(device_name.at(0), "cpu") << msg;
   } else if (device_name.size() == 2) {
@@ -245,6 +247,11 @@ Use `CPU` or `CUDA:x`. e.g.
     LOG(FATAL) << msg;
   }
   CHECK_LE(device_name.size(), 2) << "Invalid device.  Use CPU or CUDA:0";
+
+  if (gpu_id == kCpuId && old_gpu_id != kCpuId) {
+    gpu_id = old_gpu_id;
+    LOG(WARNING) << "`gpu_id` is deprecated, use `device` instead.";
+  }
 
 #if defined(XGBOOST_USE_CUDA)
   // 3. When booster is loaded from a memory image (Python pickle or R
@@ -272,6 +279,10 @@ Use `CPU` or `CUDA:x`. e.g.
 
 int32_t GenericParameter::Threads() const {
   return common::OmpGetNumThreads(nthread);
+}
+
+int32_t GenericParameter::Ordinal() const {
+  return gpu_id;
 }
 
 using LearnerAPIThreadLocalStore =

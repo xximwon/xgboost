@@ -11,6 +11,7 @@ import numpy as np
 from .core import Booster, DMatrix, XGBoostError
 from .core import _deprecate_positional_args, _convert_ntree_limit
 from .core import Metric
+from .config import config_context
 from .training import train
 from .callback import TrainingCallback
 from .data import _is_cudf_df, _is_cudf_ser, _is_cupy_array
@@ -171,6 +172,8 @@ __model_doc = f'''
           without bias.
 
     gpu_id : Optional[int]
+        (deprecated) Device ordinal.
+    device : Optional[str]
         Device ordinal.
     validate_parameters : Optional[bool]
         Give warnings for unknown parameter.
@@ -394,6 +397,7 @@ class XGBModel(XGBModelBase):
         interaction_constraints: Optional[Union[str, List[Tuple[str]]]] = None,
         importance_type: Optional[str] = None,
         gpu_id: Optional[int] = None,
+        deivce: Optional[str] = None,
         validate_parameters: Optional[bool] = None,
         predictor: Optional[str] = None,
         enable_categorical: bool = False,
@@ -430,6 +434,7 @@ class XGBModel(XGBModelBase):
         self.interaction_constraints = interaction_constraints
         self.importance_type = importance_type
         self.gpu_id = gpu_id
+        self.deivce = deivce
         self.validate_parameters = validate_parameters
         self.predictor = predictor
         self.enable_categorical = enable_categorical
@@ -756,47 +761,48 @@ class XGBModel(XGBModelBase):
 
         """
         evals_result: TrainingCallback.EvalsLog = {}
-        train_dmatrix, evals = _wrap_evaluation_matrices(
-            missing=self.missing,
-            X=X,
-            y=y,
-            group=None,
-            qid=None,
-            sample_weight=sample_weight,
-            base_margin=base_margin,
-            feature_weights=feature_weights,
-            eval_set=eval_set,
-            sample_weight_eval_set=sample_weight_eval_set,
-            base_margin_eval_set=base_margin_eval_set,
-            eval_group=None,
-            eval_qid=None,
-            create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
-            enable_categorical=self.enable_categorical,
-        )
-        params = self.get_xgb_params()
+        with config_context(device=self.device, verbosity=self.verbosity):
+            train_dmatrix, evals = _wrap_evaluation_matrices(
+                missing=self.missing,
+                X=X,
+                y=y,
+                group=None,
+                qid=None,
+                sample_weight=sample_weight,
+                base_margin=base_margin,
+                feature_weights=feature_weights,
+                eval_set=eval_set,
+                sample_weight_eval_set=sample_weight_eval_set,
+                base_margin_eval_set=base_margin_eval_set,
+                eval_group=None,
+                eval_qid=None,
+                create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
+                enable_categorical=self.enable_categorical,
+            )
+            params = self.get_xgb_params()
 
-        if callable(self.objective):
-            obj: Optional[
-                Callable[[np.ndarray, DMatrix], Tuple[np.ndarray, np.ndarray]]
-            ] = _objective_decorator(self.objective)
-            params["objective"] = "reg:squarederror"
-        else:
-            obj = None
+            if callable(self.objective):
+                obj: Optional[
+                    Callable[[np.ndarray, DMatrix], Tuple[np.ndarray, np.ndarray]]
+                ] = _objective_decorator(self.objective)
+                params["objective"] = "reg:squarederror"
+            else:
+                obj = None
 
-        model, feval, params = self._configure_fit(xgb_model, eval_metric, params)
-        self._Booster = train(
-            params,
-            train_dmatrix,
-            self.get_num_boosting_rounds(),
-            evals=evals,
-            early_stopping_rounds=early_stopping_rounds,
-            evals_result=evals_result,
-            obj=obj,
-            feval=feval,
-            verbose_eval=verbose,
-            xgb_model=model,
-            callbacks=callbacks,
-        )
+            model, feval, params = self._configure_fit(xgb_model, eval_metric, params)
+            self._Booster = train(
+                params,
+                train_dmatrix,
+                self.get_num_boosting_rounds(),
+                evals=evals,
+                early_stopping_rounds=early_stopping_rounds,
+                evals_result=evals_result,
+                obj=obj,
+                feval=feval,
+                verbose_eval=verbose,
+                xgb_model=model,
+                callbacks=callbacks,
+            )
 
         self._set_evaluation_result(evals_result)
         return self
@@ -867,33 +873,34 @@ class XGBModel(XGBModelBase):
             self.get_booster(), ntree_limit, iteration_range
         )
         iteration_range = self._get_iteration_range(iteration_range)
-        if self._can_use_inplace_predict():
-            try:
-                predts = self.get_booster().inplace_predict(
-                    data=X,
-                    iteration_range=iteration_range,
-                    predict_type="margin" if output_margin else "value",
-                    missing=self.missing,
-                    base_margin=base_margin,
-                    validate_features=validate_features,
-                )
-                if _is_cupy_array(predts):
-                    import cupy     # pylint: disable=import-error
-                    predts = cupy.asnumpy(predts)  # ensure numpy array is used.
-                return predts
-            except TypeError:
-                # coo, csc, dt
-                pass
+        with config_context(device=self.device, verbosity=self.verbosity):
+            if self._can_use_inplace_predict():
+                try:
+                    predts = self.get_booster().inplace_predict(
+                        data=X,
+                        iteration_range=iteration_range,
+                        predict_type="margin" if output_margin else "value",
+                        missing=self.missing,
+                        base_margin=base_margin,
+                        validate_features=validate_features,
+                    )
+                    if _is_cupy_array(predts):
+                        import cupy     # pylint: disable=import-error
+                        predts = cupy.asnumpy(predts)  # ensure numpy array is used.
+                    return predts
+                except TypeError:
+                    # coo, csc, dt
+                    pass
 
-        test = DMatrix(
-            X, base_margin=base_margin, missing=self.missing, nthread=self.n_jobs
-        )
-        return self.get_booster().predict(
-            data=test,
-            iteration_range=iteration_range,
-            output_margin=output_margin,
-            validate_features=validate_features,
-        )
+            test = DMatrix(
+                X, base_margin=base_margin, missing=self.missing, nthread=self.n_jobs
+            )
+            return self.get_booster().predict(
+                data=test,
+                iteration_range=iteration_range,
+                output_margin=output_margin,
+                validate_features=validate_features,
+            )
 
     def apply(
         self, X: array_like,
@@ -1216,38 +1223,39 @@ class XGBClassifier(XGBModel, XGBClassifierBase):
             label_transform = lambda x: x
 
         model, feval, params = self._configure_fit(xgb_model, eval_metric, params)
-        train_dmatrix, evals = _wrap_evaluation_matrices(
-            missing=self.missing,
-            X=X,
-            y=y,
-            group=None,
-            qid=None,
-            sample_weight=sample_weight,
-            base_margin=base_margin,
-            feature_weights=feature_weights,
-            eval_set=eval_set,
-            sample_weight_eval_set=sample_weight_eval_set,
-            base_margin_eval_set=base_margin_eval_set,
-            eval_group=None,
-            eval_qid=None,
-            create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
-            enable_categorical=self.enable_categorical,
-            label_transform=label_transform,
-        )
+        with config_context(device=self.device, verbosity=self.verbosity):
+            train_dmatrix, evals = _wrap_evaluation_matrices(
+                missing=self.missing,
+                X=X,
+                y=y,
+                group=None,
+                qid=None,
+                sample_weight=sample_weight,
+                base_margin=base_margin,
+                feature_weights=feature_weights,
+                eval_set=eval_set,
+                sample_weight_eval_set=sample_weight_eval_set,
+                base_margin_eval_set=base_margin_eval_set,
+                eval_group=None,
+                eval_qid=None,
+                create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
+                enable_categorical=self.enable_categorical,
+                label_transform=label_transform,
+            )
 
-        self._Booster = train(
-            params,
-            train_dmatrix,
-            self.get_num_boosting_rounds(),
-            evals=evals,
-            early_stopping_rounds=early_stopping_rounds,
-            evals_result=evals_result,
-            obj=obj,
-            feval=feval,
-            verbose_eval=verbose,
-            xgb_model=model,
-            callbacks=callbacks,
-        )
+            self._Booster = train(
+                params,
+                train_dmatrix,
+                self.get_num_boosting_rounds(),
+                evals=evals,
+                early_stopping_rounds=early_stopping_rounds,
+                evals_result=evals_result,
+                obj=obj,
+                feval=feval,
+                verbose_eval=verbose,
+                xgb_model=model,
+                callbacks=callbacks,
+            )
 
         if not callable(self.objective):
             self.objective = params["objective"]
@@ -1695,42 +1703,44 @@ class XGBRanker(XGBModel, XGBRankerMixIn):
             if eval_group is None and eval_qid is None:
                 raise ValueError(
                     "eval_group or eval_qid is required if eval_set is not None")
-        train_dmatrix, evals = _wrap_evaluation_matrices(
-            missing=self.missing,
-            X=X,
-            y=y,
-            group=group,
-            qid=qid,
-            sample_weight=sample_weight,
-            base_margin=base_margin,
-            feature_weights=feature_weights,
-            eval_set=eval_set,
-            sample_weight_eval_set=sample_weight_eval_set,
-            base_margin_eval_set=base_margin_eval_set,
-            eval_group=eval_group,
-            eval_qid=eval_qid,
-            create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
-            enable_categorical=self.enable_categorical,
-        )
 
-        evals_result: TrainingCallback.EvalsLog = {}
-        params = self.get_xgb_params()
-
-        model, feval, params = self._configure_fit(xgb_model, eval_metric, params)
-        if callable(feval):
-            raise ValueError(
-                'Custom evaluation metric is not yet supported for XGBRanker.'
+        with config_context(device=self.device, verbosity=self.verbosity):
+            train_dmatrix, evals = _wrap_evaluation_matrices(
+                missing=self.missing,
+                X=X,
+                y=y,
+                group=group,
+                qid=qid,
+                sample_weight=sample_weight,
+                base_margin=base_margin,
+                feature_weights=feature_weights,
+                eval_set=eval_set,
+                sample_weight_eval_set=sample_weight_eval_set,
+                base_margin_eval_set=base_margin_eval_set,
+                eval_group=eval_group,
+                eval_qid=eval_qid,
+                create_dmatrix=lambda **kwargs: DMatrix(nthread=self.n_jobs, **kwargs),
+                enable_categorical=self.enable_categorical,
             )
 
-        self._Booster = train(
-            params, train_dmatrix,
-            self.n_estimators,
-            early_stopping_rounds=early_stopping_rounds,
-            evals=evals,
-            evals_result=evals_result, feval=feval,
-            verbose_eval=verbose, xgb_model=model,
-            callbacks=callbacks
-        )
+            evals_result: TrainingCallback.EvalsLog = {}
+            params = self.get_xgb_params()
+
+            model, feval, params = self._configure_fit(xgb_model, eval_metric, params)
+            if callable(feval):
+                raise ValueError(
+                    'Custom evaluation metric is not yet supported for XGBRanker.'
+                )
+
+            self._Booster = train(
+                params, train_dmatrix,
+                self.n_estimators,
+                early_stopping_rounds=early_stopping_rounds,
+                evals=evals,
+                evals_result=evals_result, feval=feval,
+                verbose_eval=verbose, xgb_model=model,
+                callbacks=callbacks
+            )
 
         self.objective = params["objective"]
 

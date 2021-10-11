@@ -387,7 +387,7 @@ class LearnerConfiguration : public Learner {
 
     FromJson(learner_parameters.at("generic_param"), &generic_parameters_);
     // make sure the GPU ID is valid in new environment before start running configure.
-    generic_parameters_.ConfigureGpuId(false);
+    generic_parameters_.ConfigureGpuId();
 
     this->need_configuration_ = true;
   }

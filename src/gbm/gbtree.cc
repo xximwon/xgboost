@@ -132,7 +132,7 @@ void GBTree::PerformTreeMethodHeuristic(DMatrix* fmat) {
   }
 
   if (tparam_.tree_method == TreeMethod::kGPUHist) {
-    CHECK_NE(this->gpu_predictor_, GenericParameter::kCpuId)
+    CHECK_NE(this->generic_param_->gpu_id, GenericParameter::kCpuId)
         << "Need to specify device parameter.";
   }
   if (this->generic_param_->gpu_id != GenericParameter::kCpuId) {

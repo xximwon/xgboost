@@ -307,7 +307,8 @@ TEST_F(SerializationTest, GpuHist) {
                             {"seed", "0"},
                             {"nthread", "1"},
                             {"max_depth", "2"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "gbtree"},
@@ -315,14 +316,16 @@ TEST_F(SerializationTest, GpuHist) {
                             {"nthread", "1"},
                             {"max_depth", "2"},
                             {"num_parallel_tree", "4"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "dart"},
                             {"seed", "0"},
                             {"nthread", "1"},
                             {"max_depth", "2"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 

@@ -85,6 +85,10 @@ class GBLinear : public GradientBooster {
       model_.Configure(cfg);
     }
     param_.UpdateAllowUnknown(cfg);
+    if (generic_param_->gpu_id != GenericParameter::kCpuId &&
+        param_.updater == "coord_descent") {
+      param_.updater = "gpu_coord_descent";
+    }
     param_.CheckGPUSupport();
     updater_.reset(LinearUpdater::Create(param_.updater, generic_param_));
     updater_->Configure(cfg);

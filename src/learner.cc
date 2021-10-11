@@ -221,8 +221,8 @@ R"(
 Use `CPU` or `CUDA:x`. e.g.
 
   - CPU: for runningly on CPU.
-  - CUDA:0 for running on first CUDA device.
-  - CUDA:1 for running on second CUDA device.
+  - CUDA:0: for running on first CUDA device.
+  - CUDA:1: for running on second CUDA device.
 
 )"
   };

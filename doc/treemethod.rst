@@ -55,11 +55,15 @@ implementations in XGBoost below.
    differences in implementation.  It runs sketching before training using only user
    provided weights instead of hessian.  The subsequent per-node histogram is built upon
    this global sketch.  This is the fastest algorithm as it runs sketching only once.  The
-   algorithm can be accessed by setting ``tree_method`` to ``hist``.
+   algorithm can be accessed by setting ``tree_method`` to ``hist``.  This tree method is
+   also implemented on GPU, which can be accessed by setting ``device`` to ``CUDA:x``.
+   When used on GPU, it has additional support for gradient based sampling and categorical
+   split.
 
-4. ``gpu_hist`` tree method: The ``gpu_hist`` tree method is a GPU implementation of
-   ``hist``, with additional support for gradient based sampling.  The algorithm can be
-   accessed by setting ``tree_method`` to ``gpu_hist``.
+4. (deprecated) Use ``hist`` with ``device=CUDA:0`` instead.  ``gpu_hist`` tree method:
+   The ``gpu_hist`` tree method is a GPU implementation of ``hist``, with additional
+   support for gradient based sampling.  The algorithm can be accessed by setting
+   ``tree_method`` to ``gpu_hist``.
 
 ************
 Implications

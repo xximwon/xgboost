@@ -379,7 +379,8 @@ TEST_F(SerializationTest, GPUCoordDescent) {
   TestLearnerSerialization({{"booster", "gblinear"},
                             {"seed", "0"},
                             {"nthread", "1"},
-                            {"updater", "gpu_coord_descent"}},
+                            {"updater", "coord_descent"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 #endif  // defined(XGBOOST_USE_CUDA)
@@ -476,7 +477,8 @@ TEST_F(LogitSerializationTest, GpuHist) {
                             {"seed", "0"},
                             {"nthread", "1"},
                             {"max_depth", "2"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "gbtree"},
@@ -485,7 +487,8 @@ TEST_F(LogitSerializationTest, GpuHist) {
                             {"nthread", "1"},
                             {"max_depth", "2"},
                             {"num_parallel_tree", "4"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "dart"},
@@ -493,7 +496,8 @@ TEST_F(LogitSerializationTest, GpuHist) {
                             {"seed", "0"},
                             {"nthread", "1"},
                             {"max_depth", "2"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 
@@ -502,7 +506,8 @@ TEST_F(LogitSerializationTest, GPUCoordDescent) {
                             {"objective", "binary:logistic"},
                             {"seed", "0"},
                             {"nthread", "1"},
-                            {"updater", "gpu_coord_descent"}},
+                            {"updater", "coord_descent"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 #endif  // defined(XGBOOST_USE_CUDA)
@@ -622,7 +627,8 @@ TEST_F(MultiClassesSerializationTest, GpuHist) {
                             // different result (1e-7) with CPU predictor for some
                             // entries.
                             {"predictor", "gpu_predictor"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "gbtree"},
@@ -633,7 +639,8 @@ TEST_F(MultiClassesSerializationTest, GpuHist) {
                             // GPU_Hist has higher floating point error. 1e-6 doesn't work
                             // after num_parallel_tree goes to 4
                             {"num_parallel_tree", "3"},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 
   TestLearnerSerialization({{"booster", "dart"},
@@ -641,7 +648,8 @@ TEST_F(MultiClassesSerializationTest, GpuHist) {
                             {"seed", "0"},
                             {"nthread", "1"},
                             {"max_depth", std::to_string(kClasses)},
-                            {"tree_method", "gpu_hist"}},
+                            {"tree_method", "hist"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 
@@ -650,7 +658,8 @@ TEST_F(MultiClassesSerializationTest, GPUCoordDescent) {
                             {"num_class", std::to_string(kClasses)},
                             {"seed", "0"},
                             {"nthread", "1"},
-                            {"updater", "gpu_coord_descent"}},
+                            {"updater", "coord_descent"},
+                            {"gpu_id", "0"}},
                            fmap_, p_dmat_);
 }
 #endif  // defined(XGBOOST_USE_CUDA)

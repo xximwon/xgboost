@@ -34,7 +34,7 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   /*!
    * \brief Configure the parameter `gpu_id'.
    */
-  void ConfigureGpuId();
+  void ConfigureGpuId(std::string const& device);
   /*!
    * Return automatically chosen threads.
    */

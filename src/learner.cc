@@ -205,7 +205,47 @@ DMLC_REGISTER_PARAMETER(GenericParameter);
 int constexpr GenericParameter::kCpuId;
 int64_t constexpr GenericParameter::kDefaultSeed;
 
-void GenericParameter::ConfigureGpuId() {
+void GenericParameter::ConfigureGpuId(std::string const& device) {
+  std::string lower_case;
+  std::transform(device.begin(), device.end(),
+                 std::back_insert_iterator<std::string>(lower_case),
+                 [](char c) {
+                   if (std::isalpha(c)) {
+                     return static_cast<char>(std::tolower(c));
+                   }
+                   return c;
+                 });
+  StringView msg{
+"Invalid device ordinal: " + device + "\n"
+R"(
+Use `CPU` or `CUDA:x`. e.g.
+
+  - CPU: for runningly on CPU.
+  - CUDA:0 for running on first CUDA device.
+  - CUDA:1 for running on second CUDA device.
+
+)"
+  };
+  auto device_name = common::Split(lower_case, ':');
+  if (device_name.size() == 1) {
+    CHECK_EQ(device_name.at(0), "cpu") << msg;
+  } else if (device_name.size() == 2) {
+    CHECK_EQ(device_name[0], "CUDA") << msg;
+    bool valid = true;
+    try {
+      auto parsed = std::stoi(device_name[1]);
+      gpu_id = parsed;
+    } catch (std::invalid_argument const& e) {
+      valid = false;
+    } catch (std::out_of_range const& e) {
+      valid = false;
+    }
+    CHECK(valid) << msg;
+  } else {
+    LOG(FATAL) << msg;
+  }
+  CHECK_LE(device_name.size(), 2) << "Invalid device.  Use CPU or CUDA:0";
+
 #if defined(XGBOOST_USE_CUDA)
   // 3. When booster is loaded from a memory image (Python pickle or R
   // raw model), number of available GPUs could be different.  Wrap around it.
@@ -336,7 +376,8 @@ class LearnerConfiguration : public Learner {
     }
 
     this->ConfigureGBM(old_tparam, args);
-    generic_parameters_.ConfigureGpuId();
+    auto gconfig = GlobalConfigThreadLocalStore::Get();
+    generic_parameters_.ConfigureGpuId(gconfig->device);
 
     this->ConfigureMetrics(args);
 
@@ -387,7 +428,8 @@ class LearnerConfiguration : public Learner {
 
     FromJson(learner_parameters.at("generic_param"), &generic_parameters_);
     // make sure the GPU ID is valid in new environment before start running configure.
-    generic_parameters_.ConfigureGpuId();
+    auto gconfig = GlobalConfigThreadLocalStore::Get();
+    generic_parameters_.ConfigureGpuId(gconfig->device);
 
     this->need_configuration_ = true;
   }

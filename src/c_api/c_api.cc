@@ -109,10 +109,10 @@ XGB_DLL int XGBGetGlobalConfig(const char** json_str) {
     auto e = mgr->Find(name);
     CHECK(e);
 
-    if (dynamic_cast<dmlc::parameter::FieldEntry<int32_t> const*>(e) ||
-        dynamic_cast<dmlc::parameter::FieldEntry<int64_t> const*>(e) ||
-        dynamic_cast<dmlc::parameter::FieldEntry<uint32_t> const*>(e) ||
-        dynamic_cast<dmlc::parameter::FieldEntry<uint64_t> const*>(e)) {
+    if (dynamic_cast<dmlc::parameter::FieldEntry<int32_t> const *>(e) ||
+        dynamic_cast<dmlc::parameter::FieldEntry<int64_t> const *>(e) ||
+        dynamic_cast<dmlc::parameter::FieldEntry<uint32_t> const *>(e) ||
+        dynamic_cast<dmlc::parameter::FieldEntry<uint64_t> const *>(e)) {
       auto i = std::strtoimax(str.data(), nullptr, 10);
       CHECK_LE(i, static_cast<intmax_t>(std::numeric_limits<int64_t>::max()));
       item.second = Integer(static_cast<int64_t>(i));
@@ -124,6 +124,8 @@ XGB_DLL int XGBGetGlobalConfig(const char** json_str) {
       item.second = Number(f);
     } else if (dynamic_cast<dmlc::parameter::FieldEntry<bool> const *>(e)) {
       item.second = Boolean(str != "0");
+    } else if (dynamic_cast<dmlc::parameter::FieldEntry<std::string> const *>(e)) {
+      item.second = str;
     }
   }
 

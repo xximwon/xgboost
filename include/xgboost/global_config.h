@@ -16,7 +16,9 @@ class Json;
 
 struct GlobalConfiguration : public XGBoostParameter<GlobalConfiguration> {
   int verbosity { 1 };
+  std::string device { "CPU" };
   bool use_rmm { false };
+
   DMLC_DECLARE_PARAMETER(GlobalConfiguration) {
     DMLC_DECLARE_FIELD(verbosity)
         .set_range(0, 3)

@@ -492,8 +492,8 @@ void GBTree::Slice(int32_t layer_begin, int32_t layer_end, int32_t step,
 void GBTree::PredictBatch(DMatrix* p_fmat,
                           PredictionCacheEntry* out_preds,
                           bool,
-                          unsigned layer_begin,
-                          unsigned layer_end) {
+                          uint32_t layer_begin,
+                          uint32_t layer_end) {
   CHECK(configured_);
   if (layer_end == 0) {
     layer_end = this->BoostedRounds();
@@ -540,77 +540,11 @@ std::unique_ptr<Predictor> const &
 GBTree::GetPredictor(HostDeviceVector<float> const *out_pred,
                      DMatrix *f_dmat) const {
   CHECK(configured_);
-  if (tparam_.predictor != PredictorType::kAuto) {
-    if (tparam_.predictor == PredictorType::kGPUPredictor) {
-#if defined(XGBOOST_USE_CUDA)
-      CHECK_GE(common::AllVisibleGPUs(), 1) << "No visible GPU is found for XGBoost.";
-      CHECK(gpu_predictor_);
-      return gpu_predictor_;
-#else
-      common::AssertGPUSupport();
-#endif  // defined(XGBOOST_USE_CUDA)
-    }
-    if (tparam_.predictor == PredictorType::kOneAPIPredictor) {
-#if defined(XGBOOST_USE_ONEAPI)
-      CHECK(oneapi_predictor_);
-      return oneapi_predictor_;
-#else
-      common::AssertOneAPISupport();
-#endif  // defined(XGBOOST_USE_ONEAPI)
-    }
-    CHECK(cpu_predictor_);
+  if (generic_param_->gpu_id == GenericParameter::kCpuId) {
     return cpu_predictor_;
-  }
-
-  // Data comes from Device DMatrix.
-  auto is_ellpack = f_dmat && f_dmat->PageExists<EllpackPage>() &&
-                    !f_dmat->PageExists<SparsePage>();
-  // Data comes from device memory, like CuDF or CuPy.
-  auto is_from_device =
-      f_dmat && f_dmat->PageExists<SparsePage>() &&
-      (*(f_dmat->GetBatches<SparsePage>().begin())).data.DeviceCanRead();
-  auto on_device = is_ellpack || is_from_device;
-
-  // Use GPU Predictor if data is already on device and gpu_id is set.
-  if (on_device && generic_param_->gpu_id >= 0) {
-#if defined(XGBOOST_USE_CUDA)
-    CHECK_GE(common::AllVisibleGPUs(), 1) << "No visible GPU is found for XGBoost.";
-    CHECK(gpu_predictor_);
+  } else {
     return gpu_predictor_;
-#else
-    LOG(FATAL) << "Data is on CUDA device, but XGBoost is not compiled with "
-                  "CUDA support.";
-    return cpu_predictor_;
-#endif  // defined(XGBOOST_USE_CUDA)
   }
-
-  // GPU_Hist by default has prediction cache calculated from quantile values,
-  // so GPU Predictor is not used for training dataset.  But when XGBoost
-  // performs continue training with an existing model, the prediction cache is
-  // not available and number of trees doesn't equal zero, the whole training
-  // dataset got copied into GPU for precise prediction.  This condition tries
-  // to avoid such copy by calling CPU Predictor instead.
-  if ((out_pred && out_pred->Size() == 0) && (model_.param.num_trees != 0) &&
-      // FIXME(trivialfis): Implement a better method for testing whether data
-      // is on device after DMatrix refactoring is done.
-      !on_device) {
-    CHECK(cpu_predictor_);
-    return cpu_predictor_;
-  }
-
-  if (tparam_.tree_method == TreeMethod::kGPUHist) {
-#if defined(XGBOOST_USE_CUDA)
-    CHECK_GE(common::AllVisibleGPUs(), 1) << "No visible GPU is found for XGBoost.";
-    CHECK(gpu_predictor_);
-    return gpu_predictor_;
-#else
-    common::AssertGPUSupport();
-    return cpu_predictor_;
-#endif  // defined(XGBOOST_USE_CUDA)
-  }
-
-  CHECK(cpu_predictor_);
-  return cpu_predictor_;
 }
 
 /** Increment the prediction on GPU.

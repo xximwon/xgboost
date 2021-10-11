@@ -89,6 +89,7 @@ void GBTree::Configure(const Args& cfg) {
   }
 
   this->ConfigureUpdaters();
+
   if (updater_seq != tparam_.updater_seq) {
     updaters_.clear();
     this->InitUpdater(cfg);
@@ -129,6 +130,20 @@ void GBTree::PerformTreeMethodHeuristic(DMatrix* fmat) {
     // set, since only experts are expected to do so.
     return;
   }
+
+  if (tparam_.tree_method == TreeMethod::kGPUHist) {
+    CHECK_NE(this->gpu_predictor_, GenericParameter::kCpuId)
+        << "Need to specify device parameter.";
+  }
+  if (this->generic_param_->gpu_id != GenericParameter::kCpuId) {
+    if (tparam_.tree_method == TreeMethod::kAuto) {
+      LOG(INFO) << "tree method is chosen to be hist for GPU support.";
+      tparam_.tree_method = TreeMethod::kGPUHist;
+    } else if (tparam_.tree_method == TreeMethod::kHist) {
+      tparam_.tree_method = TreeMethod::kGPUHist;
+    }
+  }
+
   // tparam_ is set before calling this function.
   if (tparam_.tree_method != TreeMethod::kAuto) {
     return;

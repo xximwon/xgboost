@@ -185,10 +185,7 @@ class GradientBooster : public Model, public Configurable {
   virtual void FeatureScore(std::string const &importance_type,
                             std::vector<bst_feature_t> *features,
                             std::vector<float> *scores) const = 0;
-  /*!
-   * \brief Whether the current booster uses GPU.
-   */
-  virtual bool UseGPU() const = 0;
+
   /*!
    * \brief create a gradient booster from given name
    * \param name name of gradient booster

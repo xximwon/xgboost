@@ -218,12 +218,6 @@ class GBTree : public GradientBooster {
                HostDeviceVector<GradientPair>* in_gpair,
                PredictionCacheEntry* predt) override;
 
-  bool UseGPU() const override {
-    return
-        tparam_.predictor == PredictorType::kGPUPredictor ||
-        tparam_.tree_method == TreeMethod::kGPUHist;
-  }
-
   GBTreeTrainParam const& GetTrainParam() const {
     return tparam_;
   }

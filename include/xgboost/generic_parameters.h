@@ -33,10 +33,8 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
 
   /*!
    * \brief Configure the parameter `gpu_id'.
-   *
-   * \param require_gpu  Whether GPU is explicitly required from user.
    */
-  void ConfigureGpuId(bool require_gpu);
+  void ConfigureGpuId();
   /*!
    * Return automatically chosen threads.
    */

@@ -17,10 +17,6 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   static int32_t constexpr kCpuId = -1;
   static int64_t constexpr kDefaultSeed = 0;
 
- protected:
-  // primary device, -1 means no gpu.
-  int gpu_id;  // NOLINT
-
  public:
   // stored random seed
   int64_t seed { kDefaultSeed };
@@ -31,6 +27,7 @@ struct GenericParameter : public XGBoostParameter<GenericParameter> {
   int nthread;
   // fail when gpu_id is invalid
   bool fail_on_invalid_gpu_id {false};
+  int gpu_id;
   bool validate_parameters {false};
 
   /*!

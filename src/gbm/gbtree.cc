@@ -132,10 +132,10 @@ void GBTree::PerformTreeMethodHeuristic(DMatrix* fmat) {
   }
 
   if (tparam_.tree_method == TreeMethod::kGPUHist) {
-    CHECK_NE(this->generic_param_->gpu_id, GenericParameter::kCpuId)
+    CHECK_NE(this->generic_param_->Ordinal(), GenericParameter::kCpuId)
         << "Need to specify device parameter.";
   }
-  if (this->generic_param_->gpu_id != GenericParameter::kCpuId) {
+  if (this->generic_param_->Ordinal() != GenericParameter::kCpuId) {
     if (tparam_.tree_method == TreeMethod::kAuto) {
       LOG(INFO) << "tree method is chosen to be hist for GPU support.";
       tparam_.tree_method = TreeMethod::kGPUHist;
@@ -238,15 +238,12 @@ void GBTree::DoBoost(DMatrix* p_fmat,
   const int ngroup = model_.learner_model_param->num_output_group;
   ConfigureWithKnownData(this->cfg_, p_fmat);
   monitor_.Start("BoostNewTrees");
-  // Weird case that tree method is cpu-based but gpu_id is set.  Ideally we should let
-  // `gpu_id` be the single source of determining what algorithms to run, but that will
-  // break a lots of existing code.
-  auto device = tparam_.tree_method != TreeMethod::kGPUHist
-                    ? GenericParameter::kCpuId
-                    : generic_param_->gpu_id;
-  auto out = MatrixView<float>(
-      &predt->predictions,
-      {static_cast<size_t>(p_fmat->Info().num_row_), static_cast<size_t>(ngroup)}, device);
+
+  CHECK_EQ(predt->predictions.DeviceIdx(), generic_param_->Ordinal());
+  auto out = MatrixView<float>(&predt->predictions,
+                               {static_cast<size_t>(p_fmat->Info().num_row_),
+                                static_cast<size_t>(ngroup)},
+                               generic_param_->Ordinal());
   CHECK_NE(ngroup, 0);
   if (ngroup == 1) {
     std::vector<std::unique_ptr<RegTree>> ret;
@@ -540,7 +537,7 @@ std::unique_ptr<Predictor> const &
 GBTree::GetPredictor(HostDeviceVector<float> const *out_pred,
                      DMatrix *f_dmat) const {
   CHECK(configured_);
-  if (generic_param_->gpu_id == GenericParameter::kCpuId) {
+  if (generic_param_->Ordinal() == GenericParameter::kCpuId) {
     return cpu_predictor_;
   } else {
     return gpu_predictor_;
@@ -672,8 +669,8 @@ class Dart : public GBTree {
     auto n_groups = model_.learner_model_param->num_output_group;
 
     PredictionCacheEntry predts;  // temporary storage for prediction
-    if (generic_param_->gpu_id != GenericParameter::kCpuId) {
-      predts.predictions.SetDevice(generic_param_->gpu_id);
+    if (generic_param_->Ordinal() != GenericParameter::kCpuId) {
+      predts.predictions.SetDevice(generic_param_->Ordinal());
     }
     predts.predictions.Resize(p_fmat->Info().num_row_ * n_groups, 0);
 

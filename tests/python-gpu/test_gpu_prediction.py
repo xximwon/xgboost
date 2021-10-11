@@ -295,8 +295,8 @@ class TestGPUPredict:
         )
 
     def test_predict_leaf_basic(self):
-        gpu_leaf = run_predict_leaf('gpu_predictor')
-        cpu_leaf = run_predict_leaf('cpu_predictor')
+        gpu_leaf = run_predict_leaf("CPU")
+        cpu_leaf = run_predict_leaf("CUDA:0")
         np.testing.assert_equal(gpu_leaf, cpu_leaf)
 
     def run_predict_leaf_booster(self, param, num_rounds, dataset):

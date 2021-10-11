@@ -35,7 +35,7 @@ def verify_leaf_output(leaf: np.ndarray, num_parallel_tree: int):
                 assert np.all(tree_group == tree_group[0])
 
 
-def run_predict_leaf(predictor):
+def run_predict_leaf(device: str) -> np.ndarray:
     rows = 100
     cols = 4
     classes = 5
@@ -45,16 +45,16 @@ def run_predict_leaf(predictor):
     X = rng.randn(rows, cols)
     y = rng.randint(low=0, high=classes, size=rows)
     m = xgb.DMatrix(X, y)
-    booster = xgb.train(
-        {
-            "num_parallel_tree": num_parallel_tree,
-            "num_class": classes,
-            "predictor": predictor,
-            "tree_method": "hist",
-        },
-        m,
-        num_boost_round=num_boost_round,
-    )
+    with xgb.config_context(device=device):
+        booster = xgb.train(
+            {
+                "num_parallel_tree": num_parallel_tree,
+                "num_class": classes,
+                "tree_method": "hist",
+            },
+            m,
+            num_boost_round=num_boost_round,
+        )
 
     empty = xgb.DMatrix(np.ones(shape=(0, cols)))
     empty_leaf = booster.predict(empty, pred_leaf=True)
@@ -84,7 +84,7 @@ def run_predict_leaf(predictor):
 
 
 def test_predict_leaf():
-    run_predict_leaf('cpu_predictor')
+    run_predict_leaf("CPU")
 
 
 def test_predict_shape():

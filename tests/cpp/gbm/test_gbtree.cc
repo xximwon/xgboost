@@ -117,60 +117,6 @@ TEST(GBTree, WrongUpdater) {
   ASSERT_THROW(learner->UpdateOneIter(0, p_dmat), dmlc::Error);
 }
 
-#ifdef XGBOOST_USE_CUDA
-TEST(GBTree, ChoosePredictor) {
-  // The test ensures data don't get pulled into device.
-  size_t constexpr kRows = 17;
-  size_t constexpr kCols = 15;
-
-  auto p_dmat = RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
-
-  auto& data = (*(p_dmat->GetBatches<SparsePage>().begin())).data;
-  p_dmat->Info().labels_.Resize(kRows);
-
-  auto learner = std::unique_ptr<Learner>(Learner::Create({p_dmat}));
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
-  for (size_t i = 0; i < 4; ++i) {
-    learner->UpdateOneIter(i, p_dmat);
-  }
-  ASSERT_TRUE(data.HostCanWrite());
-  dmlc::TemporaryDirectory tempdir;
-  const std::string fname = tempdir.path + "/model_param.bst";
-
-  {
-    std::unique_ptr<dmlc::Stream> fo(dmlc::Stream::Create(fname.c_str(), "w"));
-    learner->Save(fo.get());
-  }
-
-  // a new learner
-  learner = std::unique_ptr<Learner>(Learner::Create({p_dmat}));
-  {
-    std::unique_ptr<dmlc::Stream> fi(dmlc::Stream::Create(fname.c_str(), "r"));
-    learner->Load(fi.get());
-  }
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
-  for (size_t i = 0; i < 4; ++i) {
-    learner->UpdateOneIter(i, p_dmat);
-  }
-  ASSERT_TRUE(data.HostCanWrite());
-
-  // pull data into device.
-  data.HostVector();
-  data.SetDevice(0);
-  data.DeviceSpan();
-  ASSERT_FALSE(data.HostCanWrite());
-
-  // another new learner
-  learner = std::unique_ptr<Learner>(Learner::Create({p_dmat}));
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
-  for (size_t i = 0; i < 4; ++i) {
-    learner->UpdateOneIter(i, p_dmat);
-  }
-  // data is not pulled back into host
-  ASSERT_FALSE(data.HostCanWrite());
-}
-#endif  // XGBOOST_USE_CUDA
-
 // Some other parts of test are in `Tree.JsonIO'.
 TEST(GBTree, JsonIO) {
   size_t constexpr kRows = 16, kCols = 16;

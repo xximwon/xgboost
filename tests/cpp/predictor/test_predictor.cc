@@ -53,6 +53,9 @@ void TestTrainingPrediction(size_t rows, size_t bins,
     }
 
     learner.reset(Learner::Create({}));
+    if (tree_method == "gpu_hist") {
+      learner->SetParam("gpu_id", "0");
+    }
     learner->SetParam("tree_method", tree_method);
     learner->SetParam("objective", "multi:softprob");
     learner->SetParam("num_feature", std::to_string(kCols));

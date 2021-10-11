@@ -341,7 +341,8 @@ TEST_F(SerializationTest, ConfigurationCount) {
   {
     auto learner = std::unique_ptr<Learner>(Learner::Create(mat));
 
-    learner->SetParam("tree_method", "gpu_hist");
+    learner->SetParam("tree_method", "hist");
+    learner->SetParam("gpu_id", "0");
 
     for (size_t i = 0; i < 10; ++i) {
       learner->UpdateOneIter(i, p_dmat);

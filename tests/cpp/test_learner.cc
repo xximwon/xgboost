@@ -268,66 +268,6 @@ TEST(Learner, BinaryModelIO) {
   ASSERT_EQ(config_str.find("WARNING"), std::string::npos);
 }
 
-#if defined(XGBOOST_USE_CUDA)
-// Tests for automatic GPU configuration.
-TEST(Learner, GPUConfiguration) {
-  using Arg = std::pair<std::string, std::string>;
-  size_t constexpr kRows = 10;
-  auto p_dmat = RandomDataGenerator(kRows, 10, 0).GenerateDMatrix();
-  std::vector<std::shared_ptr<DMatrix>> mat {p_dmat};
-  std::vector<bst_float> labels(kRows);
-  for (size_t i = 0; i < labels.size(); ++i) {
-    labels[i] = i;
-  }
-  p_dmat->Info().labels_.HostVector() = labels;
-  {
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"booster", "gblinear"},
-                        Arg{"updater", "gpu_coord_descent"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, 0);
-  }
-  {
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "gpu_hist"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, 0);
-  }
-  {
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "gpu_hist"},
-                        Arg{"gpu_id", "-1"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, 0);
-  }
-  {
-    // with CPU algorithm
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "hist"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, -1);
-  }
-  {
-    // with CPU algorithm, but `gpu_id` takes priority
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "hist"},
-                        Arg{"gpu_id", "0"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, 0);
-  }
-  {
-    // With CPU algorithm but GPU Predictor, this is to simulate when
-    // XGBoost is only used for prediction, so tree method is not
-    // specified.
-    std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "hist"},
-                        Arg{"predictor", "gpu_predictor"}});
-    learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->GetGenericParameter().gpu_id, 0);
-  }
-}
-#endif  // defined(XGBOOST_USE_CUDA)
-
 TEST(Learner, Seed) {
   auto m = RandomDataGenerator{10, 10, 0}.GenerateDMatrix();
   std::unique_ptr<Learner> learner {

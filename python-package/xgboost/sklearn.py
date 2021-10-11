@@ -399,7 +399,6 @@ class XGBModel(XGBModelBase):
         gpu_id: Optional[int] = None,
         deivce: Optional[str] = None,
         validate_parameters: Optional[bool] = None,
-        predictor: Optional[str] = None,
         enable_categorical: bool = False,
         **kwargs: Any
     ) -> None:
@@ -436,7 +435,6 @@ class XGBModel(XGBModelBase):
         self.gpu_id = gpu_id
         self.deivce = deivce
         self.validate_parameters = validate_parameters
-        self.predictor = predictor
         self.enable_categorical = enable_categorical
         if kwargs:
             self.kwargs = kwargs

@@ -18,6 +18,7 @@
 
 #include "param.h"
 #include "../common/common.h"
+#include "../common/charconv.h"
 #include "../common/categorical.h"
 #include "../predictor/predict_fn.h"
 
@@ -34,19 +35,18 @@ DMLC_REGISTER_PARAMETER(TrainParam);
  */
 class TreeGenerator {
  protected:
-  static int32_t constexpr kFloatMaxPrecision =
-      std::numeric_limits<bst_float>::max_digits10;
   FeatureMap const& fmap_;
   std::stringstream ss_;
   bool const with_stats_;
 
   template <typename Float>
   static std::string ToStr(Float value) {
-    static_assert(std::is_floating_point<Float>::value,
+    static_assert(std::is_same<float, Float>::value,
                   "Use std::to_string instead for non-floating point values.");
-    std::stringstream ss;
-    ss << std::setprecision(kFloatMaxPrecision) << value;
-    return ss.str();
+    char floats[NumericLimits<float>::kToCharsSize];
+    auto ret = to_chars(floats, floats + sizeof(floats), value);
+    auto str = std::string{floats, static_cast<size_t>(std::distance(floats, ret.ptr))};
+    return str;
   }
 
   static std::string Tabs(uint32_t n) {

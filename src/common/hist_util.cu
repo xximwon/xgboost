@@ -33,7 +33,7 @@ class InputOutputIterator;
 
 namespace detail {
 template <typename InFn, typename OutFn, typename Iter>
-class WriteProxy {
+class ReadWriteProxy {
   InFn in_fn_;
   OutFn out_fn_;
   Iter it_;
@@ -42,15 +42,15 @@ class WriteProxy {
   using value_type = typename std::result_of_t<InFn(size_t)>;  // NOLINT
 
  public:
-  __host__ __device__ WriteProxy(Iter const& it, InFn in_fn, OutFn out_fn) : in_fn_{in_fn}, out_fn_{out_fn}, it_{it} {}
+  __host__ __device__ ReadWriteProxy(Iter const& it, InFn in_fn, OutFn out_fn)
+      : in_fn_{in_fn}, out_fn_{out_fn}, it_{it} {}
 
-  __host__ __device__ WriteProxy& operator=(WriteProxy const& that)
-  {
+  __host__ __device__ ReadWriteProxy& operator=(ReadWriteProxy const& that) {
     out_fn_(*it_, *that.it_);
     return *this;
   }
-  __host__ __device__ WriteProxy& operator=(value_type const& that) {
-    out_fn_(*it_, *that.it_);
+  __host__ __device__ ReadWriteProxy& operator=(value_type const& that) {
+    out_fn_(*it_, thrust::get<0>(that));
     return *this;
   }
   __host__ __device__ operator value_type() const noexcept { return in_fn_(*it_); }  // NOLINT
@@ -59,7 +59,7 @@ class WriteProxy {
 // Register transform_output_iterator_proxy with 'is_proxy_reference' from
 // type_traits to enable its use with algorithms.
 template <typename InFn, typename OutFn, typename Iter>
-struct is_proxy_reference<WriteProxy<InFn, OutFn, Iter>> : public thrust::detail::true_type {};
+struct is_proxy_reference<ReadWriteProxy<InFn, OutFn, Iter>> : public thrust::detail::true_type {};
 
 template <typename InFn, typename OutFn, typename Iter>
 struct InOutIterBase {
@@ -67,18 +67,13 @@ struct InOutIterBase {
       use_default, thrust::detail::result_of_adaptable_function<InFn(
                        typename thrust::iterator_value<Iter>::type)>>::type;
 
-  using cv_value_type =
+  using CvValueType =
       typename thrust::detail::ia_dflt_help<use_default,
                                             thrust::detail::remove_reference<reference>>::type;
 
-  using type = thrust::iterator_adaptor<
-    InputOutputIterator<InFn, OutFn, Iter>,
-    Iter,
-    cv_value_type,
-    thrust::use_default,
-    thrust::use_default,
-    WriteProxy<InFn, OutFn, Iter>
-  >;
+  using type = thrust::iterator_adaptor<InputOutputIterator<InFn, OutFn, Iter>, Iter, CvValueType,
+                                        thrust::use_default, thrust::use_default,
+                                        ReadWriteProxy<InFn, OutFn, Iter>>;
 };
 }  // namespace detail
 
@@ -95,16 +90,12 @@ class InputOutputIterator : public detail::InOutIterBase<InFn, OutFn, Iter>::typ
   __host__ __device__ InputOutputIterator(Iter it, InFn&& in_fn, OutFn&& out_fn)
       : super_t{it}, in_fn_{in_fn}, out_fn_{out_fn} {}
 
-  InputOutputIterator& __host__ __device__ operator=(InputOutputIterator const& that) {
-    // in_fn_ = that.in_fn_;
-    // out_fn_ = that.out_fn_;
-    return *this;
-  }
+  InputOutputIterator& __host__ __device__ operator=(InputOutputIterator const&) { return *this; }
 
  private:
 
   __host__ __device__ typename super_t::reference dereference() const {
-    return detail::WriteProxy<InFn, OutFn, Iter>(this->base_reference(), in_fn_, out_fn_);
+    return detail::ReadWriteProxy<InFn, OutFn, Iter>(this->base_reference(), in_fn_, out_fn_);
   }
 };
 }  // namespace thrust
@@ -171,15 +162,18 @@ auto MakeInOutIter(InFn in_fn, OutFn out_fn) {
 template <typename Batch>
 void SortWithWeight(Batch batch, Span<uint32_t> sorted_idx, Span<float> weights) {
   dh::XGBDeviceAllocator<char> alloc;
-  auto in_fn = [=](size_t i) -> data::COOTuple {
-    auto v = batch.GetElement(i);
-    return v;
+  using Tup = thrust::tuple<size_t, data::COOTuple>;
+  auto in_fn = [=] XGBOOST_DEVICE(size_t i) -> Tup {
+    auto v = batch.GetElement(sorted_idx[i]);
+    return thrust::make_tuple(i, v);
   };
-  auto out_fn = [=](size_t i, size_t j) { sorted_idx[i] = sorted_idx[j]; };
+  auto out_fn = [=] XGBOOST_DEVICE(size_t i, size_t j) { sorted_idx[i] = sorted_idx[j]; };
   auto it = MakeInOutIter(in_fn, out_fn);
 
   thrust::sort_by_key(thrust::cuda::par(alloc), it, it + sorted_idx.size(), dh::tbegin(weights),
-                      [](data::COOTuple const& le, data::COOTuple const& re) {
+                      [] XGBOOST_DEVICE(Tup const& l, Tup const& r) {
+                        data::COOTuple const& le = thrust::get<1>(l);
+                        data::COOTuple const& re = thrust::get<1>(r);
                         if (le.column_idx != re.column_idx) {
                           return le.column_idx < re.column_idx;
                         }

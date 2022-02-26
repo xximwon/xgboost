@@ -147,7 +147,7 @@ class CupyAdapterBatch : public detail::NoMetaInfo {
   size_t Size() const {
     return array_interface_.Shape(0) * array_interface_.Shape(1);
   }
-  __device__ COOTuple GetElement(size_t idx) const {
+  XGBOOST_DEVICE COOTuple GetElement(size_t idx) const {
     size_t column_idx = idx % array_interface_.Shape(1);
     size_t row_idx = idx / array_interface_.Shape(1);
     float value = array_interface_(row_idx, column_idx);

@@ -42,9 +42,14 @@ class WriteProxy {
   using value_type = typename std::result_of_t<InFn(size_t)>;  // NOLINT
 
  public:
-  WriteProxy(Iter&& it, InFn&& in_fn, OutFn&& out_fn) : in_fn_{in_fn}, out_fn_{out_fn}, it_{it} {}
+  __host__ __device__ WriteProxy(Iter const& it, InFn in_fn, OutFn out_fn) : in_fn_{in_fn}, out_fn_{out_fn}, it_{it} {}
 
-  __host__ __device__ WriteProxy& operator=(WriteProxy const& that) {
+  __host__ __device__ WriteProxy& operator=(WriteProxy const& that)
+  {
+    out_fn_(*it_, *that.it_);
+    return *this;
+  }
+  __host__ __device__ WriteProxy& operator=(value_type const& that) {
     out_fn_(*it_, *that.it_);
     return *this;
   }
@@ -58,15 +63,28 @@ struct is_proxy_reference<WriteProxy<InFn, OutFn, Iter>> : public thrust::detail
 
 template <typename InFn, typename OutFn, typename Iter>
 struct InOutIterBase {
-  using type = thrust::iterator_adaptor<InputOutputIterator<InFn, OutFn, Iter>, Iter,
-                                        thrust::use_default, thrust::use_default,
-                                        thrust::use_default, WriteProxy<InFn, OutFn, Iter>>;
+  using reference = typename thrust::detail::ia_dflt_help<
+      use_default, thrust::detail::result_of_adaptable_function<InFn(
+                       typename thrust::iterator_value<Iter>::type)>>::type;
+
+  using cv_value_type =
+      typename thrust::detail::ia_dflt_help<use_default,
+                                            thrust::detail::remove_reference<reference>>::type;
+
+  using type = thrust::iterator_adaptor<
+    InputOutputIterator<InFn, OutFn, Iter>,
+    Iter,
+    cv_value_type,
+    thrust::use_default,
+    thrust::use_default,
+    WriteProxy<InFn, OutFn, Iter>
+  >;
 };
 }  // namespace detail
 
 template <typename InFn, typename OutFn, typename Iter>
 class InputOutputIterator : public detail::InOutIterBase<InFn, OutFn, Iter>::type {
-  InFn in_fn_;
+  mutable InFn in_fn_;
   OutFn out_fn_;
 
  public:
@@ -77,7 +95,14 @@ class InputOutputIterator : public detail::InOutIterBase<InFn, OutFn, Iter>::typ
   __host__ __device__ InputOutputIterator(Iter it, InFn&& in_fn, OutFn&& out_fn)
       : super_t{it}, in_fn_{in_fn}, out_fn_{out_fn} {}
 
+  InputOutputIterator& __host__ __device__ operator=(InputOutputIterator const& that) {
+    // in_fn_ = that.in_fn_;
+    // out_fn_ = that.out_fn_;
+    return *this;
+  }
+
  private:
+
   __host__ __device__ typename super_t::reference dereference() const {
     return detail::WriteProxy<InFn, OutFn, Iter>(this->base_reference(), in_fn_, out_fn_);
   }
@@ -137,7 +162,7 @@ size_t SketchBatchNumElements(size_t sketch_batch_num_elements, size_t nnz) {
 }
 
 template <typename InFn, typename OutFn>
-auto MakeInOutIter(InFn&& in_fn, OutFn&& out_fn) {
+auto MakeInOutIter(InFn in_fn, OutFn out_fn) {
   auto it = thrust::counting_iterator<size_t>(0ul);
   return thrust::InputOutputIterator<InFn, OutFn, thrust::counting_iterator<size_t>>{
       it, std::forward<InFn>(in_fn), std::forward<OutFn>(out_fn)};

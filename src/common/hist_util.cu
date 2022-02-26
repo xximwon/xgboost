@@ -27,6 +27,62 @@
 #include "categorical.h"
 #include "xgboost/host_device_vector.h"
 
+namespace thrust {
+template <typename InFn, typename OutFn, typename Iter>
+class InputOutputIterator;
+
+namespace detail {
+template <typename InFn, typename OutFn, typename Iter>
+class WriteProxy {
+  InFn in_fn_;
+  OutFn out_fn_;
+  Iter it_;
+
+ public:
+  using value_type = typename std::result_of_t<InFn(size_t)>;  // NOLINT
+
+ public:
+  WriteProxy(Iter&& it, InFn&& in_fn, OutFn&& out_fn) : in_fn_{in_fn}, out_fn_{out_fn}, it_{it} {}
+
+  __host__ __device__ WriteProxy& operator=(WriteProxy const& that) {
+    out_fn_(*it_, *that.it_);
+    return *this;
+  }
+  __host__ __device__ operator value_type() const noexcept { return in_fn_(*it_); }  // NOLINT
+};
+
+// Register transform_output_iterator_proxy with 'is_proxy_reference' from
+// type_traits to enable its use with algorithms.
+template <typename InFn, typename OutFn, typename Iter>
+struct is_proxy_reference<WriteProxy<InFn, OutFn, Iter>> : public thrust::detail::true_type {};
+
+template <typename InFn, typename OutFn, typename Iter>
+struct InOutIterBase {
+  using type = thrust::iterator_adaptor<InputOutputIterator<InFn, OutFn, Iter>, Iter,
+                                        thrust::use_default, thrust::use_default,
+                                        thrust::use_default, WriteProxy<InFn, OutFn, Iter>>;
+};
+}  // namespace detail
+
+template <typename InFn, typename OutFn, typename Iter>
+class InputOutputIterator : public detail::InOutIterBase<InFn, OutFn, Iter>::type {
+  InFn in_fn_;
+  OutFn out_fn_;
+
+ public:
+  using super_t = typename detail::InOutIterBase<InFn, OutFn, Iter>::type;
+  friend class thrust::iterator_core_access;
+
+ public:
+  __host__ __device__ InputOutputIterator(Iter it, InFn&& in_fn, OutFn&& out_fn)
+      : super_t{it}, in_fn_{in_fn}, out_fn_{out_fn} {}
+
+ private:
+  __host__ __device__ typename super_t::reference dereference() const {
+    return detail::WriteProxy<InFn, OutFn, Iter>(this->base_reference(), in_fn_, out_fn_);
+  }
+};
+}  // namespace thrust
 
 namespace xgboost {
 namespace common {
@@ -80,12 +136,30 @@ size_t SketchBatchNumElements(size_t sketch_batch_num_elements, size_t nnz) {
   }
 }
 
+template <typename InFn, typename OutFn>
+auto MakeInOutIter(InFn&& in_fn, OutFn&& out_fn) {
+  auto it = thrust::counting_iterator<size_t>(0ul);
+  return thrust::InputOutputIterator<InFn, OutFn, thrust::counting_iterator<size_t>>{
+      it, std::forward<InFn>(in_fn), std::forward<OutFn>(out_fn)};
+}
+
 template <typename Batch>
 void SortWithWeight(Batch batch, Span<uint32_t> sorted_idx, Span<float> weights) {
   dh::XGBDeviceAllocator<char> alloc;
-  thrust::sort_by_key(thrust::cuda::par(alloc), dh::tbegin(sorted_idx), dh::tend(sorted_idx),
-                      dh::tbegin(weights), SortIdxOp<Batch>{batch});
+  auto in_fn = [=](size_t i) -> data::COOTuple {
+    auto v = batch.GetElement(i);
+    return v;
+  };
+  auto out_fn = [=](size_t i, size_t j) { sorted_idx[i] = sorted_idx[j]; };
+  auto it = MakeInOutIter(in_fn, out_fn);
 
+  thrust::sort_by_key(thrust::cuda::par(alloc), it, it + sorted_idx.size(), dh::tbegin(weights),
+                      [](data::COOTuple const& le, data::COOTuple const& re) {
+                        if (le.column_idx != re.column_idx) {
+                          return le.column_idx < re.column_idx;
+                        }
+                        return le.value < re.value;
+                      });
   // Scan weights
   dh::XGBCachingDeviceAllocator<char> caching;
   thrust::inclusive_scan_by_key(thrust::cuda::par(caching), dh::tcbegin(sorted_idx),

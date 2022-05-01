@@ -26,13 +26,12 @@
 
 #endif                              // defined(XGBOOST_USE_CUDA)
 
-namespace xgboost {
-namespace obj {
+namespace xgboost::obj {
 class QuantileRegression : public ObjFunction {
   common::QuantileLossParam param_;
   HostDeviceVector<float> alpha_;
 
-  bst_target_t Targets(MetaInfo const& info) const override {
+  [[nodiscard]] bst_target_t Targets(MetaInfo const& info) const override {
     auto const& alpha = param_.quantile_alpha.Get();
     CHECK_EQ(alpha.size(), alpha_.Size()) << "The objective is not yet configured.";
     CHECK_EQ(info.labels.Shape(1), 1) << "Multi-target is not yet supported by the quantile loss.";
@@ -177,9 +176,10 @@ class QuantileRegression : public ObjFunction {
   void UpdateTreeLeaf(HostDeviceVector<bst_node_t> const& position, MetaInfo const& info,
                       float learning_rate, HostDeviceVector<float> const& prediction,
                       std::int32_t group_idx, RegTree* p_tree) const override {
-    auto alpha = param_.quantile_alpha[group_idx];
-    ::xgboost::obj::UpdateTreeLeaf(ctx_, position, group_idx, info, learning_rate, prediction,
-                                   alpha, p_tree);
+    auto alphas = ctx_->IsCPU() ? alpha_.ConstHostSpan() : alpha_.ConstDeviceSpan();
+    auto in = p_tree->IsMultiTarget() ? alphas : alphas.subspan(group_idx, 1);
+    ::xgboost::obj::UpdateTreeLeaf(ctx_, position, group_idx, info, learning_rate, prediction, in,
+                                   p_tree);
   }
 
   void Configure(Args const& args) override {
@@ -187,7 +187,7 @@ class QuantileRegression : public ObjFunction {
     param_.Validate();
     this->alpha_.HostVector() = param_.quantile_alpha.Get();
   }
-  ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
+  [[nodiscard]] ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
   static char const* Name() { return "reg:quantileerror"; }
 
   void SaveConfig(Json* p_out) const override {
@@ -218,5 +218,4 @@ XGBOOST_REGISTER_OBJECTIVE(QuantileRegression, QuantileRegression::Name())
 #if defined(XGBOOST_USE_CUDA)
 DMLC_REGISTRY_FILE_TAG(quantile_obj_gpu);
 #endif  // defined(XGBOOST_USE_CUDA)
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

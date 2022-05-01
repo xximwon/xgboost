@@ -8,8 +8,7 @@
 #include "gbtree_model.h"
 #include "gbtree.h"
 
-namespace xgboost {
-namespace gbm {
+namespace xgboost::gbm {
 void GBTreeModel::Save(dmlc::Stream* fo) const {
   CHECK_EQ(param.num_trees, static_cast<int32_t>(trees.size()));
 
@@ -99,7 +98,7 @@ void GBTreeModel::LoadModel(Json const& in) {
   CHECK(ctx_);
   common::ParallelFor(trees_json.size(), ctx_->Threads(), [&](auto t) {
     auto tree_id = get<Integer>(trees_json[t]["id"]);
-    trees.at(tree_id).reset(new RegTree());
+    trees.at(tree_id).reset(new RegTree{});
     trees.at(tree_id)->LoadModel(trees_json[t]);
   });
 
@@ -109,6 +108,4 @@ void GBTreeModel::LoadModel(Json const& in) {
     tree_info[i] = get<Integer const>(tree_info_json[i]);
   }
 }
-
-}  // namespace gbm
-}  // namespace xgboost
+}  // namespace xgboost::gbm

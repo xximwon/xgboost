@@ -11,6 +11,7 @@
 
 #include "../common/algorithm.h"           // ArgSort
 #include "../common/common.h"              // AssertGPUSupport
+#include "../common/linalg_op.h"           // for cbegin, cend
 #include "../common/numeric.h"             // RunLengthEncode
 #include "../common/stats.h"               // Quantile,WeightedQuantile
 #include "../common/threading_utils.h"     // ParallelFor
@@ -44,7 +45,7 @@ void EncodeTreeLeafHost(Context const* ctx, RegTree const& tree,
 
   std::vector<bst_node_t> leaf;
   tree.WalkTree([&](bst_node_t nidx) {
-    if (tree[nidx].IsLeaf()) {
+    if (tree.IsLeaf(nidx)) {
       leaf.push_back(nidx);
     }
     return true;
@@ -75,7 +76,8 @@ void EncodeTreeLeafHost(Context const* ctx, RegTree const& tree,
 
 void UpdateTreeLeafHost(Context const* ctx, std::vector<bst_node_t> const& position,
                         std::int32_t group_idx, MetaInfo const& info, float learning_rate,
-                        HostDeviceVector<float> const& predt, float alpha, RegTree* p_tree) {
+                        HostDeviceVector<float> const& predt, common::Span<float const> alphas,
+                        RegTree* p_tree) {
   auto& tree = *p_tree;
 
   std::vector<bst_node_t> nidx;
@@ -83,15 +85,21 @@ void UpdateTreeLeafHost(Context const* ctx, std::vector<bst_node_t> const& posit
   std::vector<size_t> ridx;
   EncodeTreeLeafHost(ctx, *p_tree, position, &nptr, &nidx, &ridx);
   size_t n_leaf = nidx.size();
+  std::size_t n_targets = p_tree->NumTargets();
+
   if (nptr.empty()) {
-    std::vector<float> quantiles;
-    UpdateLeafValues(&quantiles, nidx, learning_rate, p_tree);
+    linalg::Matrix<float> quantiles{{n_leaf, n_targets}, ctx->gpu_id};
+    quantiles.Data()->Fill(std::numeric_limits<float>::quiet_NaN());
+    UpdateLeafValues(quantiles.HostView(), nidx, p_tree);
     return;
   }
 
   CHECK(!position.empty());
-  std::vector<float> quantiles(n_leaf, 0);
-  std::vector<int32_t> n_valids(n_leaf, 0);
+  CHECK_GE(n_targets, 1);
+  linalg::Matrix<float> quantiles{{n_leaf, n_targets}, ctx->gpu_id};
+  auto h_quantiles = quantiles.HostView();
+  // std::vector<float> quantiles(n_leaf * n_targets, 0);
+  std::vector<int32_t> n_valids(n_leaf * n_targets, 0);
 
   auto const& h_node_idx = nidx;
   auto const& h_node_ptr = nptr;
@@ -100,9 +108,9 @@ void UpdateTreeLeafHost(Context const* ctx, std::vector<bst_node_t> const& posit
                                         predt.Size() / info.num_row_);
 
   // loop over each leaf
-  common::ParallelFor(quantiles.size(), ctx->Threads(), [&](size_t k) {
+  common::ParallelFor(h_node_idx.size(), ctx->Threads(), [&](std::size_t k) {
     auto nidx = h_node_idx[k];
-    CHECK(tree[nidx].IsLeaf());
+    CHECK(tree.IsLeaf(nidx));
     CHECK_LT(k + 1, h_node_ptr.size());
     size_t n = h_node_ptr[k + 1] - h_node_ptr[k];
     auto h_row_set = common::Span<size_t const>{ridx}.subspan(h_node_ptr[k], n);
@@ -119,19 +127,70 @@ void UpdateTreeLeafHost(Context const* ctx, std::vector<bst_node_t> const& posit
       return h_weights(row_idx);
     });
 
-    float q{0};
-    if (info.weights_.Empty()) {
-      q = common::Quantile(ctx, alpha, iter, iter + h_row_set.size());
-    } else {
-      q = common::WeightedQuantile(ctx, alpha, iter, iter + h_row_set.size(), w_it);
+    for (std::size_t i = 0; i < alphas.size(); ++i) {
+      auto alpha = alphas[i];
+      float q{0};
+      if (info.weights_.Empty()) {
+        q = common::Quantile(ctx, alpha, iter, iter + h_row_set.size());
+      } else {
+        q = common::WeightedQuantile(ctx, alpha, iter, iter + h_row_set.size(), w_it);
+      }
+      if (std::isnan(q)) {
+        CHECK(h_row_set.empty());
+      }
+      h_quantiles(k, i) = q * learning_rate;
     }
-    if (std::isnan(q)) {
-      CHECK(h_row_set.empty());
-    }
-    quantiles.at(k) = q;
   });
 
-  UpdateLeafValues(&quantiles, nidx, learning_rate, p_tree);
+  UpdateLeafValues(h_quantiles, nidx, p_tree);
+}
+
+void UpdateLeafValues(linalg::MatrixView<float> quantiles, std::vector<bst_node_t> const& nidx,
+                      RegTree* p_tree) {
+  auto& tree = *p_tree;
+  // auto& quantiles = *p_quantiles;
+  auto const& h_node_idx = nidx;
+
+  size_t n_leaf{h_node_idx.size()};
+  collective::Allreduce<collective::Operation::kMax>(&n_leaf, 1);
+  // CHECK(quantiles.empty() || quantiles.Size() == n_leaf * p_tree->NumTargets());
+  // if (quantiles.empty()) {
+  //   quantiles.resize(n_leaf, std::numeric_limits<float>::quiet_NaN());
+  // }
+
+  // number of workers that have valid quantiles
+  std::vector<int32_t> n_valids(quantiles.Size());
+  std::transform(linalg::cbegin(quantiles), linalg::cend(quantiles), n_valids.begin(),
+                 [](float q) { return static_cast<int32_t>(!std::isnan(q)); });
+  collective::Allreduce<collective::Operation::kSum>(n_valids.data(), n_valids.size());
+  // convert to 0 for all reduce
+  std::replace_if(
+      linalg::begin(quantiles), linalg::end(quantiles), [](float q) { return std::isnan(q); }, 0.f);
+  // use the mean value
+  collective::Allreduce<collective::Operation::kSum>(quantiles.Values().data(), quantiles.Size());
+
+  for (size_t i = 0; i < n_leaf; ++i) {
+    if (n_valids[i] > 0) {
+      quantiles.Values()[i] /= static_cast<float>(n_valids[i]);
+    } else {
+      // Use original leaf value if no worker can provide the quantile.
+      CHECK(false) << "fixme";
+      quantiles.Values()[i] = tree[h_node_idx[i]].LeafValue();
+    }
+  }
+
+  if (tree.IsMultiTarget()) {
+    for (size_t i = 0; i < nidx.size(); ++i) {
+      auto nidx = h_node_idx[i];
+      tree.SetLeaf(nidx, quantiles.Slice(i, linalg::All()));
+    }
+  } else {
+    for (size_t i = 0; i < nidx.size(); ++i) {
+      auto nidx = h_node_idx[i];
+      auto q = quantiles(i, 0);
+      tree[nidx].SetLeaf(q);
+    }
+  }
 }
 
 #if !defined(XGBOOST_USE_CUDA)

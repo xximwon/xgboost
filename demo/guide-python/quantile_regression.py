@@ -52,6 +52,7 @@ def quantile_loss(args: argparse.Namespace) -> None:
             "objective": "reg:quantileerror",
             "tree_method": "hist",
             "quantile_alpha": alpha,
+            "multi_strategy": "multi_output_tree",
             # Let's try not to overfit.
             "learning_rate": 0.04,
             "max_depth": 5,

@@ -1287,6 +1287,9 @@ class LearnerImpl : public LearnerIO {
                       uint32_t iteration_end) override {
     this->Configure();
     auto& out_predictions = this->GetThreadLocal().prediction_entry;
+    CHECK(p_m);
+    this->obj_->InitEstimation(p_m->Info(), &learner_model_param_, &out_predictions.predictions);
+    out_predictions.version = 0;
     this->gbm_->InplacePredict(p_m, missing, &out_predictions, iteration_begin, iteration_end);
     if (type == PredictionType::kValue) {
       obj_->PredTransform(&out_predictions.predictions);
@@ -1321,7 +1324,11 @@ class LearnerImpl : public LearnerIO {
                   unsigned layer_begin, unsigned layer_end) const {
     CHECK(gbm_ != nullptr) << "Predict must happen after Load or configuration";
     this->ValidateDMatrix(data, false);
-    gbm_->PredictBatch(data, out_preds, training, layer_begin, layer_end);
+    // fixme: training continuation
+    if (out_preds->version == 0) {
+      this->obj_->InitEstimation(data->Info(), &learner_model_param_, &out_preds->predictions);
+    }
+    gbm_->PredictBatch(data, obj_.get(), out_preds, training, layer_begin, layer_end);
   }
 
   void ValidateDMatrix(DMatrix* p_fmat, bool is_training) const {

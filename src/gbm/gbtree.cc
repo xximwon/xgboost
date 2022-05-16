@@ -498,11 +498,8 @@ void GBTree::Slice(int32_t layer_begin, int32_t layer_end, int32_t step,
                                      });
 }
 
-void GBTree::PredictBatch(DMatrix* p_fmat,
-                          PredictionCacheEntry* out_preds,
-                          bool,
-                          unsigned layer_begin,
-                          unsigned layer_end) {
+void GBTree::PredictBatch(DMatrix* p_fmat, ObjFunction const* fobj, PredictionCacheEntry* out_preds,
+                          bool, unsigned layer_begin, unsigned layer_end) {
   CHECK(configured_);
   if (layer_end == 0) {
     layer_end = this->BoostedRounds();
@@ -526,8 +523,7 @@ void GBTree::PredictBatch(DMatrix* p_fmat,
   if (out_preds->version == 0) {
     // out_preds->Size() can be non-zero as it's initialized here before any
     // tree is built at the 0^th iterator.
-    predictor->InitOutPredictions(p_fmat->Info(), &out_preds->predictions,
-                                  model_);
+    fobj->InitEstimation(p_fmat->Info(), model_.learner_model_param, &out_preds->predictions);
   }
 
   uint32_t tree_begin, tree_end;
@@ -731,25 +727,21 @@ class Dart : public GBTree {
   }
 
   // An independent const function to make sure it's thread safe.
-  void PredictBatchImpl(DMatrix *p_fmat, PredictionCacheEntry *p_out_preds,
-                        bool training, unsigned layer_begin,
-                        unsigned layer_end) const {
-    auto &predictor = this->GetPredictor(&p_out_preds->predictions, p_fmat);
+  void PredictBatchImpl(DMatrix* p_fmat, PredictionCacheEntry* p_out_preds, bool training,
+                        unsigned layer_begin, unsigned layer_end) const {
+    auto& predictor = this->GetPredictor(&p_out_preds->predictions, p_fmat);
     CHECK(predictor);
-    predictor->InitOutPredictions(p_fmat->Info(), &p_out_preds->predictions,
-                                  model_);
-    p_out_preds->version = 0;
     uint32_t tree_begin, tree_end;
     std::tie(tree_begin, tree_end) = detail::LayerToTree(model_, layer_begin, layer_end);
     auto n_groups = model_.learner_model_param->num_output_group;
 
     PredictionCacheEntry predts;  // temporary storage for prediction
-    if (ctx_->gpu_id != GenericParameter::kCpuId) {
+    if (ctx_->gpu_id != Context::kCpuId) {
       predts.predictions.SetDevice(ctx_->gpu_id);
     }
     predts.predictions.Resize(p_fmat->Info().num_row_ * n_groups, 0);
 
-    for (size_t i = tree_begin; i < tree_end; i += 1) {
+    for (size_t i = tree_begin; i < tree_end; ++i) {
       if (training && std::binary_search(idx_drop_.cbegin(), idx_drop_.cend(), i)) {
         continue;
       }
@@ -766,14 +758,13 @@ class Dart : public GBTree {
       CHECK_EQ(p_out_preds->predictions.Size(), predts.predictions.Size());
 
       size_t n_rows = p_fmat->Info().num_row_;
-      if (predts.predictions.DeviceIdx() != GenericParameter::kCpuId) {
+      if (predts.predictions.DeviceIdx() != Context::kCpuId) {
         p_out_preds->predictions.SetDevice(predts.predictions.DeviceIdx());
-        GPUDartPredictInc(p_out_preds->predictions.DeviceSpan(),
-                          predts.predictions.DeviceSpan(), w, n_rows, n_groups,
-                          group);
+        GPUDartPredictInc(p_out_preds->predictions.DeviceSpan(), predts.predictions.DeviceSpan(), w,
+                          n_rows, n_groups, group);
       } else {
-        auto &h_out_predts = p_out_preds->predictions.HostVector();
-        auto &h_predts = predts.predictions.HostVector();
+        auto& h_out_predts = p_out_preds->predictions.HostVector();
+        auto& h_predts = predts.predictions.HostVector();
         common::ParallelFor(p_fmat->Info().num_row_, ctx_->Threads(), [&](auto ridx) {
           const size_t offset = ridx * n_groups + group;
           h_out_predts[offset] += (h_predts[offset] * w);
@@ -782,12 +773,12 @@ class Dart : public GBTree {
     }
   }
 
-  void PredictBatch(DMatrix* p_fmat,
-                    PredictionCacheEntry* p_out_preds,
-                    bool training,
-                    unsigned layer_begin,
-                    unsigned layer_end) override {
+  void PredictBatch(DMatrix* p_fmat, ObjFunction const* fobj, PredictionCacheEntry* p_out_preds,
+                    bool training, unsigned layer_begin, unsigned layer_end) override {
     DropTrees(training);
+    fobj->InitEstimation(p_fmat->Info(), this->model_.learner_model_param,
+                         &p_out_preds->predictions);
+    p_out_preds->version = 0;
     this->PredictBatchImpl(p_fmat, p_out_preds, training, layer_begin, layer_end);
   }
 
@@ -801,7 +792,7 @@ class Dart : public GBTree {
     std::vector<Predictor const*> predictors {
       cpu_predictor_.get(),
 #if defined(XGBOOST_USE_CUDA)
-      gpu_predictor_.get()
+          gpu_predictor_.get()
 #endif  // defined(XGBOOST_USE_CUDA)
     };
     Predictor const* predictor{nullptr};
@@ -814,7 +805,6 @@ class Dart : public GBTree {
     predts.predictions.Resize(p_fmat->Info().num_row_ * n_groups, 0);
 
     auto predict_impl = [&](size_t i) {
-      predts.predictions.Fill(0);
       if (tparam_.predictor == PredictorType::kAuto) {
         // Try both predictor implementations
         bool success = false;
@@ -838,10 +828,8 @@ class Dart : public GBTree {
 
     // Inplace predict is not used for training, so no need to drop tree.
     for (size_t i = tree_begin; i < tree_end; ++i) {
+      predts.predictions.Fill(0);
       predict_impl(i);
-      if (i == tree_begin) {
-        predictor->InitOutPredictions(p_fmat->Info(), &p_out_preds->predictions, model_);
-      }
       // Multiple the tree weight
       auto w = this->weight_drop_.at(i);
       auto group = model_.tree_info.at(i);
@@ -850,15 +838,14 @@ class Dart : public GBTree {
       size_t n_rows = p_fmat->Info().num_row_;
       if (predts.predictions.DeviceIdx() != Context::kCpuId) {
         p_out_preds->predictions.SetDevice(predts.predictions.DeviceIdx());
-        GPUDartInplacePredictInc(p_out_preds->predictions.DeviceSpan(),
-                                 predts.predictions.DeviceSpan(), w, n_rows,
-                                 model_.learner_model_param->base_score, n_groups, group);
+        GPUDartPredictInc(p_out_preds->predictions.DeviceSpan(), predts.predictions.DeviceSpan(), w,
+                          n_rows, n_groups, group);
       } else {
         auto& h_predts = predts.predictions.HostVector();
         auto& h_out_predts = p_out_preds->predictions.HostVector();
         common::ParallelFor(n_rows, ctx_->Threads(), [&](auto ridx) {
           const size_t offset = ridx * n_groups + group;
-          h_out_predts[offset] += (h_predts[offset] - model_.learner_model_param->base_score) * w;
+          h_out_predts[offset] += (h_predts[offset] * w);
         });
       }
     }

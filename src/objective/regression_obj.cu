@@ -20,6 +20,7 @@
 #include "../common/transform.h"
 #include "./regression_loss.h"
 #include "adaptive.h"
+#include "init_estimation.h"
 #include "xgboost/base.h"
 #include "xgboost/data.h"
 #include "xgboost/generic_parameters.h"
@@ -672,7 +673,20 @@ class MeanAbsoluteError : public ObjFunction {
   void Configure(Args const&) override {}
   ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
 
-  void GetGradient(HostDeviceVector<bst_float> const& preds, const MetaInfo& info, int /*iter*/,
+  float InitEstimation(MetaInfo const& info, LearnerModelParam const* model,
+                       HostDeviceVector<float>* out_predt) const override {
+    CHECK(ctx_->IsCPU()) << "Not implemented";
+    auto q = InitialEstimationRegression::Quantile(ctx_, 0.5, info, model, out_predt);
+    size_t target{0};  // multi-output not supported yet;
+    if (!std::isnan(q)) {
+      out_predt->Fill(q);
+    } else {
+      ObjFunction::InitEstimation(info, model, out_predt);
+    }
+    return q;
+  }
+
+  void GetGradient(HostDeviceVector<bst_float> const& preds, const MetaInfo& info, int iter,
                    HostDeviceVector<GradientPair>* out_gpair) override {
     CheckRegInputs(info, preds);
     auto labels = info.labels.View(ctx_->gpu_id);

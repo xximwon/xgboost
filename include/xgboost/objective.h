@@ -23,11 +23,12 @@
 namespace xgboost {
 
 class RegTree;
+struct LearnerModelParam;
 
 /*! \brief interface of objective function */
 class ObjFunction : public Configurable {
  protected:
-  GenericParameter const* ctx_;
+  Context const* ctx_;
 
  public:
   /*! \brief virtual destructor */
@@ -36,7 +37,16 @@ class ObjFunction : public Configurable {
    * \brief Configure the objective with the specified parameters.
    * \param args arguments to the objective function.
    */
-  virtual void Configure(const std::vector<std::pair<std::string, std::string> >& args) = 0;
+  virtual void Configure(Args const& args) = 0;
+  /*!
+   * \brief Provide initial estimation.
+   *
+   * \param info       MetaInfo providing related information like labels and weights.
+   * \param model      Information about the model.
+   * \param out_predt  Output estimation
+   */
+  virtual float InitEstimation(MetaInfo const& info, LearnerModelParam const* model,
+                               HostDeviceVector<float>* out_predt) const;
   /*!
    * \brief Get gradient over each of predictions, given existing information.
    * \param preds prediction of current round

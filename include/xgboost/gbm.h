@@ -94,11 +94,8 @@ class GradientBooster : public Model, public Configurable {
    * \param layer_begin Beginning of boosted tree layer used for prediction.
    * \param layer_end   End of booster layer. 0 means do not limit trees.
    */
-  virtual void PredictBatch(DMatrix* dmat,
-                            PredictionCacheEntry* out_preds,
-                            bool training,
-                            unsigned layer_begin,
-                            unsigned layer_end) = 0;
+  virtual void PredictBatch(DMatrix* dmat, ObjFunction const* fobj, PredictionCacheEntry* out_preds,
+                            bool training, unsigned layer_begin, unsigned layer_end) = 0;
 
   /*!
    * \brief Inplace prediction.

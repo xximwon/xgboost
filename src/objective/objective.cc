@@ -3,12 +3,14 @@
  * \file objective.cc
  * \brief Registry of all objective functions.
  */
-#include <xgboost/objective.h>
 #include <dmlc/registry.h>
+#include <xgboost/objective.h>
 
 #include <sstream>
 
+#include "init_estimation.h"
 #include "xgboost/host_device_vector.h"
+#include "xgboost/learner.h"
 
 namespace dmlc {
 DMLC_REGISTRY_ENABLE(::xgboost::ObjFunctionReg);
@@ -16,21 +18,25 @@ DMLC_REGISTRY_ENABLE(::xgboost::ObjFunctionReg);
 
 namespace xgboost {
 // implement factory functions
-ObjFunction* ObjFunction::Create(const std::string& name, GenericParameter const* tparam) {
-  auto *e = ::dmlc::Registry< ::xgboost::ObjFunctionReg>::Get()->Find(name);
+ObjFunction* ObjFunction::Create(Context const* ctx, const std::string& name) {
+  auto* e = ::dmlc::Registry< ::xgboost::ObjFunctionReg>::Get()->Find(name);
   if (e == nullptr) {
     std::stringstream ss;
     for (const auto& entry : ::dmlc::Registry< ::xgboost::ObjFunctionReg>::List()) {
       ss << "Objective candidate: " << entry->name << "\n";
     }
-    LOG(FATAL) << "Unknown objective function: `" << name << "`\n"
-               << ss.str();
+    LOG(FATAL) << "Unknown objective function: `" << name << "`\n" << ss.str();
   }
   auto pobj = (e->body)();
-  pobj->ctx_ = tparam;
+  pobj->ctx_ = ctx;
   return pobj;
 }
 
+float ObjFunction::InitEstimation(MetaInfo const& info, LearnerModelParam const* model,
+                                  HostDeviceVector<float>* out_predt) const {
+  obj::InitialEstimationRegression::Constant(ctx_, info, model, out_predt);
+  return model->base_score;
+}
 }  // namespace xgboost
 
 namespace xgboost {

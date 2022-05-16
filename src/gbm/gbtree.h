@@ -252,7 +252,7 @@ class GBTree : public GradientBooster {
     return model_.trees.size() / this->LayerTrees();
   }
 
-  void PredictBatch(DMatrix *p_fmat, PredictionCacheEntry *out_preds,
+  void PredictBatch(DMatrix* p_fmat, ObjFunction const* fobj, PredictionCacheEntry* out_preds,
                     bool training, unsigned layer_begin, unsigned layer_end) override;
 
   void InplacePredict(std::shared_ptr<DMatrix> p_m, float missing, PredictionCacheEntry* out_preds,

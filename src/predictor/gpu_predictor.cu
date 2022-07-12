@@ -759,11 +759,9 @@ class GPUPredictor : public xgboost::Predictor {
         << "but data is on: " << m->DeviceIdx();
     if (p_m) {
       p_m->Info().num_row_ = m->NumRows();
-      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions), model);
     } else {
       MetaInfo info;
       info.num_row_ = m->NumRows();
-      this->InitOutPredictions(info, &(out_preds->predictions), model);
     }
     out_preds->predictions.SetDevice(m->DeviceIdx());
 

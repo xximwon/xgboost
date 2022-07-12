@@ -47,15 +47,22 @@ struct InitialEstimationRegression : public MultiTargetMixIn {
                        HostDeviceVector<float>* out_predt) {
     InitPrediction(ctx, info, model, out_predt);
     HostDeviceVector<bst_float> const* base_margin = info.base_margin_.Data();
+    if (!ctx->IsCPU()) {
+      out_predt->SetDevice(ctx->gpu_id);
+    }
     if (base_margin->Empty()) {
       // cannot rely on the Resize to fill as it might skip if the size is already correct.
       out_predt->Fill(model->base_score);
     }
   }
 
+  static void QuantileGPU(Context const* ctx, float alpha, MetaInfo const& info,
+                          LearnerModelParam const* model, HostDeviceVector<float>* out_predt);
+
   static float Quantile(Context const* ctx, float alpha, MetaInfo const& info,
                         LearnerModelParam const* model, HostDeviceVector<float>* out_predt) {
     InitPrediction(ctx, info, model, out_predt);
+    // fixme: skip if base margin is set.
     out_predt->Fill(0);
     auto const& h_labels = info.labels.HostView();
     auto n_targets = Targets(info);
@@ -76,6 +83,9 @@ struct InitialEstimationRegression : public MultiTargetMixIn {
     }
     return q;
   }
+
+  static void MeanCUDA(Context const* ctx, MetaInfo const& info, LearnerModelParam const* model,
+                       HostDeviceVector<float>* out_predt);
 
   static void Mean(Context const* ctx, MetaInfo const& info, LearnerModelParam const* model,
                    HostDeviceVector<float>* out_predt) {
@@ -99,15 +109,6 @@ struct InitialEstimationRegression : public MultiTargetMixIn {
         h_predt(i, t) = mean;
       }
     }
-  }
-
-  static void CrossEntropy(Context const* ctx, MetaInfo const& info, LearnerModelParam const* model,
-                           HostDeviceVector<float>* out_predt) {
-    Mean(ctx, info, model, out_predt);
-    auto h_predt =
-        linalg::MakeTensorView(out_predt->HostSpan(), info.labels.Shape(), Context::kCpuId);
-    linalg::ElementWiseTransformHost(
-        h_predt, ctx->Threads(), [&](size_t i, float p) { return std::log(p) - std::log(1 - p); });
   }
 };
 }  // namespace obj

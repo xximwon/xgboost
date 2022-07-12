@@ -680,10 +680,10 @@ class MeanAbsoluteError : public ObjFunction {
     size_t target{0};  // multi-output not supported yet;
     if (!std::isnan(q)) {
       out_predt->Fill(q);
+      return q;
     } else {
-      ObjFunction::InitEstimation(info, model, out_predt);
+      return ObjFunction::InitEstimation(info, model, out_predt);
     }
-    return q;
   }
 
   void GetGradient(HostDeviceVector<bst_float> const& preds, const MetaInfo& info, int iter,

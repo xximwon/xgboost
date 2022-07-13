@@ -1,6 +1,7 @@
 """Copyright 2019-2022 XGBoost contributors"""
 from pathlib import Path
 import pickle
+import warnings
 import testing as tm
 import pytest
 import xgboost as xgb
@@ -1243,10 +1244,14 @@ class TestWithDask:
         os.remove(after_fname)
 
         with dask.config.set({'xgboost.foo': "bar"}):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match=r"Unknown configuration.*"):
                 xgb.dask.train(client, {}, dtrain, num_boost_round=4)
 
         with dask.config.set({'xgboost.scheduler_address': "127.0.0.1:22"}):
+            if os.geteuid() == 0:
+                warnings.warn("Skipping test due to being run as root.")
+                return
+
             with pytest.raises(PermissionError):
                 xgb.dask.train(client, {}, dtrain, num_boost_round=1)
 

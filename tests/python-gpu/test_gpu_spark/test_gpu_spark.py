@@ -1,21 +1,18 @@
 import logging
-import sys
 
 import pytest
 import sklearn
-
-sys.path.append("tests/python")
-import testing as tm
-
-if tm.no_dask()["condition"]:
-    pytest.skip(msg=tm.no_spark()["reason"], allow_module_level=True)
-if sys.platform.startswith("win"):
-    pytest.skip("Skipping PySpark tests on Windows", allow_module_level=True)
-
 from pyspark.ml.linalg import Vectors
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 from pyspark.sql import SparkSession
 from xgboost.spark import SparkXGBClassifier, SparkXGBRegressor
+
+from xgboost import testing
+
+skip = testing.skip_spark()
+if skip["condition"]:
+    pytest.skip(msg=skip["reason"], allow_module_level=True)
+
 
 gpu_discovery_script_path = "tests/python-gpu/test_gpu_spark/discover_gpu.sh"
 executor_gpu_amount = 4

@@ -14,7 +14,7 @@ if tm.no_spark()["condition"]:
 if sys.platform.startswith("win") or sys.platform.startswith("darwin"):
     pytest.skip("Skipping PySpark tests on Windows", allow_module_level=True)
 
-from pyspark.sql import SparkSession, SQLContext
+from pyspark.sql import SparkSession
 from xgboost.spark.utils import _get_default_params_from_func
 
 
@@ -97,7 +97,7 @@ class TestSparkContext(object):
         cls.sc = None
 
 
-class SparkTestCase(TestSparkContext, TestTempDir, unittest.TestCase):
+class SparkTestCase(TestSparkContext, TestTempDir):
     @classmethod
     def setUpClass(cls):
         cls.setup_env(

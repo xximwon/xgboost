@@ -1,5 +1,5 @@
 """Utilities for defining Python tests."""
-
+import sys
 import socket
 from platform import system
 from typing import TypedDict
@@ -39,3 +39,24 @@ def has_ipv6() -> bool:
 def skip_ipv6() -> PytestSkip:
     """PyTest skip mark for IPv6."""
     return {"condition": not has_ipv6(), "reason": "IPv6 is required to be enabled."}
+
+
+def skip_spark() -> PytestSkip:
+    """Check whether we should skip PySpark tests."""
+    if sys.platform.startswith("win") or sys.platform.startswith("darwin"):
+        print("skip 0")
+        return {"condition": True, "reason": "Current platform is not supported."}
+
+    try:
+        import pyspark          # noqa
+        SPARK_INSTALLED = True
+    except ImportError:
+        SPARK_INSTALLED = False
+
+    return {"condition": not SPARK_INSTALLED, "reason": "Spark is not installed"}
+
+
+def add_path(path: str):
+    """Add to system path."""
+    if path not in sys.path:
+        sys.path.append(path)

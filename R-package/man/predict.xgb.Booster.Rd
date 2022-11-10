@@ -132,7 +132,7 @@ train <- agaricus.train
 test <- agaricus.test
 
 bst <- xgboost(data = train$data, label = train$label, max_depth = 2,
-               eta = 0.5, nthread = 2, nrounds = 5, objective = "binary:logistic")
+               eta = 0.5, nthread = 1, nrounds = 5, objective = "binary:logistic")
 # use all trees by default
 pred <- predict(bst, test$data)
 # use only the 1st tree

@@ -241,12 +241,12 @@ The following callbacks are automatically created when certain parameters are se
 data(agaricus.train, package='xgboost')
 data(agaricus.test, package='xgboost')
 
-dtrain <- with(agaricus.train, xgb.DMatrix(data, label = label, nthread = 2))
-dtest <- with(agaricus.test, xgb.DMatrix(data, label = label, nthread = 2))
+dtrain <- with(agaricus.train, xgb.DMatrix(data, label = label, nthread = 1))
+dtest <- with(agaricus.test, xgb.DMatrix(data, label = label, nthread = 1))
 watchlist <- list(train = dtrain, eval = dtest)
 
 ## A simple xgb.train example:
-param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2,
+param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 1,
               objective = "binary:logistic", eval_metric = "auc")
 bst <- xgb.train(param, dtrain, nrounds = 2, watchlist)
 
@@ -267,12 +267,12 @@ evalerror <- function(preds, dtrain) {
 
 # These functions could be used by passing them either:
 #  as 'objective' and 'eval_metric' parameters in the params list:
-param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2,
+param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 1,
               objective = logregobj, eval_metric = evalerror)
 bst <- xgb.train(param, dtrain, nrounds = 2, watchlist)
 
 #  or through the ... arguments:
-param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 2)
+param <- list(max_depth = 2, eta = 1, verbose = 0, nthread = 1)
 bst <- xgb.train(param, dtrain, nrounds = 2, watchlist,
                  objective = logregobj, eval_metric = evalerror)
 
@@ -289,7 +289,7 @@ bst <- xgb.train(param, dtrain, nrounds = 2, watchlist,
                  callbacks = list(cb.reset.parameters(my_etas)))
 
 ## Early stopping:
-bst <- xgb.train(param, dtrain, nrounds = 25, watchlist,
+bst <- xgb.train(param, dtrain, nrounds = 16, watchlist,
                  early_stopping_rounds = 3)
 
 ## An 'xgboost' interface example:

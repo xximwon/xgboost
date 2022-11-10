@@ -40,14 +40,14 @@ Callback function expects the following values to be set in its calling frame:
 # without considering the 2nd order interactions:
 x <- model.matrix(Species ~ .^2, iris)[,-1]
 colnames(x)
-dtrain <- xgb.DMatrix(scale(x), label = 1*(iris$Species == "versicolor"), nthread = 2)
+dtrain <- xgb.DMatrix(scale(x), label = 1*(iris$Species == "versicolor"), nthread = 1)
 param <- list(booster = "gblinear", objective = "reg:logistic", eval_metric = "auc",
-              lambda = 0.0003, alpha = 0.0003, nthread = 2)
+              lambda = 0.0003, alpha = 0.0003, nthread = 1)
 # For 'shotgun', which is a default linear updater, using high eta values may result in
 # unstable behaviour in some datasets. With this simple dataset, however, the high learning
 # rate does not break the convergence, but allows us to illustrate the typical pattern of
 # "stochastic explosion" behaviour of this lock-free algorithm at early boosting iterations.
-bst <- xgb.train(param, dtrain, list(tr=dtrain), nrounds = 200, eta = 1.,
+bst <- xgb.train(param, dtrain, list(tr=dtrain), nrounds = 100, eta = 1.,
                  callbacks = list(cb.gblinear.history()))
 # Extract the coefficients' path and plot them vs boosting iteration number:
 coef_path <- xgb.gblinear.history(bst)
@@ -55,7 +55,7 @@ matplot(coef_path, type = 'l')
 
 # With the deterministic coordinate descent updater, it is safer to use higher learning rates.
 # Will try the classical componentwise boosting which selects a single best feature per round:
-bst <- xgb.train(param, dtrain, list(tr=dtrain), nrounds = 200, eta = 0.8,
+bst <- xgb.train(param, dtrain, list(tr=dtrain), nrounds = 100, eta = 0.8,
                  updater = 'coord_descent', feature_selector = 'thrifty', top_k = 1,
                  callbacks = list(cb.gblinear.history()))
 matplot(xgb.gblinear.history(bst), type = 'l')

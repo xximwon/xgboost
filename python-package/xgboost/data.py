@@ -470,8 +470,11 @@ def _transform_pandas_df(
 
     dtype = meta_type if meta_type else np.float32
     arr: np.ndarray = transformed.values
+    arr, _ = _ensure_np_dtype(arr, dtype=arr.dtype)
+
     if meta_type:
         arr = arr.astype(dtype)
+
     return arr, feature_names, feature_types
 
 

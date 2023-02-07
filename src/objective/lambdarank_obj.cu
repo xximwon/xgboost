@@ -404,7 +404,6 @@ void MAPStat(Context const* ctx, MetaInfo const& info, common::Span<std::size_t 
       [=] XGBOOST_DEVICE(std::size_t i) -> std::size_t { return dh::SegmentId(group_ptr, i); });
   auto label = info.labels.View(ctx->gpu_id).Slice(linalg::All(), 0);
   auto const* cuctx = ctx->CUDACtx();
-
   {
     // calculate number of relevant documents
     auto val_it = dh::MakeTransformIterator<double>(

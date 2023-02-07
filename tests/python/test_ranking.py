@@ -3,6 +3,7 @@ import os
 import shutil
 
 import numpy as np
+import pytest
 from scipy.sparse import csr_matrix
 
 import xgboost
@@ -74,7 +75,6 @@ def test_ranking_with_weighted_data():
 
 
 class TestRanking:
-
     @classmethod
     def setup_class(cls):
         """
@@ -118,6 +118,12 @@ class TestRanking:
         directory = cls.dpath + "MQ2008"
         if os.path.exists(directory):
             shutil.rmtree(directory)
+
+    def test_error_msg(self) -> None:
+        X, y, qid, w = tm.make_ltr(10, 2, 2, 2)
+        ranker = xgboost.XGBRanker()
+        with pytest.raises(ValueError, match=r"equal to the number of query groups"):
+            ranker.fit(X, y, qid=qid, sample_weight=y)
 
     def test_training(self):
         """

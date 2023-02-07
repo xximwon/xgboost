@@ -287,7 +287,6 @@ class EvalRankWithCache : public Metric {
   }
 
   [[nodiscard]] const char* Name() const override { return name_.c_str(); }
-
   virtual double Eval(HostDeviceVector<float> const& preds, MetaInfo const& info,
                       std::shared_ptr<Cache> p_cache) = 0;
 };

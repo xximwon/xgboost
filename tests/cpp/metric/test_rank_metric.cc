@@ -12,6 +12,7 @@
 #include <vector>                        // for vector
 
 #include "test_rank_metric.h"
+
 #include "../helpers.h"                  // for GetMetricEval, CreateEmptyGe...
 #include "xgboost/base.h"                // for bst_float, kRtEps
 #include "xgboost/host_device_vector.h"  // for HostDeviceVector

@@ -1069,12 +1069,13 @@ void SparsePage::Reindex(uint64_t feature_offset, int32_t n_threads) {
 }
 
 namespace cuda_impl {
-void SortSparsePageByQID(MetaInfo const& info, HostDeviceVector<bst_row_t>* offset,
-                         HostDeviceVector<Entry>* data);
+void SortSparsePageByQID(Context const* ctx, MetaInfo const& info,
+                         HostDeviceVector<bst_row_t>* io_offset, HostDeviceVector<Entry>* io_data);
 }
 
 void SparsePage::SortRowByQID(Context const* ctx, MetaInfo const& info) {
   if (ctx->IsCUDA()) {
+    cuda_impl::SortSparsePageByQID(ctx, info, &offset, &data);
   }
 
   auto& h_offset = this->offset.HostVector();
@@ -1089,7 +1090,7 @@ void SparsePage::SortRowByQID(Context const* ctx, MetaInfo const& info) {
   }
   std::partial_sum(indptr.cbegin(), indptr.cend(), indptr.begin());
   std::vector<Entry> sorted(h_data.size());
-  for (std::size_t i = 0; i < sorted_idx.size(); ++i) {
+  common::ParallelFor(sorted_idx.size(), ctx->Threads(), [&](std::size_t i) {
     auto dst_beg = indptr[i];
     auto dst_end = indptr[i + 1];
 
@@ -1100,7 +1101,8 @@ void SparsePage::SortRowByQID(Context const* ctx, MetaInfo const& info) {
     for (std::size_t k = 0; k < (src_end - src_beg); ++k) {
       sorted[dst_beg + k] = h_data[src_beg + k];
     }
-  }
+  });
+
   h_data = sorted;
   h_offset = indptr;
 }

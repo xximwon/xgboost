@@ -168,6 +168,30 @@ void MetaInfo::SetInfoFromCUDA(Context const& ctx, StringView key, Json array) {
   }
 }
 
+namespace cuda_impl {
+void SortSparsePageByQID(Context const* ctx, MetaInfo const& info,
+                         HostDeviceVector<bst_row_t>* io_offset, HostDeviceVector<Entry>* io_data) {
+  auto qid = info.qid.View(ctx->gpu_id).Values();
+  dh::device_vector<std::size_t> idx(info.num_row_);
+  auto d_sorted_idx = dh::ToSpan(idx);
+  dh::ArgSort<true>(qid, d_sorted_idx);
+  auto cuctx = ctx->CUDACtx();
+
+  HostDeviceVector<Entry> out;
+  out.SetDevice(ctx->gpu_id);
+  out.Resize(io_data->Size());
+  auto d_out = out.DeviceSpan();
+
+  io_offset->SetDevice(ctx->gpu_id);
+  auto d_offset = io_offset->ConstDeviceSpan();
+
+  dh::LaunchN(idx.size(), cuctx->Stream(), [=] XGBOOST_DEVICE(std::size_t i) {
+    auto src_beg = d_offset[d_sorted_idx[i]];
+    auto src_end = d_offset[d_sorted_idx[i] + 1];
+  });
+}
+}  // namespace cuda_impl
+
 template <typename AdapterT>
 DMatrix* DMatrix::Create(AdapterT* adapter, float missing, int nthread,
                          const std::string& cache_prefix, DataSplitMode data_split_mode) {

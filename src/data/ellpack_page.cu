@@ -5,9 +5,11 @@
 #include <thrust/iterator/transform_output_iterator.h>
 
 #include "../common/categorical.h"
+#include "../common/cuda_context.cuh"  // for CUDAContext
+#include "../common/error_msg.h"       // for NoExtMemory
 #include "../common/hist_util.cuh"
 #include "../common/random.h"
-#include "../common/transform_iterator.h"  // MakeIndexTransformIter
+#include "../common/transform_iterator.h"  // for MakeIndexTransformIter
 #include "./ellpack_page.cuh"
 #include "device_adapter.cuh"  // for HasInfInData
 #include "gradient_index.h"
@@ -456,6 +458,35 @@ void EllpackPageImpl::Compact(int device, EllpackPageImpl const* page,
   page->gidx_buffer.SetDevice(device);
   dh::LaunchN(page->n_rows, CompactPage(this, page, row_indexes));
   monitor_.Stop("Compact");
+}
+
+void EllpackPageImpl::SortRowByQID(Context const* ctx, MetaInfo const& info) {
+  auto stride = this->row_stride;
+
+  auto cuctx = ctx->CUDACtx();
+  EllpackPageImpl sorted_page{ctx->gpu_id, this->cuts_, this->is_dense, this->row_stride,
+                              this->Size()};
+  auto dst = sorted_page.gidx_buffer.DeviceSpan();
+
+  dh::device_vector<bst_group_t> qid(info.num_row_);
+  dh::device_vector<std::size_t> idx(info.num_row_);
+  dh::ArgSort<true>(dh::ToSpan(qid), dh::ToSpan(idx));
+
+  auto d_sorted_idx = dh::ToSpan(idx);
+  common::CompressedIterator<uint32_t> src_iterator_d;
+  common::CompressedBufferWriter cbw{cuts_.TotalBins() + 1};
+  CHECK_EQ(this->base_rowid, 0) << error::NoExtMemory();
+  dh::LaunchN(this->n_rows, cuctx->Stream(), [=]XGBOOST_DEVICE(std::size_t i) mutable {
+    std::size_t src_row = d_sorted_idx[i];
+    std::size_t dst_row = i;
+
+    std::size_t dst_offset = src_row * stride;
+    std::size_t src_offset = dst_row * stride;
+
+    for (std::size_t j = 0; j < stride; ++j) {
+      cbw.AtomicWriteSymbol(dst.data(), src_iterator_d[src_offset + j], dst_offset + j);
+    }
+  });
 }
 
 // Initialize the buffer to stored compressed features.

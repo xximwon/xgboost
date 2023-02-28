@@ -82,7 +82,10 @@ class MetaInfo {
    * \brief upper bound of the label, to be used for survival analysis (censored regression)
    */
   HostDeviceVector<bst_float> labels_upper_bound_;  // NOLINT
-
+  /**
+   * \brief Query index. used for learning to rank.
+   */
+  linalg::Vector<bst_group_t> qid;
   /*!
    * \brief Name of type for each feature provided by users. Eg. "int"/"float"/"i"/"q"
    */
@@ -383,6 +386,8 @@ class SparsePage {
    * \brief Sort the column index.
    */
   void SortIndices(int32_t n_threads);
+
+  void SortRowByQID(Context const* ctx, MetaInfo const& info);
   /**
    * \brief Check wether the column index is sorted.
    */

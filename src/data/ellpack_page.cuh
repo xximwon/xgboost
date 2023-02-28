@@ -185,6 +185,7 @@ class EllpackPageImpl {
    */
   void Compact(int device, EllpackPageImpl const* page, common::Span<size_t> row_indexes);
 
+  void SortRowByQID(Context const* ctx, MetaInfo const& info);
 
   /*! \return Number of instances in the page. */
   size_t Size() const;

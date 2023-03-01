@@ -491,6 +491,7 @@ void MetaInfo::SetInfoFromHost(Context const& ctx, StringView key, Json arr) {
     CHECK(valid) << "Label contains NaN, infinity or a value too large.";
     return;
   }
+
   // uint info
   if (key == "group") {
     linalg::Vector<bst_group_t> t;
@@ -501,20 +502,30 @@ void MetaInfo::SetInfoFromHost(Context const& ctx, StringView key, Json arr) {
     group_ptr_[0] = 0;
     std::partial_sum(h_groups.cbegin(), h_groups.cend(), group_ptr_.begin() + 1);
     data::ValidateQueryGroup(group_ptr_);
+
+    // reverse, get qid from group ptr
+    qid.Reshape(group_ptr_.back());
+    auto& h_query_idx = qid.Data()->HostVector();
+    bst_group_t k{0};
+    for (std::size_t ridx = 0; ridx < h_query_idx.size(); ++ridx) {
+      if (ridx >= group_ptr_[k + 1]) {
+        k += 1;
+      }
+      h_query_idx[ridx] = k;
+    }
     return;
   } else if (key == "qid") {
-    linalg::Tensor<bst_group_t, 1> t;
-    CopyTensorInfoImpl(ctx, arr, &t);
+    CopyTensorInfoImpl(ctx, arr, &qid);
     bool non_dec = true;
-    auto const& query_ids = t.Data()->HostVector();
-    for (size_t i = 1; i < query_ids.size(); ++i) {
-      if (query_ids[i] < query_ids[i - 1]) {
+    auto const& h_query_idx = qid.Data()->HostVector();
+    for (size_t i = 1; i < h_query_idx.size(); ++i) {
+      if (h_query_idx[i] < h_query_idx[i - 1]) {
         non_dec = false;
         break;
       }
     }
     CHECK(non_dec) << "`qid` must be sorted in non-decreasing order along with data.";
-    common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
+    common::RunLengthEncode(h_query_idx.cbegin(), h_query_idx.cend(), &group_ptr_);
     data::ValidateQueryGroup(group_ptr_);
     return;
   }

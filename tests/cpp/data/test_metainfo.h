@@ -42,7 +42,7 @@ inline void TestMetaInfoStridedData(int32_t device) {
   }
   {
     // qid
-    linalg::Tensor<uint64_t, 2> qid;
+    linalg::Tensor<bst_group_t, 2> qid;
     qid.Reshape(32, 2);
     auto& h_qid = qid.Data()->HostVector();
     std::iota(h_qid.begin(), h_qid.end(), 0);
@@ -51,6 +51,9 @@ inline void TestMetaInfoStridedData(int32_t device) {
     info.SetInfo(ctx, "qid", StringView{str});
     auto const& h_result = info.group_ptr_;
     ASSERT_EQ(h_result.size(), s.Size() + 1);
+    ASSERT_EQ(info.qid.Size(), qid.Size());
+    ASSERT_EQ(info.qid.Data()->ConstHostVector(), qid.Data()->ConstHostVector());
+    ASSERT_EQ(info.group_ptr_.back(), info.qid.Size());
   }
   {
     // base margin

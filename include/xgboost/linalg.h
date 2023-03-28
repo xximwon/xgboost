@@ -562,6 +562,12 @@ class TensorView {
    */
   LINALG_HD auto Values() const -> decltype(data_) const & { return data_; }
   /**
+   * \brief Obtain the underlying pointer, don't use this getter if the data is not
+   *        contiguous.
+   */
+  LINALG_HD auto Data() const -> typename decltype(data_)::pointer { return data_.data(); }
+  LINALG_HD auto Data() -> typename decltype(data_)::pointer { return data_.data(); }
+  /**
    * \brief Obtain the CUDA device ordinal.
    */
   LINALG_HD auto DeviceIdx() const { return device_; }
@@ -863,6 +869,8 @@ class Tensor {
   HostDeviceVector<T> *Data() { return &data_; }
   HostDeviceVector<T> const *Data() const { return &data_; }
 
+  auto Ord() const { return order_; }
+
   /**
    * \brief Visitor function for modification that changes shape and data.
    *
@@ -946,6 +954,15 @@ auto Empty(Context const *ctx, Index &&...index) {
   Tensor<T, sizeof...(Index)> t;
   t.SetDevice(ctx->gpu_id);
   t.Reshape(index...);
+  return t;
+}
+
+template <typename T, typename... S, detail::EnableIfIntegral<S...> * = nullptr>
+auto Empty(Context const *ctx, Order order, S &&...shape) {
+  static_assert(!std::is_integral_v<Order>);
+  std::size_t in_shape[sizeof...(S)];
+  detail::IndexToArr(in_shape, std::forward<S>(shape)...);
+  Tensor<T, sizeof...(S)> t{in_shape, ctx->gpu_id, order};
   return t;
 }
 

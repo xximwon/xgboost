@@ -31,6 +31,7 @@
 #include "hist/histogram.h"                  // for HistogramBuilder, ConstructHistSpace
 #include "hist/sampler.h"                    // for SampleGradient
 #include "param.h"                           // for TrainParam, SplitEntryContainer, GradStats
+#include "summary.h"
 #include "xgboost/base.h"                    // for GradientPairInternal, GradientPair, bst_targ...
 #include "xgboost/context.h"                 // for Context
 #include "xgboost/data.h"                    // for BatchIterator, BatchSet, DMatrix, MetaInfo

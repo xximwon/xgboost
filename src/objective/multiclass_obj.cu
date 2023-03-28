@@ -20,6 +20,7 @@
 #include "../common/common.h"
 #include "../common/math.h"
 #include "../common/transform.h"
+#include "../common/optional_weight.h"
 
 namespace xgboost {
 namespace obj {
@@ -86,43 +87,43 @@ class SoftmaxMultiClassObj : public ObjFunction {
           << "Number of weights should be equal to number of data points.";
     }
 
-    common::Transform<>::Init(
-        [=] XGBOOST_DEVICE(size_t idx,
-                           common::Span<GradientPair> gpair,
-                           common::Span<bst_float const> labels,
-                           common::Span<bst_float const> preds,
-                           common::Span<bst_float const> weights,
-                           common::Span<int> _label_correct) {
-          common::Span<bst_float const> point = preds.subspan(idx * nclass, nclass);
+    auto h_predt = preds.ConstHostSpan();
+    auto h_label = info.labels.HostView();
+    auto h_weight = common::MakeOptionalWeights(ctx_, info.weights_);
+    linalg::MatrixView<GradientPair> h_gpair{out_gpair->HostSpan(),
+                                             {info.num_row_, static_cast<std::uint64_t>(nclass)},
+                                             Context::kCpuId,
+                                             linalg::kF};
+    common::ParallelFor(info.num_row_, ctx_->Threads(), [&](auto idx) {
+      common::Span<bst_float const> point = h_predt.subspan(idx * nclass, nclass);
 
-          // Part of Softmax function
-          bst_float wmax = std::numeric_limits<bst_float>::min();
-          for (auto const i : point) { wmax = fmaxf(i, wmax); }
-          double wsum = 0.0f;
-          for (auto const i : point) { wsum += expf(i - wmax); }
-          auto label = labels[idx];
-          if (label < 0 || label >= nclass) {
-            _label_correct[0] = 0;
-            label = 0;
-          }
-          bst_float wt = is_null_weight ? 1.0f : weights[idx];
-          for (int k = 0; k < nclass; ++k) {
-            // Computation duplicated to avoid creating a cache.
-            bst_float p = expf(point[k] - wmax) / static_cast<float>(wsum);
-            const float eps = 1e-16f;
-            const bst_float h = fmax(2.0f * p * (1.0f - p) * wt, eps);
-            p = label == k ? p - 1.0f : p;
-            gpair[idx * nclass + k] = GradientPair(p * wt, h);
-          }
-        }, common::Range{0, ndata}, ctx_->Threads(), device)
-        .Eval(out_gpair, info.labels.Data(), &preds, &info.weights_, &label_correct_);
-
-    std::vector<int>& label_correct_h = label_correct_.HostVector();
-    for (auto const flag : label_correct_h) {
-      if (flag != 1) {
-        LOG(FATAL) << "SoftmaxMultiClassObj: label must be in [0, num_class).";
+      bst_float wmax = std::numeric_limits<bst_float>::min();
+      for (auto const i : point) {
+        wmax = fmaxf(i, wmax);
       }
-    }
+      double wsum = 0.0f;
+      for (auto const i : point) {
+        wsum += expf(i - wmax);
+      }
+      auto label = h_label(idx, 0);
+      float wt = h_weight[idx];
+
+      for (std::int32_t k = 0; k < nclass; ++k) {
+        // Computation duplicated to avoid creating a cache.
+        bst_float p = expf(point[k] - wmax) / static_cast<float>(wsum);
+        const float eps = 1e-16f;
+        const bst_float h = fmax(2.0f * p * (1.0f - p) * wt, eps);
+        p = label == k ? p - 1.0f : p;
+        h_gpair(idx, k) = GradientPair(p * wt, h);
+      }
+    });
+
+    // std::vector<int>& label_correct_h = label_correct_.HostVector();
+    // for (auto const flag : label_correct_h) {
+    //   if (flag != 1) {
+    //     LOG(FATAL) << "SoftmaxMultiClassObj: label must be in [0, num_class).";
+    //   }
+    // }
   }
   void PredTransform(HostDeviceVector<bst_float>* io_preds) const override {
     this->Transform(io_preds, output_prob_);

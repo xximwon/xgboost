@@ -178,6 +178,8 @@ class MultiTargetHistBuilder {
   MultiExpandEntry InitRoot(DMatrix *p_fmat, linalg::MatrixView<GradientPair const> gpair,
                             RegTree *p_tree) {
     monitor_->Start(__func__);
+
+    monitor_->Start("root::setup");
     MultiExpandEntry best;
     best.nid = RegTree::kRoot;
     best.depth = 0;
@@ -203,6 +205,10 @@ class MultiTargetHistBuilder {
     collective::Allreduce<collective::Operation::kSum>(
         reinterpret_cast<double *>(root_sum.Values().data()), root_sum.Size() * 2);
 
+    monitor_->Stop("root::setup");
+
+
+    monitor_->Start("root::hist");
     std::vector<MultiExpandEntry> nodes{best};
     std::size_t i = 0;
     auto space = ConstructHistSpace(partitioner_, nodes);
@@ -214,6 +220,7 @@ class MultiTargetHistBuilder {
       }
       i++;
     }
+    monitor_->Stop("root::hist");
 
     auto weight = evaluator_->InitRoot(root_sum);
     auto weight_t = weight.HostView();
@@ -241,6 +248,7 @@ class MultiTargetHistBuilder {
     std::vector<MultiExpandEntry> nodes_to_build;
     std::vector<MultiExpandEntry> nodes_to_sub;
 
+    monitor_->Start("hist_node");
     for (auto const &c : valid_candidates) {
       auto left_nidx = p_tree->LeftChild(c.nid);
       auto right_nidx = p_tree->RightChild(c.nid);
@@ -260,11 +268,13 @@ class MultiTargetHistBuilder {
       nodes_to_build.emplace_back(build_nidx, p_tree->GetDepth(build_nidx));
       nodes_to_sub.emplace_back(subtract_nidx, p_tree->GetDepth(subtract_nidx));
     }
+    monitor_->Stop("hist_node");
 
     std::size_t i = 0;
     auto space = ConstructHistSpace(partitioner_, nodes_to_build);
     for (auto const &page : p_fmat->GetBatches<GHistIndexMatrix>(HistBatch(param_))) {
-      for (std::size_t t = 0; t < p_tree->NumTargets(); ++t) {
+      monitor_->Start("hist");
+      for (bst_target_t t = 0; t < p_tree->NumTargets(); ++t) {
         auto t_gpair = gpair.Slice(linalg::All(), t);
         // Make sure the gradient matrix is f-order.
         CHECK(t_gpair.Contiguous());
@@ -272,6 +282,7 @@ class MultiTargetHistBuilder {
                                         nodes_to_build, nodes_to_sub, t_gpair.Values());
       }
       i++;
+      monitor_->Stop("hist");
     }
     monitor_->Stop(__func__);
   }
@@ -294,6 +305,7 @@ class MultiTargetHistBuilder {
                      std::vector<bst_node_t> *p_out_position) {
     monitor_->Start(__func__);
     if (!task_->UpdateTreeLeaf()) {
+      monitor_->Stop(__func__);
       return;
     }
     for (auto const &part : partitioner_) {
@@ -554,6 +566,8 @@ class QuantileHistMaker : public TreeUpdater {
   void Update(TrainParam const *param, HostDeviceVector<GradientPair> *gpair, DMatrix *p_fmat,
               common::Span<HostDeviceVector<bst_node_t>> out_position,
               const std::vector<RegTree *> &trees) override {
+    monitor_.Start(__func__);
+    monitor_.Start("Setup");
     if (trees.front()->IsMultiTarget()) {
       CHECK(param->monotone_constraints.empty()) << "monotone constraint" << MTNotImplemented();
       if (!p_mtimpl_) {
@@ -568,24 +582,33 @@ class QuantileHistMaker : public TreeUpdater {
     }
 
     bst_target_t n_targets = trees.front()->NumTargets();
-    auto h_gpair =
-        linalg::MakeTensorView(ctx_, gpair->HostSpan(), p_fmat->Info().num_row_, n_targets);
+    linalg::MatrixView<GradientPair> h_gpair{
+        gpair->HostSpan(),
+        {p_fmat->Info().num_row_, static_cast<std::uint64_t>(n_targets)},
+        Context::kCpuId,
+        linalg::kF};
+    // auto h_gpair =
+    //     linalg::MakeTensorView(ctx_, gpair->HostSpan(), p_fmat->Info().num_row_, n_targets);
 
     linalg::Matrix<GradientPair> sample_out;
     auto h_sample_out = h_gpair;
-    auto need_copy = [&] { return trees.size() > 1 || n_targets > 1; };
+    auto need_copy = [&] { return trees.size() > 1; };
     if (need_copy()) {
       // allocate buffer
       sample_out = decltype(sample_out){h_gpair.Shape(), ctx_->gpu_id, linalg::Order::kF};
       h_sample_out = sample_out.HostView();
     }
+    monitor_.Stop("Setup");
 
     for (auto tree_it = trees.begin(); tree_it != trees.end(); ++tree_it) {
+      monitor_.Start("Sample");
       if (need_copy()) {
         // Copy gradient into buffer for sampling. This converts C-order to F-order.
         std::copy(linalg::cbegin(h_gpair), linalg::cend(h_gpair), linalg::begin(h_sample_out));
+        LOG(FATAL);
       }
       SampleGradient(ctx_, *param, h_sample_out);
+      monitor_.Stop("Sample");
       auto *h_out_position = &out_position[tree_it - trees.begin()];
       if ((*tree_it)->IsMultiTarget()) {
         UpdateTree<MultiExpandEntry>(&monitor_, h_sample_out, p_mtimpl_.get(), p_fmat, param,
@@ -595,6 +618,7 @@ class QuantileHistMaker : public TreeUpdater {
                                    h_out_position, *tree_it);
       }
     }
+    monitor_.Stop(__func__);
   }
 
   bool UpdatePredictionCache(const DMatrix *data, linalg::MatrixView<float> out_preds) override {

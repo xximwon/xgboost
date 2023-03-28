@@ -1576,11 +1576,11 @@ class Booster:
         """
         Parameters
         ----------
-        params : dict
+        params :
             Parameters for boosters.
-        cache : list
+        cache :
             List of cache items.
-        model_file : string/os.PathLike/Booster/bytearray
+        model_file :
             Path to the model file if it's string or PathLike.
         """
         cache = cache if cache is not None else []

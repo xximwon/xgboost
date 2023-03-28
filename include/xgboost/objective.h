@@ -11,10 +11,11 @@
 #include <xgboost/base.h>
 #include <xgboost/data.h>
 #include <xgboost/host_device_vector.h>
+#include <xgboost/linalg.h>  // for Matrix
 #include <xgboost/model.h>
 #include <xgboost/task.h>
 
-#include <cstdint>  // std::int32_t
+#include <cstdint>  // for int32_t
 #include <functional>
 #include <string>
 #include <utility>
@@ -52,6 +53,12 @@ class ObjFunction : public Configurable {
                            const MetaInfo& info,
                            int iteration,
                            HostDeviceVector<GradientPair>* out_gpair) = 0;
+
+  virtual void GetGradient(const HostDeviceVector<float>& preds, const MetaInfo& info,
+                           int iteration, linalg::Matrix<GradientPair>* out_gpair) {
+    this->GetGradient(preds, info, iteration, out_gpair->Data());
+    out_gpair->Reshape(out_gpair->Data()->Size(), 1);
+  };
 
   /*! \return the default evaluation metric for the objective */
   virtual const char* DefaultEvalMetric() const = 0;

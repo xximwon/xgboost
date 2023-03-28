@@ -1305,9 +1305,9 @@ class LearnerImpl : public LearnerIO {
     monitor_.Stop("PredictRaw");
 
     monitor_.Start("GetGradient");
-    GetGradient(predt.predictions, train->Info(), iter, &gpair_);
+    this->GetGradient(predt.predictions, train->Info(), iter, &gpair_);
     monitor_.Stop("GetGradient");
-    TrainingObserver::Instance().Observe(gpair_, "Gradients");
+    // TrainingObserver::Instance().Observe(gpair_, "Gradients");
 
     gbm_->DoBoost(train.get(), &gpair_, &predt, obj_.get());
     monitor_.Stop("UpdateOneIter");
@@ -1485,21 +1485,22 @@ class LearnerImpl : public LearnerIO {
 
  private:
   void GetGradient(HostDeviceVector<bst_float> const& preds, MetaInfo const& info, int iteration,
-                   HostDeviceVector<GradientPair>* out_gpair) {
+                   linalg::Matrix<GradientPair>* out_gpair) {
     // Special handling for vertical federated learning.
     if (collective::IsFederated() && info.data_split_mode == DataSplitMode::kCol) {
       // We assume labels are only available on worker 0, so the gradients are calculated there
       // and broadcast to other workers.
       if (collective::GetRank() == 0) {
         obj_->GetGradient(preds, info, iteration, out_gpair);
-        collective::Broadcast(out_gpair->HostPointer(), out_gpair->Size() * sizeof(GradientPair),
-                              0);
+        collective::Broadcast(out_gpair->HostView().Data(),
+                              out_gpair->Size() * sizeof(GradientPair), 0);
       } else {
         CHECK_EQ(info.labels.Size(), 0)
             << "In vertical federated learning, labels should only be on the first worker";
-        out_gpair->Resize(preds.Size());
-        collective::Broadcast(out_gpair->HostPointer(), out_gpair->Size() * sizeof(GradientPair),
-                              0);
+        // fixme: shape
+        out_gpair->Reshape(preds.Size(), 1);
+        collective::Broadcast(out_gpair->HostView().Data(),
+                              out_gpair->Size() * sizeof(GradientPair), 0);
       }
     } else {
       obj_->GetGradient(preds, info, iteration, out_gpair);
@@ -1509,7 +1510,7 @@ class LearnerImpl : public LearnerIO {
   /*! \brief random number transformation seed. */
   static int32_t constexpr kRandSeedMagic = 127;
   // gradient pairs
-  HostDeviceVector<GradientPair> gpair_;
+  linalg::Matrix<GradientPair> gpair_;
   /*! \brief Temporary storage to prediction.  Useful for storing data transformed by
    *  objective function */
   PredictionContainer output_predictions_;

@@ -259,6 +259,9 @@ void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info)
       }
     });
   });
+
+  this->index = std::move(out);
+  this->row_ptr = std::move(out_row_ptr);
 }
 
 bool GHistIndexMatrix::ReadColumnPage(dmlc::SeekStream *fi) {

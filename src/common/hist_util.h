@@ -261,7 +261,7 @@ struct Index {
               binTypeSize == kUint32BinsTypeSize);
     }
   }
-  BinTypeSize GetBinTypeSize() const {
+  [[nodiscard]] BinTypeSize GetBinTypeSize() const {
     return binTypeSize_;
   }
   template <typename T>
@@ -272,9 +272,9 @@ struct Index {
   T* data() {  // NOLINT
     return reinterpret_cast<T*>(data_.data());
   }
-  uint32_t const* Offset() const { return bin_offset_.data(); }
-  size_t OffsetSize() const { return bin_offset_.size(); }
-  size_t Size() const { return data_.size() / (binTypeSize_); }
+  [[nodiscard]] uint32_t const* Offset() const { return bin_offset_.data(); }
+  [[nodiscard]] size_t OffsetSize() const { return bin_offset_.size(); }
+  [[nodiscard]] size_t Size() const { return data_.size() / (binTypeSize_); }
 
   void Resize(const size_t n_bytes) {
     data_.resize(n_bytes);

@@ -8,13 +8,15 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
-#include <utility>  // std::forward
+#include <utility>  // for forward
 
+#include "../common/algorithm.h"  // for ArgSort
 #include "../common/column_matrix.h"
 #include "../common/hist_util.h"
+#include "../common/linalg_op.h"  // for cbegin, cend
 #include "../common/numeric.h"
 #include "../common/threading_utils.h"
-#include "../common/transform_iterator.h"  // MakeIndexTransformIter
+#include "../common/transform_iterator.h"  // for MakeIndexTransformIter
 
 namespace xgboost {
 
@@ -213,6 +215,50 @@ float GHistIndexMatrix::GetFvalue(std::vector<std::uint32_t> const &ptrs,
 
   SPAN_CHECK(false);
   return std::numeric_limits<float>::quiet_NaN();
+}
+
+void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info) {
+  if (!ctx->IsCPU()) {
+    LOG(FATAL) << "Invalid device ordinal";
+  }
+  // fixme: re-gen the columns, may need access to external data.
+  CHECK(!columns_) << "Columns should not be initialized.";
+  auto const h_qid = info.qid.HostView();
+  auto sorted_idx = common::ArgSort<bst_row_t>(ctx, linalg::cbegin(h_qid), linalg::cend(h_qid));
+
+  // fixme: move this into Index
+  common::Index out;
+  out.SetBinTypeSize(index.GetBinTypeSize());
+  out.Resize(index.Size() * index.GetBinTypeSize());
+  out.SetBinOffset(this->cut.Ptrs());
+
+  CHECK_EQ(info.num_row_, this->Size());
+  std::vector<bst_row_t> out_row_ptr(this->row_ptr.size());
+  out_row_ptr[0] = 0;
+  for (std::size_t i = 0; i < out_row_ptr.size() - 1; ++i) {
+    auto ridx = sorted_idx[i];
+    out_row_ptr[i + 1] = this->row_ptr[ridx + 1] - this->row_ptr[i];
+  }
+  std::partial_sum(out_row_ptr.cbegin(), out_row_ptr.cend(), out_row_ptr.begin());
+
+  common::DispatchBinType(index.GetBinTypeSize(), [&](auto t) {
+    using T = decltype(t);
+    auto in_index_data = index.data<T>();
+    auto out_index_data = out.data<T>();
+    common::ParallelFor(info.num_row_, ctx->Threads(), [&](auto in_ridx) {
+      auto out_ridx = sorted_idx[in_ridx];
+
+      auto ibeg = this->row_ptr[in_ridx];
+      auto iend = this->row_ptr[in_ridx + 1];
+
+      auto obeg = this->row_ptr[out_ridx];
+      auto oend = this->row_ptr[out_ridx + 1];
+
+      for (std::size_t i = 0; i < iend - ibeg; ++i) {
+        out_index_data[i + obeg] = in_index_data[i + ibeg];
+      }
+    });
+  });
 }
 
 bool GHistIndexMatrix::ReadColumnPage(dmlc::SeekStream *fi) {

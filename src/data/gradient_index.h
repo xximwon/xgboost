@@ -144,9 +144,9 @@ class GHistIndexMatrix {
   /** \brief max_bin for each feature. */
   bst_bin_t max_numeric_bins_per_feat;
   /*! \brief base row index for current page (used by external memory) */
-  size_t base_rowid{0};
+  bst_row_t base_rowid{0};
 
-  bst_bin_t MaxNumBinPerFeat() const {
+  [[nodiscard]] bst_bin_t MaxNumBinPerFeat() const {
     return std::max(static_cast<bst_bin_t>(cut.MaxCategory() + 1), max_numeric_bins_per_feat);
   }
 
@@ -177,9 +177,9 @@ class GHistIndexMatrix {
   GHistIndexMatrix();  // also for ext mem, empty ctor so that we can read the cache back.
 
   template <typename Batch>
-  void PushAdapterBatch(Context const* ctx, size_t rbegin, size_t prev_sum, Batch const& batch,
+  void PushAdapterBatch(Context const* ctx, bst_row_t rbegin, size_t prev_sum, Batch const& batch,
                         float missing, common::Span<FeatureType const> ft, double sparse_thresh,
-                        size_t n_samples_total) {
+                        bst_row_t n_samples_total) {
     auto n_bins_total = cut.TotalBins();
     hit_count_tloc_.clear();
     hit_count_tloc_.resize(ctx->Threads() * n_bins_total, 0);
@@ -218,29 +218,30 @@ class GHistIndexMatrix {
     }
   }
 
-  bool IsDense() const {
+  [[nodiscard]] bool IsDense() const {
     return isDense_;
   }
   void SetDense(bool is_dense) { isDense_ = is_dense; }
   /**
    * \brief Get the local row index.
    */
-  size_t RowIdx(size_t ridx) const { return row_ptr[ridx - base_rowid]; }
+  [[nodiscard]] std::size_t RowIdx(size_t ridx) const { return row_ptr[ridx - base_rowid]; }
 
-  bst_row_t Size() const { return row_ptr.empty() ? 0 : row_ptr.size() - 1; }
-  bst_feature_t Features() const { return cut.Ptrs().size() - 1; }
+  [[nodiscard]] bst_row_t Size() const { return row_ptr.empty() ? 0 : row_ptr.size() - 1; }
+  [[nodiscard]] bst_feature_t Features() const { return cut.Ptrs().size() - 1; }
 
   bool ReadColumnPage(dmlc::SeekStream* fi);
   size_t WriteColumnPage(dmlc::Stream* fo) const;
 
-  common::ColumnMatrix const& Transpose() const;
+  [[nodiscard]] common::ColumnMatrix const& Transpose() const;
 
-  bst_bin_t GetGindex(size_t ridx, size_t fidx) const;
-
+  [[nodiscard]] bst_bin_t GetGindex(size_t ridx, size_t fidx) const;
   float GetFvalue(size_t ridx, size_t fidx, bool is_cat) const;
   float GetFvalue(std::vector<std::uint32_t> const& ptrs, std::vector<float> const& values,
                   std::vector<float> const& mins, bst_row_t ridx, bst_feature_t fidx,
                   bool is_cat) const;
+
+  void SortSampleByQID(Context const* ctx, MetaInfo const& info);
 
  private:
   std::unique_ptr<common::ColumnMatrix> columns_;

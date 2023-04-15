@@ -24,9 +24,7 @@
   #define PREFETCH_READ_T0(addr) do {} while (0)
 #endif  // defined(XGBOOST_MM_PREFETCH_PRESENT)
 
-namespace xgboost {
-namespace common {
-
+namespace xgboost::common {
 HistogramCuts::HistogramCuts() {
   cut_ptrs_.HostVector().emplace_back(0);
 }
@@ -378,5 +376,4 @@ template void GHistBuilder::BuildHist<false>(Span<GradientPair const> gpair,
                                              const RowSetCollection::Elem row_indices,
                                              const GHistIndexMatrix &gmat, GHistRow hist,
                                              bool force_read_by_column) const;
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common

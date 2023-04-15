@@ -1,5 +1,6 @@
 /**
  * Copyright 2017-2023, XGBoost Contributors
+ *
  * \brief Data type for fast histogram aggregation.
  */
 #include "gradient_index.h"

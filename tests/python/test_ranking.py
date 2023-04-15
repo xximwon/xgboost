@@ -74,6 +74,28 @@ def test_ranking_with_weighted_data():
         assert all(p <= q for p, q in zip(is_sorted, is_sorted[1:]))
 
 
+@pytest.mark.parametrize("tree_method", ["hist", "exact", "approx"])
+def test_sort_by_qid(self, tree_method: str) -> None:
+    X, y, qid, w = tm.make_ltr(
+        n_samples=1024, n_features=3, n_query_groups=3, max_rel=4
+    )
+    ltr_sorted = xgboost.XGBRanker(tree_method=tree_method, n_estimators=3)
+    ltr_sorted.fit(X, y, qid=qid, sample_weight=w)
+
+    # randomly permute the arrays to see if XGBoost can handle it correctly
+    rng = np.random.default_rng(1994)
+    index = rng.permutation(qid.shape[0])
+    X = X[index, :]
+    y = y[index]
+    qid = qid[index]
+    w = w[index]
+
+    ltr = xgboost.XGBRanker(tree_method=tree_method, n_estimators=3)
+    ltr.fit(X, y, qid=qid, sample_weight=w)
+
+    np.testing.assert_allclose(ltr_sorted.predict(X), ltr.predict(X))
+
+
 class TestRanking:
     @classmethod
     def setup_class(cls):

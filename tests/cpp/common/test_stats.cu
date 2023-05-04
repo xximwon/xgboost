@@ -3,27 +3,27 @@
  */
 #include <gtest/gtest.h>
 
-#include <cstddef>                            // std::size_t
-#include <utility>                            // std::pair
-#include <vector>                             // std::vector
+#include <cstddef>  // std::size_t
+#include <utility>  // std::pair
+#include <vector>   // std::vector
 
 #include "../../../src/common/linalg_op.cuh"  // ElementWiseTransformDevice
 #include "../../../src/common/stats.cuh"
-#include "xgboost/base.h"                     // XGBOOST_DEVICE
-#include "xgboost/context.h"                  // Context
-#include "xgboost/host_device_vector.h"       // HostDeviceVector
-#include "xgboost/linalg.h"                   // Tensor
+#include "../helpers.h"
+#include "xgboost/base.h"                // XGBOOST_DEVICE
+#include "xgboost/context.h"             // Context
+#include "xgboost/host_device_vector.h"  // HostDeviceVector
+#include "xgboost/linalg.h"              // Tensor
 
-namespace xgboost {
-namespace common {
+namespace xgboost::common {
 namespace {
 class StatsGPU : public ::testing::Test {
  private:
-  linalg::Tensor<float, 1> arr_{{1.f, 2.f, 3.f, 4.f, 5.f, 2.f, 4.f, 5.f, 3.f, 1.f}, {10}, 0};
-  linalg::Tensor<std::size_t, 1> indptr_{{0, 5, 10}, {3}, 0};
+  Context ctx_;
+  linalg::Tensor<float, 1> arr_;
+  linalg::Tensor<std::size_t, 1> indptr_;
   HostDeviceVector<float> results_;
   using TestSet = std::vector<std::pair<float, float>>;
-  Context ctx_;
 
   void Check(float expected) {
     auto const& h_results = results_.HostVector();
@@ -33,7 +33,11 @@ class StatsGPU : public ::testing::Test {
   }
 
  public:
-  void SetUp() override { ctx_.gpu_id = 0; }
+  void SetUp() override {
+    ctx_ = ctx_.MakeCUDA(0);
+    arr_ = linalg::Vector<float>{{1.f, 2.f, 3.f, 4.f, 5.f, 2.f, 4.f, 5.f, 3.f, 1.f}, {10}, &ctx_};
+    indptr_ = linalg::Vector<std::size_t>{{0, 5, 10}, {3}, &ctx_};
+  }
 
   void WeightedMulti() {
     // data for one segment
@@ -45,8 +49,8 @@ class StatsGPU : public ::testing::Test {
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
-    linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, 0};
-    auto d_arr = arr.View(0);
+    linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, &ctx_};
+    auto d_arr = arr.View(ctx_.DeviceType());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -70,8 +74,8 @@ class StatsGPU : public ::testing::Test {
   }
 
   void Weighted() {
-    auto d_arr = arr_.View(0);
-    auto d_key = indptr_.View(0);
+    auto d_arr = arr_.View(ctx_.DeviceType());
+    auto d_key = indptr_.View(ctx_.DeviceType());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -79,8 +83,8 @@ class StatsGPU : public ::testing::Test {
     auto val_it =
         dh::MakeTransformIterator<float>(thrust::make_counting_iterator(0ul),
                                          [=] XGBOOST_DEVICE(std::size_t i) { return d_arr(i); });
-    linalg::Tensor<float, 1> weights{{10}, 0};
-    linalg::ElementWiseTransformDevice(weights.View(0),
+    linalg::Tensor<float, 1> weights{{10}, &ctx_};
+    linalg::ElementWiseTransformDevice(weights.View(ctx_.DeviceType()),
                                        [=] XGBOOST_DEVICE(std::size_t, float) { return 1.0; });
     auto w_it = weights.Data()->ConstDevicePointer();
     for (auto const& pair : TestSet{{0.0f, 1.0f}, {0.5f, 3.0f}, {1.0f, 5.0f}}) {
@@ -100,8 +104,8 @@ class StatsGPU : public ::testing::Test {
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
-    linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, 0};
-    auto d_arr = arr.View(0);
+    linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, &ctx_};
+    auto d_arr = arr.View(ctx_.DeviceType());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -124,8 +128,8 @@ class StatsGPU : public ::testing::Test {
   }
 
   void NonWeighted() {
-    auto d_arr = arr_.View(0);
-    auto d_key = indptr_.View(0);
+    auto d_arr = arr_.View(ctx_.DeviceType());
+    auto d_key = indptr_.View(ctx_.DeviceType());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul), [=] __device__(std::size_t i) { return d_key(i); });
@@ -151,5 +155,4 @@ TEST_F(StatsGPU, WeightedQuantile) {
   this->Weighted();
   this->WeightedMulti();
 }
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common

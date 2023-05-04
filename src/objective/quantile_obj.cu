@@ -27,13 +27,12 @@
 
 #endif                              // defined(XGBOOST_USE_CUDA)
 
-namespace xgboost {
-namespace obj {
+namespace xgboost::obj {
 class QuantileRegression : public ObjFunction {
   common::QuantileLossParam param_;
   HostDeviceVector<float> alpha_;
 
-  bst_target_t Targets(MetaInfo const& info) const override {
+  [[nodiscard]] bst_target_t Targets(MetaInfo const& info) const override {
     auto const& alpha = param_.quantile_alpha.Get();
     CHECK_EQ(alpha.size(), alpha_.Size()) << "The objective is not yet configured.";
     if (info.ShouldHaveLabels()) {
@@ -63,22 +62,22 @@ class QuantileRegression : public ObjFunction {
     CHECK_GE(n_targets, n_alphas);
     CHECK_EQ(preds.Size(), info.num_row_ * n_targets);
 
-    auto labels = info.labels.View(ctx_->gpu_id);
+    auto labels = info.labels.View(ctx_->DeviceType());
 
-    out_gpair->SetDevice(ctx_->gpu_id);
+    out_gpair->SetDevice(ctx_->DeviceType());
     out_gpair->Resize(n_targets * info.num_row_);
-    auto gpair =
-        linalg::MakeTensorView(ctx_, out_gpair, info.num_row_, n_alphas, n_targets / n_alphas);
+    auto gpair = linalg::MakeTensorView(ctx_->DeviceType(), out_gpair, info.num_row_, n_alphas,
+                                        n_targets / n_alphas);
 
-    info.weights_.SetDevice(ctx_->gpu_id);
+    info.weights_.SetDevice(ctx_->DeviceType());
     common::OptionalWeights weight{ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                  : info.weights_.ConstDeviceSpan()};
 
-    preds.SetDevice(ctx_->gpu_id);
+    preds.SetDevice(ctx_->DeviceType());
     auto predt = linalg::MakeVec(&preds);
     auto n_samples = info.num_row_;
 
-    alpha_.SetDevice(ctx_->gpu_id);
+    alpha_.SetDevice(ctx_->DeviceType());
     auto alpha = ctx_->IsCPU() ? alpha_.ConstHostSpan() : alpha_.ConstDeviceSpan();
 
     linalg::ElementWiseKernel(
@@ -102,7 +101,7 @@ class QuantileRegression : public ObjFunction {
     CHECK(!alpha_.Empty());
 
     auto n_targets = this->Targets(info);
-    base_score->SetDevice(ctx_->gpu_id);
+    base_score->SetDevice(ctx_->DeviceType());
     base_score->Reshape(n_targets);
 
     double sw{0};
@@ -128,9 +127,9 @@ class QuantileRegression : public ObjFunction {
       }
     } else {
 #if defined(XGBOOST_USE_CUDA)
-      alpha_.SetDevice(ctx_->gpu_id);
+      alpha_.SetDevice(ctx_->DeviceType());
       auto d_alpha = alpha_.ConstDeviceSpan();
-      auto d_labels = info.labels.View(ctx_->gpu_id);
+      auto d_labels = info.labels.View(ctx_->DeviceType());
       auto seg_it = dh::MakeTransformIterator<std::size_t>(
           thrust::make_counting_iterator(0ul),
           [=] XGBOOST_DEVICE(std::size_t i) { return i * d_labels.Shape(0); });
@@ -147,7 +146,7 @@ class QuantileRegression : public ObjFunction {
                                   val_it + n, base_score->Data());
         sw = info.num_row_;
       } else {
-        info.weights_.SetDevice(ctx_->gpu_id);
+        info.weights_.SetDevice(ctx_->DeviceType());
         auto d_weights = info.weights_.ConstDeviceSpan();
         auto weight_it = dh::MakeTransformIterator<float>(thrust::make_counting_iterator(0ul),
                                                           [=] XGBOOST_DEVICE(std::size_t i) {
@@ -192,7 +191,7 @@ class QuantileRegression : public ObjFunction {
     param_.Validate();
     this->alpha_.HostVector() = param_.quantile_alpha.Get();
   }
-  ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
+  [[nodiscard]] ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
   static char const* Name() { return "reg:quantileerror"; }
 
   void SaveConfig(Json* p_out) const override {
@@ -206,8 +205,8 @@ class QuantileRegression : public ObjFunction {
     alpha_.HostVector() = param_.quantile_alpha.Get();
   }
 
-  const char* DefaultEvalMetric() const override { return "quantile"; }
-  Json DefaultMetricConfig() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override { return "quantile"; }
+  [[nodiscard]] Json DefaultMetricConfig() const override {
     CHECK(param_.GetInitialised());
     Json config{Object{}};
     config["name"] = String{this->DefaultEvalMetric()};
@@ -223,5 +222,4 @@ XGBOOST_REGISTER_OBJECTIVE(QuantileRegression, QuantileRegression::Name())
 #if defined(XGBOOST_USE_CUDA)
 DMLC_REGISTRY_FILE_TAG(quantile_obj_gpu);
 #endif  // defined(XGBOOST_USE_CUDA)
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

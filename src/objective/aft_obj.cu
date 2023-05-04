@@ -76,7 +76,7 @@ class AFTObj : public ObjFunction {
     CHECK_EQ(info.labels_lower_bound_.Size(), ndata);
     CHECK_EQ(info.labels_upper_bound_.Size(), ndata);
     out_gpair->Resize(ndata);
-    const int device = ctx_->gpu_id;
+    const int device = ctx_->Ordinal();
     const float aft_loss_distribution_scale = param_.aft_loss_distribution_scale;
     const bool is_null_weight = info.weights_.Size() == 0;
     if (!is_null_weight) {

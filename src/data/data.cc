@@ -351,7 +351,7 @@ MetaInfo MetaInfo::Slice(common::Span<int32_t const> ridxs) const {
   // Groups is maintained by a higher level Python function.  We should aim at deprecating
   // the slice function.
   if (this->labels.Size() != this->num_row_) {
-    auto t_labels = this->labels.View(this->labels.Data()->DeviceIdx());
+    auto t_labels = this->labels.View();
     out.labels.Reshape(ridxs.size(), labels.Shape(1));
     out.labels.Data()->HostVector() =
         Gather(this->labels.Data()->HostVector(), ridxs, t_labels.Stride(0));
@@ -379,7 +379,7 @@ MetaInfo MetaInfo::Slice(common::Span<int32_t const> ridxs) const {
   if (this->base_margin_.Size() != this->num_row_) {
     CHECK_EQ(this->base_margin_.Size() % this->num_row_, 0)
         << "Incorrect size of base margin vector.";
-    auto t_margin = this->base_margin_.View(this->base_margin_.Data()->DeviceIdx());
+    auto t_margin = this->base_margin_.View();
     out.base_margin_.Reshape(ridxs.size(), t_margin.Shape(1));
     out.base_margin_.Data()->HostVector() =
         Gather(this->base_margin_.Data()->HostVector(), ridxs, t_margin.Stride(0));
@@ -430,10 +430,10 @@ void CopyTensorInfoImpl(Context const& ctx, Json arr_interface, linalg::Tensor<T
     return;
   }
   p_out->Reshape(array.shape);
-  auto t_out = p_out->View(Context::kCpuId);
+  auto t_out = p_out->HostView();
   CHECK(t_out.CContiguous());
   auto const shape = t_out.Shape();
-  DispatchDType(array, Context::kCpuId, [&](auto&& in) {
+  DispatchDType(array, Device::CPU(), [&](auto&& in) {
     linalg::ElementWiseTransformHost(t_out, ctx.Threads(), [&](auto i, auto) {
       return std::apply(in, linalg::UnravelIndex<D>(i, shape));
     });
@@ -549,7 +549,7 @@ void MetaInfo::SetInfo(Context const& ctx, const char* key, const void* dptr, Da
   CHECK(key);
   auto proc = [&](auto cast_d_ptr) {
     using T = std::remove_pointer_t<decltype(cast_d_ptr)>;
-    auto t = linalg::TensorView<T, 1>(common::Span<T>{cast_d_ptr, num}, {num}, Context::kCpuId);
+    auto t = linalg::TensorView<T, 1>(common::Span<T>{cast_d_ptr, num}, {num}, Device::CPU());
     CHECK(t.CContiguous());
     Json interface {
       linalg::ArrayInterface(t)
@@ -723,19 +723,19 @@ void MetaInfo::SynchronizeNumberOfColumns() {
 
 namespace {
 template <typename T>
-void CheckDevice(std::int32_t device, HostDeviceVector<T> const& v) {
-  CHECK(v.DeviceIdx() == Context::kCpuId || device == Context::kCpuId || v.DeviceIdx() == device)
+void CheckDevice(Device device, HostDeviceVector<T> const& v) {
+  CHECK(v.DeviceIdx() == Context::kCpuId || device.IsCPU() || v.DeviceType() == device)
       << "Data is resided on a different device than `gpu_id`. "
       << "Device that data is on: " << v.DeviceIdx() << ", "
-      << "`gpu_id` for XGBoost: " << device;
+      << "`gpu_id` for XGBoost: " << device.ordinal;
 }
 template <typename T, std::int32_t D>
-void CheckDevice(std::int32_t device, linalg::Tensor<T, D> const& v) {
+void CheckDevice(Device device, linalg::Tensor<T, D> const& v) {
   CheckDevice(device, *v.Data());
 }
 }  // anonymous namespace
 
-void MetaInfo::Validate(std::int32_t device) const {
+void MetaInfo::Validate(Device device) const {
   if (group_ptr_.size() != 0 && weights_.Size() != 0) {
     CHECK_EQ(group_ptr_.size(), weights_.Size() + 1) << error::GroupWeight();
     return;

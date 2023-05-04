@@ -1,5 +1,5 @@
-/*!
- * Copyright 2015-2022 by XGBoost Contributors
+/**
+ * Copyright 2015-2023 by XGBoost Contributors
  * \file multi_class.cc
  * \brief Definition of multi-class classification objectives.
  * \author Tianqi Chen
@@ -21,9 +21,7 @@
 #include "../common/math.h"
 #include "../common/transform.h"
 
-namespace xgboost {
-namespace obj {
-
+namespace xgboost::obj {
 #if defined(XGBOOST_USE_CUDA)
 DMLC_REGISTRY_FILE_TAG(multiclass_obj_gpu);
 #endif  // defined(XGBOOST_USE_CUDA)
@@ -46,7 +44,7 @@ class SoftmaxMultiClassObj : public ObjFunction {
     param_.UpdateAllowUnknown(args);
   }
 
-  ObjInfo Task() const override { return ObjInfo::kClassification; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kClassification; }
 
   void GetGradient(const HostDeviceVector<bst_float>& preds,
                    const MetaInfo& info,
@@ -68,7 +66,7 @@ class SoftmaxMultiClassObj : public ObjFunction {
     const int nclass = param_.num_class;
     const auto ndata = static_cast<int64_t>(preds.Size() / nclass);
 
-    auto device = ctx_->gpu_id;
+    auto device = ctx_->DeviceType();
     out_gpair->SetDevice(device);
     info.labels.SetDevice(device);
     info.weights_.SetDevice(device);
@@ -114,7 +112,7 @@ class SoftmaxMultiClassObj : public ObjFunction {
             p = label == k ? p - 1.0f : p;
             gpair[idx * nclass + k] = GradientPair(p * wt, h);
           }
-        }, common::Range{0, ndata}, ctx_->Threads(), device)
+        }, common::Range{0, ndata}, ctx_->Threads(), device.ordinal)
         .Eval(out_gpair, info.labels.Data(), &preds, &info.weights_, &label_correct_);
 
     std::vector<int>& label_correct_h = label_correct_.HostVector();
@@ -130,7 +128,7 @@ class SoftmaxMultiClassObj : public ObjFunction {
   void EvalTransform(HostDeviceVector<bst_float>* io_preds) override {
     this->Transform(io_preds, true);
   }
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return "mlogloss";
   }
 
@@ -203,5 +201,4 @@ XGBOOST_REGISTER_OBJECTIVE(SoftprobMultiClass, "multi:softprob")
 .describe("Softmax for multi-class classification, output probability distribution.")
 .set_body([]() { return new SoftmaxMultiClassObj(true); });
 
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

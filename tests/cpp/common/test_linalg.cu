@@ -4,23 +4,25 @@
 #include <gtest/gtest.h>
 
 #include "../../../src/common/linalg_op.cuh"
+#include "../helpers.h"
 #include "xgboost/context.h"
 #include "xgboost/linalg.h"
 
 namespace xgboost::linalg {
 namespace {
 void TestElementWiseKernel() {
-  Tensor<float, 3> l{{2, 3, 4}, 0};
+  Context ctx = MakeCUDACtx(0);
+  Tensor<float, 3> l{{2, 3, 4}, &ctx};
   {
     /**
      * Non-contiguous
      */
     // GPU view
-    auto t = l.View(0).Slice(linalg::All(), 1, linalg::All());
+    auto t = l.View(ctx.DeviceType()).Slice(linalg::All(), 1, linalg::All());
     ASSERT_FALSE(t.CContiguous());
     ElementWiseTransformDevice(t, [] __device__(size_t i, float) { return i; });
     // CPU view
-    t = l.View(Context::kCpuId).Slice(linalg::All(), 1, linalg::All());
+    t = l.View(Device::CPU()).Slice(linalg::All(), 1, linalg::All());
     size_t k = 0;
     for (size_t i = 0; i < l.Shape(0); ++i) {
       for (size_t j = 0; j < l.Shape(2); ++j) {
@@ -28,7 +30,7 @@ void TestElementWiseKernel() {
       }
     }
 
-    t = l.View(0).Slice(linalg::All(), 1, linalg::All());
+    t = l.View(ctx.DeviceType()).Slice(linalg::All(), 1, linalg::All());
     ElementWiseKernelDevice(t, [] XGBOOST_DEVICE(size_t i, float v) { SPAN_CHECK(v == i); });
   }
 
@@ -36,11 +38,11 @@ void TestElementWiseKernel() {
     /**
      * Contiguous
      */
-    auto t = l.View(0);
+    auto t = l.View(ctx.DeviceType());
     ElementWiseTransformDevice(t, [] XGBOOST_DEVICE(size_t i, float) { return i; });
     ASSERT_TRUE(t.CContiguous());
     // CPU view
-    t = l.View(Context::kCpuId);
+    t = l.View(Device::CPU());
 
     size_t ind = 0;
     for (size_t i = 0; i < l.Shape(0); ++i) {
@@ -54,10 +56,9 @@ void TestElementWiseKernel() {
 }
 
 void TestSlice() {
-  Context ctx;
-  ctx.gpu_id = 1;
+  Context ctx = MakeCUDACtx(1);
   thrust::device_vector<double> data(2 * 3 * 4);
-  auto t = MakeTensorView(&ctx, dh::ToSpan(data), 2, 3, 4);
+  auto t = MakeTensorView(ctx.DeviceType(), dh::ToSpan(data), 2, 3, 4);
   dh::LaunchN(1, [=] __device__(size_t) {
     auto s = t.Slice(linalg::All(), linalg::Range(0, 3), linalg::Range(0, 4));
     auto all = t.Slice(linalg::All(), linalg::All(), linalg::All());

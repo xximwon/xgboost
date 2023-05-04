@@ -485,7 +485,7 @@ TEST(HistUtil, AdapterDeviceSketchBatches) {
 
 namespace {
 auto MakeData(Context const* ctx, std::size_t n_samples, bst_feature_t n_features) {
-  dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
+  dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
   auto n = n_samples * n_features;
   std::vector<float> x;
   x.resize(n);
@@ -525,21 +525,21 @@ void TestGetColumnSize(std::size_t n_samples) {
   std::vector<std::size_t> h_column_size_1(column_sizes_scan.size());
 
   detail::LaunchGetColumnSizeKernel<decltype(batch_iter), true, true>(
-      ctx.gpu_id, IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
+      ctx.Ordinal(), IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
   thrust::copy(column_sizes_scan.begin(), column_sizes_scan.end(), h_column_size.begin());
 
   detail::LaunchGetColumnSizeKernel<decltype(batch_iter), true, false>(
-      ctx.gpu_id, IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
+      ctx.Ordinal(), IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
   thrust::copy(column_sizes_scan.begin(), column_sizes_scan.end(), h_column_size_1.begin());
   ASSERT_EQ(h_column_size, h_column_size_1);
 
   detail::LaunchGetColumnSizeKernel<decltype(batch_iter), false, true>(
-      ctx.gpu_id, IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
+      ctx.Ordinal(), IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
   thrust::copy(column_sizes_scan.begin(), column_sizes_scan.end(), h_column_size_1.begin());
   ASSERT_EQ(h_column_size, h_column_size_1);
 
   detail::LaunchGetColumnSizeKernel<decltype(batch_iter), false, false>(
-      ctx.gpu_id, IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
+      ctx.Ordinal(), IterSpan{batch_iter, batch.Size()}, is_valid, dh::ToSpan(column_sizes_scan));
   thrust::copy(column_sizes_scan.begin(), column_sizes_scan.end(), h_column_size_1.begin());
   ASSERT_EQ(h_column_size, h_column_size_1);
 }

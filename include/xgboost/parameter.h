@@ -83,7 +83,7 @@ namespace xgboost {
 template <typename Type>
 struct XGBoostParameter : public dmlc::Parameter<Type> {
  protected:
-  bool initialised_ {false};
+  bool initialised_{false};
 
  public:
   template <typename Container>
@@ -96,7 +96,7 @@ struct XGBoostParameter : public dmlc::Parameter<Type> {
       return unknown;
     }
   }
-  bool GetInitialised() const { return static_cast<bool>(this->initialised_); }
+  [[nodiscard]] bool GetInitialised() const { return static_cast<bool>(this->initialised_); }
 };
 }  // namespace xgboost
 

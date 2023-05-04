@@ -27,8 +27,7 @@
 #include "../common/common.h"
 #include "../common/threading_utils.h"
 
-namespace xgboost {
-namespace gbm {
+namespace xgboost::gbm {
 
 DMLC_REGISTRY_FILE_TAG(gblinear);
 
@@ -88,11 +87,11 @@ class GBLinear : public GradientBooster {
     monitor_.Init("GBLinear");
   }
 
-  int32_t BoostedRounds() const override {
+  [[nodiscard]] int32_t BoostedRounds() const override {
     return model_.num_boosted_rounds;
   }
 
-  bool ModelFitted() const override { return BoostedRounds() != 0; }
+  [[nodiscard]] bool ModelFitted() const override { return BoostedRounds() != 0; }
 
   void Load(dmlc::Stream* fi) override {
     model_.Load(fi);
@@ -176,7 +175,7 @@ class GBLinear : public GradientBooster {
                            unsigned) override {
     model_.LazyInitModel();
     LinearCheckLayer(layer_begin);
-    auto base_margin = p_fmat->Info().base_margin_.View(Context::kCpuId);
+    auto base_margin = p_fmat->Info().base_margin_.View(Device::CPU());
     const int ngroup = model_.learner_model_param->num_output_group;
     const size_t ncolumns = model_.learner_model_param->num_feature + 1;
     // allocate space for (#features + bias) times #groups times #rows
@@ -224,9 +223,8 @@ class GBLinear : public GradientBooster {
     std::fill(contribs.begin(), contribs.end(), 0);
   }
 
-  std::vector<std::string> DumpModel(const FeatureMap& fmap,
-                                     bool with_stats,
-                                     std::string format) const override {
+  [[nodiscard]] std::vector<std::string> DumpModel(const FeatureMap& fmap, bool with_stats,
+                                                   std::string format) const override {
     return model_.DumpModel(fmap, with_stats, format);
   }
 
@@ -245,9 +243,7 @@ class GBLinear : public GradientBooster {
     out_scores->resize(model_.weight.size() - learner_model_param_->num_output_group, 0);
     auto n_groups = learner_model_param_->num_output_group;
     linalg::TensorView<float, 2> scores{
-        *out_scores,
-        {learner_model_param_->num_feature, n_groups},
-        Context::kCpuId};
+        *out_scores, {learner_model_param_->num_feature, n_groups}, Device::CPU()};
     for (size_t i = 0; i < learner_model_param_->num_feature; ++i) {
       for (bst_group_t g = 0; g < n_groups; ++g) {
         scores(i, g) = model_[i][g];
@@ -255,7 +251,7 @@ class GBLinear : public GradientBooster {
     }
   }
 
-  bool UseGPU() const override {
+  [[nodiscard]] bool UseGPU() const override {
     if (param_.updater == "gpu_coord_descent") {
       return true;
     } else {
@@ -269,12 +265,12 @@ class GBLinear : public GradientBooster {
     monitor_.Start("PredictBatchInternal");
     model_.LazyInitModel();
     std::vector<bst_float> &preds = *out_preds;
-    auto base_margin = p_fmat->Info().base_margin_.View(Context::kCpuId);
+    auto base_margin = p_fmat->Info().base_margin_.View(Device::CPU());
     // start collecting the prediction
     const int ngroup = model_.learner_model_param->num_output_group;
     preds.resize(p_fmat->Info().num_row_ * ngroup);
 
-    auto base_score = learner_model_param_->BaseScore(Context::kCpuId);
+    auto base_score = learner_model_param_->BaseScore(Device::CPU());
     for (const auto &page : p_fmat->GetBatches<SparsePage>()) {
       auto const& batch = page.GetView();
       // output convention: nrow * k, where nrow is number of rows
@@ -355,5 +351,4 @@ XGBOOST_REGISTER_GBM(GBLinear, "gblinear")
     .set_body([](LearnerModelParam const* booster_config, Context const* ctx) {
       return new GBLinear(booster_config, ctx);
     });
-}  // namespace gbm
-}  // namespace xgboost
+}  // namespace xgboost::gbm

@@ -96,7 +96,7 @@ void UpdateTreeLeafHost(Context const* ctx, std::vector<bst_node_t> const& posit
   auto const& h_node_idx = nidx;
   auto const& h_node_ptr = nptr;
   CHECK_LE(h_node_ptr.back(), info.num_row_);
-  auto h_predt = linalg::MakeTensorView(ctx, predt.ConstHostSpan(), info.num_row_,
+  auto h_predt = linalg::MakeTensorView(ctx->DeviceType(), predt.ConstHostSpan(), info.num_row_,
                                         predt.Size() / info.num_row_);
 
   collective::ApplyWithLabels(

@@ -1,4 +1,6 @@
-/*! Copyright 2019-2021 by XGBoost Contributors */
+/**
+ * Copyright 2019-2023, XGBoost Contributors
+ */
 
 #include <gtest/gtest.h>
 #include <thrust/device_vector.h>
@@ -65,7 +67,7 @@ TEST(MetaInfo, FromInterface) {
   }
 
   info.SetInfo(ctx, "base_margin", str.c_str());
-  auto const h_base_margin = info.base_margin_.View(Context::kCpuId);
+  auto const h_base_margin = info.base_margin_.View(ctx.DeviceType());
   ASSERT_EQ(h_base_margin.Size(), d_data.size());
   for (size_t i = 0; i < d_data.size(); ++i) {
     ASSERT_EQ(h_base_margin(i), d_data[i]);

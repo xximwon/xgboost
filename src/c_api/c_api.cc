@@ -952,18 +952,17 @@ XGB_DLL int XGBoosterPredict(BoosterHandle handle,
   API_END();
 }
 
-XGB_DLL int XGBoosterPredictFromDMatrix(BoosterHandle handle,
-                                        DMatrixHandle dmat,
-                                        char const* c_json_config,
+XGB_DLL int XGBoosterPredictFromDMatrix(BoosterHandle handle, DMatrixHandle dmat,
+                                        char const *c_json_config,
                                         xgboost::bst_ulong const **out_shape,
-                                        xgboost::bst_ulong *out_dim,
-                                        bst_float const **out_result) {
+                                        xgboost::bst_ulong *out_dim, float const **out_result) {
   API_BEGIN();
+  StringView msg{"Booster has not been initialized or has already been disposed."};
   if (handle == nullptr) {
-    LOG(FATAL) << "Booster has not been initialized or has already been disposed.";
+    LOG(FATAL) << msg;
   }
   if (dmat == nullptr) {
-    LOG(FATAL) << "DMatrix has not been initialized or has already been disposed.";
+    LOG(FATAL) << msg;
   }
   xgboost_CHECK_C_ARG_PTR(c_json_config);
   auto config = Json::Load(StringView{c_json_config});

@@ -57,7 +57,13 @@ class ObjFunction;
 class Metric;
 struct LearnerModelParam;
 class GradientBooster;
-}
+
+void CheckObjFunction(std::unique_ptr<xgboost::ObjFunction> const& obj,
+                      std::vector<xgboost::bst_float> preds, std::vector<xgboost::bst_float> labels,
+                      std::vector<xgboost::bst_float> weights,
+                      std::vector<xgboost::bst_float> out_grad,
+                      std::vector<xgboost::bst_float> out_hess);
+}  // namespace xgboost
 
 template <typename Float>
 Float RelError(Float l, Float r) {
@@ -74,13 +80,6 @@ void CreateSimpleTestData(const std::string& filename);
 void CreateBigTestData(const std::string& filename, size_t n_entries, bool zero_based = true);
 
 void CreateTestCSV(std::string const& path, size_t rows, size_t cols);
-
-void CheckObjFunction(std::unique_ptr<xgboost::ObjFunction> const& obj,
-                      std::vector<xgboost::bst_float> preds,
-                      std::vector<xgboost::bst_float> labels,
-                      std::vector<xgboost::bst_float> weights,
-                      std::vector<xgboost::bst_float> out_grad,
-                      std::vector<xgboost::bst_float> out_hess);
 
 xgboost::Json CheckConfigReloadImpl(xgboost::Configurable* const configurable,
                                     std::string name);
@@ -157,8 +156,8 @@ class SimpleLCG {
       : state_{state == 0 ? kDefaultInit : state}, alpha_{kDefaultAlpha}, mod_{kMaxValue} {}
 
   StateType operator()();
-  StateType Min() const;
-  StateType Max() const;
+  [[nodiscard]] StateType Min() const;
+  [[nodiscard]] StateType Max() const;
 
   constexpr result_type static min() { return 0; };         // NOLINT
   constexpr result_type static max() { return kMaxValue; }  // NOLINT
@@ -237,7 +236,7 @@ class RandomDataGenerator {
 
   bst_target_t n_targets_{1};
 
-  std::int32_t device_{Context::kCpuId};
+  Context ctx_;
   std::uint64_t seed_{0};
   SimpleLCG lcg_;
 
@@ -260,7 +259,9 @@ class RandomDataGenerator {
     return *this;
   }
   RandomDataGenerator& Device(int32_t d) {
-    device_ = d;
+    if (d != Context::kCpuId) {
+      ctx_.UpdateAllowUnknown(Args{{"device", "CUDA:" + std::to_string(d)}});
+    }
     return *this;
   }
   RandomDataGenerator& Seed(uint64_t s) {
@@ -309,8 +310,9 @@ class RandomDataGenerator {
   void GenerateCSR(HostDeviceVector<float>* value, HostDeviceVector<bst_row_t>* row_ptr,
                    HostDeviceVector<bst_feature_t>* columns) const;
 
-  std::shared_ptr<DMatrix> GenerateDMatrix(bool with_label = false, bool float_label = true,
-                                           size_t classes = 1) const;
+  [[nodiscard]] std::shared_ptr<DMatrix> GenerateDMatrix(bool with_label = false,
+                                                         bool float_label = true,
+                                                         size_t classes = 1) const;
 #if defined(XGBOOST_USE_CUDA)
   std::shared_ptr<DMatrix> GenerateDeviceDMatrix();
 #endif
@@ -444,11 +446,11 @@ class ArrayIterForTest {
   size_t static constexpr Cols() { return 13; }
 
  public:
-  std::string AsArray() const { return interface_; }
+  [[nodiscard]] std::string AsArray() const { return interface_; }
 
   virtual int Next() = 0;
   virtual void Reset() { iter_ = 0; }
-  size_t Iter() const { return iter_; }
+  [[nodiscard]] std::size_t Iter() const { return iter_; }
   auto Proxy() -> decltype(proxy_) { return proxy_; }
 
   explicit ArrayIterForTest(float sparsity, size_t rows, size_t cols, size_t batches);
@@ -502,10 +504,10 @@ RMMAllocatorPtr SetUpRMMResourceForCppTests(int argc, char** argv);
  * \brief Make learner model param
  */
 inline LearnerModelParam MakeMP(bst_feature_t n_features, float base_score, uint32_t n_groups,
-                                int32_t device = Context::kCpuId) {
+                                Context const* ctx) {
   size_t shape[1]{1};
-  LearnerModelParam mparam(n_features, linalg::Tensor<float, 1>{{base_score}, shape, device},
-                           n_groups, 1, MultiStrategy::kOneOutputPerTree);
+  LearnerModelParam mparam(n_features, linalg::Tensor<float, 1>{{base_score}, shape, ctx}, n_groups,
+                           1, MultiStrategy::kOneOutputPerTree);
   return mparam;
 }
 

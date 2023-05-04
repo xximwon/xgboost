@@ -109,7 +109,7 @@ class MetaInfo {
   /*!
    * \brief Validate all metainfo.
    */
-  void Validate(int32_t device) const;
+  void Validate(Device device) const;
 
   MetaInfo Slice(common::Span<int32_t const> ridxs) const;
 

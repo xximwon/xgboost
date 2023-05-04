@@ -30,8 +30,7 @@ using ProbabilityDistributionType = xgboost::common::ProbabilityDistributionType
 template <typename Distribution>
 using AFTLoss = xgboost::common::AFTLoss<Distribution>;
 
-namespace xgboost {
-namespace metric {
+namespace xgboost::metric {
 // tag the this file, used by force static link later.
 DMLC_REGISTRY_FILE_TAG(survival_metric);
 
@@ -122,26 +121,24 @@ class ElementWiseSurvivalMetricsReduction {
 
 #endif  // XGBOOST_USE_CUDA
 
-  PackedReduceResult Reduce(
-      const Context &ctx,
-      const HostDeviceVector<bst_float>& weights,
-      const HostDeviceVector<bst_float>& labels_lower_bound,
-      const HostDeviceVector<bst_float>& labels_upper_bound,
-      const HostDeviceVector<bst_float>& preds) {
+  PackedReduceResult Reduce(Context const* ctx, const HostDeviceVector<bst_float>& weights,
+                            const HostDeviceVector<bst_float>& labels_lower_bound,
+                            const HostDeviceVector<bst_float>& labels_upper_bound,
+                            const HostDeviceVector<bst_float>& preds) {
     PackedReduceResult result;
 
-    if (ctx.gpu_id < 0) {
+    if (ctx->IsCPU()) {
       result = CpuReduceMetrics(weights, labels_lower_bound, labels_upper_bound,
-                                preds, ctx.Threads());
+                                preds, ctx->Threads());
     }
 #if defined(XGBOOST_USE_CUDA)
     else {  // NOLINT
-      preds.SetDevice(ctx.gpu_id);
-      labels_lower_bound.SetDevice(ctx.gpu_id);
-      labels_upper_bound.SetDevice(ctx.gpu_id);
-      weights.SetDevice(ctx.gpu_id);
+      preds.SetDevice(ctx->DeviceType());
+      labels_lower_bound.SetDevice(ctx->DeviceType());
+      labels_upper_bound.SetDevice(ctx->DeviceType());
+      weights.SetDevice(ctx->DeviceType());
 
-      dh::safe_cuda(cudaSetDevice(ctx.gpu_id));
+      dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
       result = DeviceReduceMetrics(weights, labels_lower_bound, labels_upper_bound, preds);
     }
 #endif  // defined(XGBOOST_USE_CUDA)
@@ -209,7 +206,7 @@ struct EvalEWiseSurvivalBase : public MetricNoCache {
     CHECK_EQ(preds.Size(), info.labels_lower_bound_.Size());
     CHECK_EQ(preds.Size(), info.labels_upper_bound_.Size());
     CHECK(ctx_);
-    auto result = reducer_.Reduce(*ctx_, info.weights_, info.labels_lower_bound_,
+    auto result = reducer_.Reduce(ctx_, info.weights_, info.labels_lower_bound_,
                                   info.labels_upper_bound_, preds);
 
     std::array<double, 2> dat{result.Residue(), result.Weights()};
@@ -282,5 +279,4 @@ XGBOOST_REGISTER_METRIC(IntervalRegressionAccuracy, "interval-regression-accurac
       return new EvalEWiseSurvivalBase<EvalIntervalRegressionAccuracy>();
     });
 
-}  // namespace metric
-}  // namespace xgboost
+}  // namespace xgboost::metric

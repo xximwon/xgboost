@@ -1,5 +1,5 @@
-/*!
- * Copyright 2017-2019 XGBoost contributors
+/**
+ * Copyright 2017-2032, XGBoost contributors
  */
 
 /**
@@ -49,11 +49,12 @@
 #ifndef XGBOOST_HOST_DEVICE_VECTOR_H_
 #define XGBOOST_HOST_DEVICE_VECTOR_H_
 
-#include <initializer_list>
-#include <vector>
-#include <type_traits>
+#include <xgboost/context.h>
+#include <xgboost/span.h>
 
-#include "span.h"
+#include <initializer_list>
+#include <type_traits>
+#include <vector>
 
 namespace xgboost {
 
@@ -98,9 +99,16 @@ class HostDeviceVector {
   HostDeviceVector<T>& operator=(const HostDeviceVector<T>&) = delete;
   HostDeviceVector<T>& operator=(HostDeviceVector<T>&&);
 
-  bool Empty() const { return Size() == 0; }
-  size_t Size() const;
-  int DeviceIdx() const;
+  [[nodiscard]] bool Empty() const { return Size() == 0; }
+  [[nodiscard]] size_t Size() const;
+  [[nodiscard]] bst_d_ordinal_t DeviceIdx() const;
+  [[nodiscard]] Device DeviceType() const {
+    bst_d_ordinal_t idx = DeviceIdx();
+    if (idx != Context::kCpuId) {
+      return ::xgboost::Device{::xgboost::Device::kCUDA, idx};
+    }
+    return ::xgboost::Device::CPU();
+  }
   common::Span<T> DeviceSpan();
   common::Span<const T> ConstDeviceSpan() const;
   common::Span<const T> DeviceSpan() const { return ConstDeviceSpan(); }
@@ -126,13 +134,18 @@ class HostDeviceVector {
   const std::vector<T>& ConstHostVector() const;
   const std::vector<T>& HostVector() const {return ConstHostVector(); }
 
-  bool HostCanRead() const;
-  bool HostCanWrite() const;
-  bool DeviceCanRead() const;
-  bool DeviceCanWrite() const;
-  GPUAccess DeviceAccess() const;
+  [[nodiscard]] bool HostCanRead() const;
+  [[nodiscard]] bool HostCanWrite() const;
+  [[nodiscard]] bool DeviceCanRead() const;
+  [[nodiscard]] bool DeviceCanWrite() const;
+  [[nodiscard]] GPUAccess DeviceAccess() const;
 
   void SetDevice(int device) const;
+  void SetDevice(Device device) const {
+    if (device.IsCUDA()) {
+      this->SetDevice(device.ordinal);
+    }
+  }
 
   void Resize(size_t new_size, T v = T());
 

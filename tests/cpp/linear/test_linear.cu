@@ -1,4 +1,6 @@
-// Copyright by Contributors
+/**
+ * Copyright 2018-2023, XGBoost Contributors
+ */
 #include <xgboost/linear_updater.h>
 #include <xgboost/gbm.h>
 
@@ -15,7 +17,7 @@ TEST(Linear, GPUCoordinate) {
   auto mat = xgboost::RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
   auto ctx = MakeCUDACtx(0);
 
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
   auto updater = std::unique_ptr<xgboost::LinearUpdater>(
       xgboost::LinearUpdater::Create("gpu_coord_descent", &ctx));
   updater->Configure({{"eta", "1."}});

@@ -109,26 +109,26 @@ EllpackPageImpl::EllpackPageImpl(int device, common::HistogramCuts cuts,
 EllpackPageImpl::EllpackPageImpl(Context const* ctx, DMatrix* dmat, const BatchParam& param)
     : is_dense(dmat->IsDense()) {
   monitor_.Init("ellpack_page");
-  dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
+  dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
 
   n_rows = dmat->Info().num_row_;
 
   monitor_.Start("Quantiles");
   // Create the quantile sketches for the dmatrix and initialize HistogramCuts.
   row_stride = GetRowStride(dmat);
-  cuts_ = common::DeviceSketch(ctx->gpu_id, dmat, param.max_bin);
+  cuts_ = common::DeviceSketch(ctx->Ordinal(), dmat, param.max_bin);
   monitor_.Stop("Quantiles");
 
   monitor_.Start("InitCompressedData");
-  this->InitCompressedData(ctx->gpu_id);
+  this->InitCompressedData(ctx->Ordinal());
   monitor_.Stop("InitCompressedData");
 
-  dmat->Info().feature_types.SetDevice(ctx->gpu_id);
+  dmat->Info().feature_types.SetDevice(ctx->DeviceType());
   auto ft = dmat->Info().feature_types.ConstDeviceSpan();
   monitor_.Start("BinningCompression");
   CHECK(dmat->SingleColBlock());
   for (const auto& batch : dmat->GetBatches<SparsePage>()) {
-    CreateHistIndices(ctx->gpu_id, batch, ft);
+    CreateHistIndices(ctx->Ordinal(), batch, ft);
   }
   monitor_.Stop("BinningCompression");
 }
@@ -352,9 +352,9 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, GHistIndexMatrix const& pag
       [&](size_t i) { return page.row_ptr[i + 1] - page.row_ptr[i]; });
   row_stride = *std::max_element(it, it + page.Size());
 
-  CHECK_GE(ctx->gpu_id, 0);
+  CHECK(ctx->IsCUDA());
   monitor_.Start("InitCompressedData");
-  InitCompressedData(ctx->gpu_id);
+  InitCompressedData(ctx->Ordinal());
   monitor_.Stop("InitCompressedData");
 
   // copy gidx
@@ -364,7 +364,7 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, GHistIndexMatrix const& pag
   dh::safe_cuda(cudaMemcpyAsync(d_row_ptr.data(), page.row_ptr.data(), d_row_ptr.size_bytes(),
                                 cudaMemcpyHostToDevice, ctx->CUDACtx()->Stream()));
 
-  auto accessor = this->GetDeviceAccessor(ctx->gpu_id, ft);
+  auto accessor = this->GetDeviceAccessor(ctx->Ordinal(), ft);
   auto null = accessor.NullValue();
   CopyGHistToEllpack(page, d_row_ptr, row_stride, d_compressed_buffer, null);
 }

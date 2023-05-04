@@ -334,7 +334,7 @@ struct LearnerModelParam {
         multi_strategy{multi_strategy} {}
 
   linalg::TensorView<float const, 1> BaseScore(Context const* ctx) const;
-  [[nodiscard]] linalg::TensorView<float const, 1> BaseScore(std::int32_t device) const;
+  [[nodiscard]] linalg::TensorView<float const, 1> BaseScore(Device device) const;
 
   void Copy(LearnerModelParam const& that);
   [[nodiscard]] bool IsVectorLeaf() const noexcept {

@@ -46,8 +46,6 @@ class DMatrixProxy : public DMatrix {
 #endif  // defined(XGBOOST_USE_CUDA)
 
  public:
-  int DeviceIdx() const { return ctx_.gpu_id; }
-
   void SetCUDAArray(char const* c_interface) {
     common::AssertGPUSupport();
     CHECK(c_interface);

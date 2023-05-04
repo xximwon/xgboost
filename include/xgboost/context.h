@@ -15,52 +15,112 @@ namespace xgboost {
 
 struct CUDAContext;
 
+using bst_d_ordinal_t = std::int16_t;  // NOLINT
+
+struct Device {
+  enum Type : std::int16_t { kCPU = 0, kCUDA = 1 } device{kCPU};
+  // CUDA device ordinal.
+  bst_d_ordinal_t ordinal{-1};
+
+  [[nodiscard]] bool IsCUDA() const { return device == kCUDA; }
+  [[nodiscard]] bool IsCPU() const { return device == kCPU; }
+
+  Device() = default;
+  constexpr Device(Type type, bst_d_ordinal_t ord) : device{type}, ordinal{ord} {}
+
+  Device(Device const& that) = default;
+  Device& operator=(Device const& that) = default;
+  Device(Device&& that) = default;
+  Device& operator=(Device&& that) = default;
+
+  constexpr static auto CPU() { return Device{kCPU, -1}; }
+  static auto CUDA(bst_d_ordinal_t ordinal) { return Device{kCPU, ordinal}; }
+
+  bool operator==(Device const& that) const {
+    return device == that.device && ordinal == that.ordinal;
+  }
+  bool operator!=(Device const& that) const { return !(*this == that); }
+};
+
+static_assert(sizeof(Device) == 4);
+
 struct Context : public XGBoostParameter<Context> {
+ private:
+  std::string device;  // NOLINT
+  // number of threads to use if OpenMP is enabled
+  // if equals 0, use system default
+  std::int32_t nthread{0};  // NOLINT
+  Device device_{Device::CPU()};
+
  public:
   // Constant representing the device ID of CPU.
-  static std::int32_t constexpr kCpuId = -1;
+  static bst_d_ordinal_t constexpr kCpuId = -1;
+  bst_d_ordinal_t constexpr InvalidOrdinal() { return -2; }
   static std::int64_t constexpr kDefaultSeed = 0;
 
  public:
   Context();
 
+  template <typename Container>
+  Args UpdateAllowUnknown(Container const& kwargs) {
+    auto args = XGBoostParameter<Context>::UpdateAllowUnknown(kwargs);
+    this->ParseDeviceOrdinal();
+    for (auto const& kv : args) {
+      CHECK_NE(kv.first, "gpu_id");
+    }
+    return args;
+  }
+
   // stored random seed
   std::int64_t seed{kDefaultSeed};
   // whether seed the PRNG each iteration
   bool seed_per_iteration{false};
-  // number of threads to use if OpenMP is enabled
-  // if equals 0, use system default
-  std::int32_t nthread{0};
-  // primary device, -1 means no gpu.
-  std::int32_t gpu_id{kCpuId};
   // fail when gpu_id is invalid
   bool fail_on_invalid_gpu_id{false};
+
   bool validate_parameters{false};
-
-  /*!
-   * \brief Configure the parameter `gpu_id'.
+  void ParseDeviceOrdinal();
+  /**
+   * \brief Return automatically configured number of threads.
    *
-   * \param require_gpu  Whether GPU is explicitly required from user.
+   * \param config Whether we should configure the number of threads based on the runtime
+   *               environment. Only used for testing.
    */
-  void ConfigureGpuId(bool require_gpu);
-  /*!
-   * Return automatically chosen threads.
-   */
-  std::int32_t Threads() const;
+  std::int32_t Threads(bool config = true) const;
 
-  bool IsCPU() const { return gpu_id == kCpuId; }
+  bool IsCPU() const { return device_.device == Device::kCPU; }
   bool IsCUDA() const { return !IsCPU(); }
+  Device DeviceType() const { return device_; }
+  /**
+   * \brief Returns CUDA device ordinal.
+   */
+  bst_d_ordinal_t Ordinal() const { return device_.ordinal; }
+  /**
+   * \brief Name of the current device.
+   */
+  std::string DeviceName() const {
+    switch (device_.device) {
+      case Device::kCPU:
+        return "CPU";
+      case Device::kCUDA:
+        return "CUDA:" + std::to_string(this->Ordinal());
+      default: {
+        LOG(FATAL) << "Unknown device.";
+        return "";
+      }
+    }
+  }
 
   CUDAContext const* CUDACtx() const;
   // Make a CUDA context based on the current context.
-  Context MakeCUDA(std::int32_t device = 0) const {
+  Context MakeCUDA(bst_d_ordinal_t device = 0) const {
     Context ctx = *this;
-    ctx.gpu_id = device;
+    ctx.device_ = Device{Device::kCUDA, device};
     return ctx;
   }
   Context MakeCPU() const {
     Context ctx = *this;
-    ctx.gpu_id = kCpuId;
+    ctx.device_ = Device{Device::kCPU, kCpuId};
     return ctx;
   }
 
@@ -73,11 +133,9 @@ struct Context : public XGBoostParameter<Context> {
     DMLC_DECLARE_FIELD(seed_per_iteration)
         .set_default(false)
         .describe("Seed PRNG determnisticly via iterator number.");
+    DMLC_DECLARE_FIELD(device).set_default("CPU").describe("Device ordinal.");
     DMLC_DECLARE_FIELD(nthread).set_default(0).describe("Number of threads to use.");
     DMLC_DECLARE_ALIAS(nthread, n_jobs);
-
-    DMLC_DECLARE_FIELD(gpu_id).set_default(-1).set_lower_bound(-1).describe(
-        "The primary GPU device ordinal.");
     DMLC_DECLARE_FIELD(fail_on_invalid_gpu_id)
         .set_default(false)
         .describe("Fail with error when gpu_id is invalid.");

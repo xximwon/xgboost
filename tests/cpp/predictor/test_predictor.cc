@@ -32,7 +32,7 @@ TEST(Predictor, PredictionCache) {
   // Add a cache that is immediately expired.
   auto add_cache = [&]() {
     auto p_dmat = RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
-    container.Cache(p_dmat, Context::kCpuId);
+    container.Cache(p_dmat, Device::CPU());
     m = p_dmat.get();
   };
 
@@ -99,10 +99,10 @@ void TestTrainingPrediction(size_t rows, size_t bins,
   }
 }
 
-void TestInplacePrediction(std::shared_ptr<DMatrix> x, std::string predictor, bst_row_t rows,
-                           bst_feature_t cols, int32_t device) {
+void TestInplacePrediction(Context const *ctx, std::shared_ptr<DMatrix> x, std::string predictor,
+                           bst_row_t rows, bst_feature_t cols) {
   size_t constexpr kClasses { 4 };
-  auto gen = RandomDataGenerator{rows, cols, 0.5}.Device(device);
+  auto gen = RandomDataGenerator{rows, cols, 0.5}.Device(ctx->Ordinal());
   std::shared_ptr<DMatrix> m = gen.GenerateDMatrix(true, false, kClasses);
 
   std::unique_ptr<Learner> learner {
@@ -113,7 +113,7 @@ void TestInplacePrediction(std::shared_ptr<DMatrix> x, std::string predictor, bs
   learner->SetParam("num_class", std::to_string(kClasses));
   learner->SetParam("seed", "0");
   learner->SetParam("subsample", "0.5");
-  learner->SetParam("gpu_id", std::to_string(device));
+  learner->SetParam("device", ctx->DeviceName());
   learner->SetParam("predictor", predictor);
   for (int32_t it = 0; it < 4; ++it) {
     learner->UpdateOneIter(it, m);
@@ -256,18 +256,17 @@ void TestCategoricalPrediction(std::string name, bool is_column_split) {
   size_t constexpr kCols = 10;
   PredictionCacheEntry out_predictions;
 
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  Context ctx;
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
   uint32_t split_ind = 3;
   bst_cat_t split_cat = 4;
   float left_weight = 1.3f;
   float right_weight = 1.7f;
 
-  Context ctx;
-  ctx.UpdateAllowUnknown(Args{});
   gbm::GBTreeModel model(&mparam, &ctx);
   GBTreeModelForTest(&model, split_ind, split_cat, left_weight, right_weight);
 
-  ctx.UpdateAllowUnknown(Args{{"gpu_id", "0"}});
+  ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
   std::unique_ptr<Predictor> predictor{Predictor::Create(name.c_str(), &ctx)};
 
   std::vector<float> row(kCols);
@@ -282,7 +281,7 @@ void TestCategoricalPrediction(std::string name, bool is_column_split) {
 
   predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
   predictor->PredictBatch(m.get(), &out_predictions, model, 0);
-  auto score = mparam.BaseScore(Context::kCpuId)(0);
+  auto score = mparam.BaseScore(Device::CPU())(0);
   ASSERT_EQ(out_predictions.predictions.Size(), 1ul);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0],
             right_weight + score);  // go to right for matching cat
@@ -307,20 +306,18 @@ void TestCategoricalPredictLeaf(StringView name, bool is_column_split) {
   size_t constexpr kCols = 10;
   PredictionCacheEntry out_predictions;
 
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  Context ctx;
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   uint32_t split_ind = 3;
   bst_cat_t split_cat = 4;
   float left_weight = 1.3f;
   float right_weight = 1.7f;
 
-  Context ctx;
-  ctx.UpdateAllowUnknown(Args{});
-
   gbm::GBTreeModel model(&mparam, &ctx);
   GBTreeModelForTest(&model, split_ind, split_cat, left_weight, right_weight);
 
-  ctx.gpu_id = 0;
+  ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
   std::unique_ptr<Predictor> predictor{Predictor::Create(name.c_str(), &ctx)};
 
   std::vector<float> row(kCols);
@@ -585,7 +582,7 @@ void TestVectorLeafPrediction(Context const *ctx) {
   size_t constexpr kCols = 5;
 
   LearnerModelParam mparam{static_cast<bst_feature_t>(kCols),
-                           linalg::Vector<float>{{0.5}, {1}, Context::kCpuId}, 1, 3,
+                           linalg::Vector<float>{{0.5}, {1}, ctx}, 1, 3,
                            MultiStrategy::kMultiOutputTree};
 
   std::vector<std::unique_ptr<RegTree>> trees;

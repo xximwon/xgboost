@@ -188,7 +188,7 @@ struct SparsePageView {
 
   explicit SparsePageView(SparsePage const *p) : base_rowid{p->base_rowid} { view = p->GetView(); }
   SparsePage::Inst operator[](size_t i) { return view[i]; }
-  size_t Size() const { return view.Size(); }
+  [[nodiscard]] std::size_t Size() const { return view.Size(); }
 };
 
 struct SingleInstanceView {
@@ -249,7 +249,7 @@ struct GHistIndexMatrixView {
     }
     return ret;
   }
-  size_t Size() const { return page_.Size(); }
+  [[nodiscard]] std::size_t Size() const { return page_.Size(); }
 };
 
 template <typename Adapter>
@@ -289,7 +289,7 @@ class AdapterView {
     return ret;
   }
 
-  size_t Size() const { return adapter_->NumRows(); }
+  [[nodiscard]] size_t Size() const { return adapter_->NumRows(); }
 
   bst_row_t const static base_rowid = 0;  // NOLINT
 };
@@ -452,7 +452,8 @@ class ColumnSplitHelper {
     std::fill(missing_storage_.begin(), missing_storage_.end(), 0);
   }
 
-  std::size_t BitIndex(std::size_t tree_id, std::size_t row_id, std::size_t node_id) const {
+  [[nodiscard]] std::size_t BitIndex(std::size_t tree_id, std::size_t row_id,
+                                     std::size_t node_id) const {
     size_t tree_index = tree_id - tree_begin_;
     return tree_offsets_[tree_index] * n_rows_ + row_id * tree_sizes_[tree_index] + node_id;
   }
@@ -669,7 +670,7 @@ class CPUPredictor : public Predictor {
     std::size_t n_samples = p_fmat->Info().num_row_;
     std::size_t n_groups = model.learner_model_param->OutputLength();
     CHECK_EQ(out_preds->size(), n_samples * n_groups);
-    linalg::TensorView<float, 2> out_predt{*out_preds, {n_samples, n_groups}, ctx_->gpu_id};
+    linalg::TensorView<float, 2> out_predt{*out_preds, {n_samples, n_groups}, ctx_->DeviceType()};
 
     if (!p_fmat->PageExists<SparsePage>()) {
       std::vector<Entry> workspace(p_fmat->Info().num_col_ * kUnroll * n_threads);
@@ -738,7 +739,7 @@ class CPUPredictor : public Predictor {
     std::vector<RegTree::FVec> thread_temp;
     InitThreadTemp(n_threads * kBlockSize, &thread_temp);
     std::size_t n_groups = model.learner_model_param->OutputLength();
-    linalg::TensorView<float, 2> out_predt{predictions, {m->NumRows(), n_groups}, Context::kCpuId};
+    linalg::TensorView<float, 2> out_predt{predictions, {m->NumRows(), n_groups}, Device::CPU()};
     PredictBatchByBlockOfRowsKernel<AdapterView<Adapter>, kBlockSize>(
         AdapterView<Adapter>(m.get(), missing, common::Span<Entry>{workspace}, n_threads), model,
         tree_begin, tree_end, &thread_temp, n_threads, out_predt);
@@ -884,8 +885,8 @@ class CPUPredictor : public Predictor {
     common::ParallelFor(ntree_limit, n_threads, [&](bst_omp_uint i) {
       FillNodeMeanValues(model.trees[i].get(), &(mean_values[i]));
     });
-    auto base_margin = info.base_margin_.View(Context::kCpuId);
-    auto base_score = model.learner_model_param->BaseScore(Context::kCpuId)(0);
+    auto base_margin = info.base_margin_.HostView();
+    auto base_score = model.learner_model_param->BaseScore(Device::CPU())(0);
     // start collecting the contributions
     for (const auto &batch : p_fmat->GetBatches<SparsePage>()) {
       auto page = batch.GetView();

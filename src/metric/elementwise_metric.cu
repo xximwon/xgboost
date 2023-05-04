@@ -30,8 +30,7 @@
 #include "../common/device_helpers.cuh"
 #endif  // XGBOOST_USE_CUDA
 
-namespace xgboost {
-namespace metric {
+namespace xgboost::metric {
 // tag the this file, used by force static link later.
 DMLC_REGISTRY_FILE_TAG(elementwise_metric);
 
@@ -45,7 +44,7 @@ namespace {
 template <typename Fn>
 PackedReduceResult Reduce(Context const* ctx, MetaInfo const& info, Fn&& loss) {
   PackedReduceResult result;
-  auto labels = info.labels.View(ctx->gpu_id);
+  auto labels = info.labels.View(ctx->DeviceType());
   if (ctx->IsCPU()) {
     auto n_threads = ctx->Threads();
     std::vector<double> score_tloc(n_threads, 0.0);
@@ -183,10 +182,10 @@ class PseudoErrorLoss : public MetricNoCache {
 
   double Eval(const HostDeviceVector<bst_float>& preds, const MetaInfo& info) override {
     CHECK_EQ(info.labels.Shape(0), info.num_row_);
-    auto labels = info.labels.View(ctx_->gpu_id);
-    preds.SetDevice(ctx_->gpu_id);
+    auto labels = info.labels.View(ctx_->DeviceType());
+    preds.SetDevice(ctx_->DeviceType());
     auto predts = ctx_->IsCPU() ? preds.ConstHostSpan() : preds.ConstDeviceSpan();
-    info.weights_.SetDevice(ctx_->gpu_id);
+    info.weights_.SetDevice(ctx_->DeviceType());
     common::OptionalWeights weights(ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                      : info.weights_.ConstDeviceSpan());
     float slope = this->param_.huber_slope;
@@ -349,11 +348,11 @@ struct EvalEWiseBase : public MetricNoCache {
     if (info.labels.Size() != 0) {
       CHECK_NE(info.labels.Shape(1), 0);
     }
-    auto labels = info.labels.View(ctx_->gpu_id);
-    info.weights_.SetDevice(ctx_->gpu_id);
+    auto labels = info.labels.View(ctx_->DeviceType());
+    info.weights_.SetDevice(ctx_->DeviceType());
     common::OptionalWeights weights(ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                      : info.weights_.ConstDeviceSpan());
-    preds.SetDevice(ctx_->gpu_id);
+    preds.SetDevice(ctx_->DeviceType());
     auto predts = ctx_->IsCPU() ? preds.ConstHostSpan() : preds.ConstDeviceSpan();
 
     auto d_policy = policy_;
@@ -444,16 +443,17 @@ class QuantileError : public MetricNoCache {
     }
 
     auto const* ctx = ctx_;
-    auto y_true = info.labels.View(ctx->gpu_id);
-    preds.SetDevice(ctx->gpu_id);
-    alpha_.SetDevice(ctx->gpu_id);
+    auto y_true = info.labels.View(ctx->DeviceType());
+    preds.SetDevice(ctx->DeviceType());
+    alpha_.SetDevice(ctx->DeviceType());
     auto alpha = ctx->IsCPU() ? alpha_.ConstHostSpan() : alpha_.ConstDeviceSpan();
     std::size_t n_targets = preds.Size() / info.num_row_ / alpha_.Size();
     CHECK_NE(n_targets, 0);
-    auto y_predt = linalg::MakeTensorView(ctx, &preds, static_cast<std::size_t>(info.num_row_),
-                                          alpha_.Size(), n_targets);
+    auto y_predt =
+        linalg::MakeTensorView(ctx->DeviceType(), &preds, static_cast<std::size_t>(info.num_row_),
+                               alpha_.Size(), n_targets);
 
-    info.weights_.SetDevice(ctx->gpu_id);
+    info.weights_.SetDevice(ctx->DeviceType());
     common::OptionalWeights weight{ctx->IsCPU() ? info.weights_.ConstHostSpan()
                                                 : info.weights_.ConstDeviceSpan()};
 
@@ -481,7 +481,7 @@ class QuantileError : public MetricNoCache {
     return dat[0] / dat[1];
   }
 
-  const char* Name() const override { return "quantile"; }
+  [[nodiscard]] const char* Name() const override { return "quantile"; }
   void LoadConfig(Json const& in) override {
     auto const& obj = get<Object const>(in);
     auto it = obj.find("quantile_loss_param");
@@ -501,5 +501,4 @@ class QuantileError : public MetricNoCache {
 XGBOOST_REGISTER_METRIC(QuantileError, "quantile")
     .describe("Quantile regression error.")
     .set_body([](const char*) { return new QuantileError{}; });
-}  // namespace metric
-}  // namespace xgboost
+}  // namespace xgboost::metric

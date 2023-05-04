@@ -312,35 +312,34 @@ TEST(Learner, GPUConfiguration) {
     learner->SetParams({Arg{"booster", "gblinear"},
                         Arg{"updater", "gpu_coord_descent"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, 0);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), 0);
   }
   {
     std::unique_ptr<Learner> learner {Learner::Create(mat)};
     learner->SetParams({Arg{"tree_method", "gpu_hist"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, 0);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), 0);
   }
   {
     std::unique_ptr<Learner> learner {Learner::Create(mat)};
-    learner->SetParams({Arg{"tree_method", "gpu_hist"},
-                        Arg{"gpu_id", "-1"}});
+    learner->SetParams({Arg{"tree_method", "gpu_hist"}, Arg{"device", "CUDA:0"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, 0);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), 0);
   }
   {
     // with CPU algorithm
     std::unique_ptr<Learner> learner {Learner::Create(mat)};
     learner->SetParams({Arg{"tree_method", "hist"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, -1);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), -1);
   }
   {
-    // with CPU algorithm, but `gpu_id` takes priority
+    // with CPU algorithm, but `ordinal` takes priority
     std::unique_ptr<Learner> learner {Learner::Create(mat)};
     learner->SetParams({Arg{"tree_method", "hist"},
-                        Arg{"gpu_id", "0"}});
+                        Arg{"ordinal", "0"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, 0);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), 0);
   }
   {
     // With CPU algorithm but GPU Predictor, this is to simulate when
@@ -350,7 +349,7 @@ TEST(Learner, GPUConfiguration) {
     learner->SetParams({Arg{"tree_method", "hist"},
                         Arg{"predictor", "gpu_predictor"}});
     learner->UpdateOneIter(0, p_dmat);
-    ASSERT_EQ(learner->Ctx()->gpu_id, 0);
+    ASSERT_EQ(learner->Ctx()->Ordinal(), 0);
   }
 }
 #endif  // defined(XGBOOST_USE_CUDA)

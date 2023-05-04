@@ -17,8 +17,7 @@
 #include "xgboost/host_device_vector.h"  // HostDeviceVector
 #include "xgboost/tree_model.h"          // RegTree
 
-namespace xgboost {
-namespace obj {
+namespace xgboost::obj {
 namespace detail {
 inline void FillMissingLeaf(std::vector<bst_node_t> const& maybe_missing,
                             std::vector<bst_node_t>* p_nidx, std::vector<size_t>* p_nptr) {
@@ -100,10 +99,9 @@ inline void UpdateTreeLeaf(Context const* ctx, HostDeviceVector<bst_node_t> cons
     detail::UpdateTreeLeafHost(ctx, position.ConstHostVector(), group_idx, info, learning_rate,
                                predt, alpha, p_tree);
   } else {
-    position.SetDevice(ctx->gpu_id);
+    position.SetDevice(ctx->Ordinal());
     detail::UpdateTreeLeafDevice(ctx, position.ConstDeviceSpan(), group_idx, info, learning_rate,
                                  predt, alpha, p_tree);
   }
 }
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

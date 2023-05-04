@@ -23,8 +23,7 @@
 #include "xgboost/context.h"                       // Context
 #include "xgboost/span.h"                          // Span
 
-namespace xgboost {
-namespace common {
+namespace xgboost::common {
 namespace detail {
 // This should be a lambda function, but for some reason gcc-11 + nvcc-11.8 failed to
 // compile it. As a result, a functor is extracted instead.
@@ -160,7 +159,7 @@ void SegmentedQuantile(Context const* ctx, AlphaIt alpha_it, SegIt seg_begin, Se
   auto d_sorted_idx = dh::ToSpan(sorted_idx);
   auto val = thrust::make_permutation_iterator(val_begin, dh::tcbegin(d_sorted_idx));
 
-  quantiles->SetDevice(ctx->gpu_id);
+  quantiles->SetDevice(ctx->DeviceType());
   quantiles->Resize(n_segments);
   auto d_results = quantiles->DeviceSpan();
 
@@ -220,7 +219,7 @@ void SegmentedWeightedQuantile(Context const* ctx, AlphaIt alpha_it, SegIt seg_b
                                 scan_val, weights_cdf.begin());
 
   auto n_segments = std::distance(seg_beg, seg_end) - 1;
-  quantiles->SetDevice(ctx->gpu_id);
+  quantiles->SetDevice(ctx->DeviceType());
   quantiles->Resize(n_segments);
   auto d_results = quantiles->DeviceSpan();
   auto d_weight_cdf = dh::ToSpan(weights_cdf);
@@ -238,6 +237,5 @@ void SegmentedWeightedQuantile(Context const* ctx, double alpha, SegIt seg_beg, 
   return SegmentedWeightedQuantile(ctx, thrust::make_constant_iterator(alpha), seg_beg, seg_end,
                                    val_begin, val_end, w_begin, w_end, quantiles);
 }
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common
 #endif  // XGBOOST_COMMON_STATS_CUH_

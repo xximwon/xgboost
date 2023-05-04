@@ -166,8 +166,7 @@ class GHistIndexMatrixTest : public testing::TestWithParam<std::tuple<float, flo
     ASSERT_TRUE(Xy->SingleColBlock());
     bst_bin_t constexpr kBins{17};
     auto p = BatchParam{kBins, threshold};
-    Context gpu_ctx;
-    gpu_ctx.gpu_id = 0;
+    Context gpu_ctx = ctx.MakeCUDA(0);
     for (auto const &page : Xy->GetBatches<EllpackPage>(
              &gpu_ctx, BatchParam{kBins, tree::TrainParam::DftSparseThreshold()})) {
       from_ellpack = std::make_unique<GHistIndexMatrix>(&ctx, Xy->Info(), page, p);

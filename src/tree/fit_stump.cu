@@ -1,5 +1,5 @@
 /**
- * Copyright 2022 by XGBoost Contributors
+ * Copyright 2022-2023, XGBoost Contributors
  *
  * \brief Utilities for estimating initial score.
  */
@@ -20,9 +20,7 @@
 #include "xgboost/logging.h"  // CHECK_EQ
 #include "xgboost/span.h"     // span
 
-namespace xgboost {
-namespace tree {
-namespace cuda_impl {
+namespace xgboost::tree::cuda_impl {
 void FitStump(Context const* ctx, linalg::TensorView<GradientPair const, 2> gpair,
               linalg::VectorView<float> out) {
   auto n_targets = out.Size();
@@ -41,7 +39,7 @@ void FitStump(Context const* ctx, linalg::TensorView<GradientPair const, 2> gpai
         auto sample = i % gpair.Shape(0);
         return GradientPairPrecise{gpair(sample, target)};
       });
-  auto d_sum = sum.View(ctx->gpu_id);
+  auto d_sum = sum.View(ctx->DeviceType());
   CHECK(d_sum.CContiguous());
 
   dh::XGBCachingDeviceAllocator<char> alloc;
@@ -50,7 +48,7 @@ void FitStump(Context const* ctx, linalg::TensorView<GradientPair const, 2> gpai
                         thrust::make_discard_iterator(), dh::tbegin(d_sum.Values()));
 
   collective::AllReduce<collective::Operation::kSum>(
-      ctx->gpu_id, reinterpret_cast<double*>(d_sum.Values().data()), d_sum.Size() * 2);
+      ctx->Ordinal(), reinterpret_cast<double*>(d_sum.Values().data()), d_sum.Size() * 2);
 
   thrust::for_each_n(policy, thrust::make_counting_iterator(0ul), n_targets,
                      [=] XGBOOST_DEVICE(std::size_t i) mutable {
@@ -58,6 +56,4 @@ void FitStump(Context const* ctx, linalg::TensorView<GradientPair const, 2> gpai
                            CalcUnregularizedWeight(d_sum(i).GetGrad(), d_sum(i).GetHess()));
                      });
 }
-}  // namespace cuda_impl
-}  // namespace tree
-}  // namespace xgboost
+}  // namespace xgboost::tree::cuda_impl

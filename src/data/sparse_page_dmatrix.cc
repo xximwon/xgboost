@@ -47,7 +47,7 @@ SparsePageDMatrix::SparsePageDMatrix(DataIterHandle iter_handle, DMatrixHandle p
     : proxy_{proxy_handle}, iter_{iter_handle}, reset_{reset}, next_{next}, missing_{missing},
       cache_prefix_{std::move(cache_prefix)} {
   Context ctx;
-  ctx.nthread = nthreads;
+  ctx.Init(Args{{"nthread", std::to_string(nthreads)}});
 
   cache_prefix_ = cache_prefix_.empty() ? "DMatrix" : cache_prefix_;
   if (collective::IsDistributed()) {

@@ -7,9 +7,7 @@
 
 #include "../helpers.h"
 
-namespace xgboost {
-namespace metric {
-
+namespace xgboost::metric {
 inline void VerifyBinaryAUC(DataSplitMode data_split_mode = DataSplitMode::kRow) {
   auto ctx = MakeCUDACtx(GPUIDX);
   std::unique_ptr<Metric> uni_ptr{Metric::Create("auc", &ctx)};
@@ -28,7 +26,7 @@ inline void VerifyBinaryAUC(DataSplitMode data_split_mode = DataSplitMode::kRow)
   // Invalid dataset
   auto p_fmat = EmptyDMatrix();
   MetaInfo& info = p_fmat->Info();
-  info.labels = linalg::Tensor<float, 2>{{0.0f, 0.0f}, {2}, -1};
+  info.labels = linalg::Tensor<float, 2>{{0.0f, 0.0f}, {2}, &ctx};
   float auc = metric->Evaluate({1, 1}, p_fmat);
   ASSERT_TRUE(std::isnan(auc));
   *info.labels.Data() = HostDeviceVector<float>{};
@@ -245,5 +243,4 @@ inline void VerifyRankingPRAUC(DataSplitMode data_split_mode = DataSplitMode::kR
                     data_split_mode),
       0.556021f, 0.001f);
 }
-}  // namespace metric
-}  // namespace xgboost
+}  // namespace xgboost::metric

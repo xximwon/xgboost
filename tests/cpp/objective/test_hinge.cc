@@ -1,4 +1,6 @@
-// Copyright by Contributors
+/**
+ * Copyright 2018-2023, XGBoost Contributors
+ */
 #include <xgboost/objective.h>
 #include <xgboost/context.h>
 #include <limits>

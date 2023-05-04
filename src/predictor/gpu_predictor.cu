@@ -59,9 +59,7 @@ struct TreeView {
     cats.node_ptr = tree_cat_ptrs;
   }
 
-  __device__ bool HasCategoricalSplit() const {
-    return !cats.categories.empty();
-  }
+  [[nodiscard]] __device__ bool HasCategoricalSplit() const { return !cats.categories.empty(); }
 };
 
 struct SparsePageView {
@@ -74,7 +72,7 @@ struct SparsePageView {
                                 common::Span<const bst_row_t> row_ptr,
                                 bst_feature_t num_features)
       : d_data{data}, d_row_ptr{row_ptr}, num_features(num_features) {}
-  __device__ float GetElement(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ float GetElement(size_t ridx, size_t fidx) const {
     // Binary search
     auto begin_ptr = d_data.begin() + d_row_ptr[ridx];
     auto end_ptr = d_data.begin() + d_row_ptr[ridx + 1];
@@ -102,8 +100,8 @@ struct SparsePageView {
     // Value is missing
     return nanf("");
   }
-  XGBOOST_DEVICE size_t NumRows() const { return d_row_ptr.size() - 1; }
-  XGBOOST_DEVICE size_t NumCols() const { return num_features; }
+  [[nodiscard]] XGBOOST_DEVICE size_t NumRows() const { return d_row_ptr.size() - 1; }
+  [[nodiscard]] XGBOOST_DEVICE size_t NumCols() const { return num_features; }
 };
 
 struct SparsePageLoader {
@@ -136,7 +134,7 @@ struct SparsePageLoader {
       __syncthreads();
     }
   }
-  __device__ float GetElement(size_t  ridx, size_t  fidx) const {
+  [[nodiscard]] __device__ float GetElement(size_t  ridx, size_t  fidx) const {
     if (use_shared) {
       return smem[threadIdx.x * data.num_features + fidx];
     } else {
@@ -150,7 +148,7 @@ struct EllpackLoader {
   XGBOOST_DEVICE EllpackLoader(EllpackDeviceAccessor const& m, bool, bst_feature_t, bst_row_t,
                                size_t, float)
       : matrix{m} {}
-  __device__ __forceinline__ float GetElement(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ __forceinline__ float GetElement(size_t ridx, size_t fidx) const {
     auto gidx = matrix.GetBinIndex(ridx, fidx);
     if (gidx == -1) {
       return nan("");
@@ -205,7 +203,7 @@ struct DeviceAdapterLoader {
       __syncthreads();
     }
 
-  XGBOOST_DEV_INLINE  float GetElement(size_t  ridx, size_t  fidx) const {
+  [[nodiscard]] XGBOOST_DEV_INLINE  float GetElement(size_t  ridx, size_t  fidx) const {
     if (use_shared) {
       return smem[threadIdx.x * columns + fidx];
     }
@@ -434,7 +432,7 @@ struct ShapSplitCondition {
   bool is_missing_branch;
 
   // Does this instance flow down this path?
-  XGBOOST_DEVICE bool EvaluateSplit(float x) const {
+  [[nodiscard]] XGBOOST_DEVICE bool EvaluateSplit(float x) const {
     // is nan
     if (isnan(x)) {
       return is_missing_branch;
@@ -631,12 +629,12 @@ class GPUPredictor : public xgboost::Predictor {
                        size_t num_features,
                        HostDeviceVector<bst_float>* predictions,
                        size_t batch_offset, bool is_dense) const {
-    batch.offset.SetDevice(ctx_->gpu_id);
-    batch.data.SetDevice(ctx_->gpu_id);
+    batch.offset.SetDevice(ctx_->DeviceType());
+    batch.data.SetDevice(ctx_->DeviceType());
     const uint32_t BLOCK_THREADS = 128;
     size_t num_rows = batch.Size();
     auto GRID_SIZE = static_cast<uint32_t>(common::DivRoundUp(num_rows, BLOCK_THREADS));
-    auto max_shared_memory_bytes = ConfigureDevice(ctx_->gpu_id);
+    auto max_shared_memory_bytes = ConfigureDevice(ctx_->Ordinal());
     size_t shared_memory_bytes =
         SharedMemoryBytes<BLOCK_THREADS>(num_features, max_shared_memory_bytes);
     bool use_shared = shared_memory_bytes != 0;
@@ -692,10 +690,10 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_end - tree_begin == 0) {
       return;
     }
-    out_preds->SetDevice(ctx_->gpu_id);
+    out_preds->SetDevice(ctx_->DeviceType());
     auto const& info = dmat->Info();
     DeviceModel d_model;
-    d_model.Init(model, tree_begin, tree_end, ctx_->gpu_id);
+    d_model.Init(model, tree_begin, tree_end, ctx_->Ordinal());
 
     if (dmat->PageExists<SparsePage>()) {
       size_t batch_offset = 0;
@@ -707,13 +705,10 @@ class GPUPredictor : public xgboost::Predictor {
     } else {
       size_t batch_offset = 0;
       for (auto const& page : dmat->GetBatches<EllpackPage>(ctx_, BatchParam{})) {
-        dmat->Info().feature_types.SetDevice(ctx_->gpu_id);
+        dmat->Info().feature_types.SetDevice(ctx_->DeviceType());
         auto feature_types = dmat->Info().feature_types.ConstDeviceSpan();
-        this->PredictInternal(
-            page.Impl()->GetDeviceAccessor(ctx_->gpu_id, feature_types),
-            d_model,
-            out_preds,
-            batch_offset);
+        this->PredictInternal(page.Impl()->GetDeviceAccessor(ctx_->Ordinal(), feature_types),
+                              d_model, out_preds, batch_offset);
         batch_offset += page.Impl()->n_rows;
       }
     }
@@ -723,16 +718,14 @@ class GPUPredictor : public xgboost::Predictor {
   explicit GPUPredictor(Context const* ctx) : Predictor::Predictor{ctx} {}
 
   ~GPUPredictor() override {
-    if (ctx_->gpu_id >= 0 && ctx_->gpu_id < common::AllVisibleGPUs()) {
-      dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
+    if (ctx_->IsCUDA() && ctx_->Ordinal() < common::AllVisibleGPUs()) {
+      dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
     }
   }
 
-  void PredictBatch(DMatrix* dmat, PredictionCacheEntry* predts,
-                    const gbm::GBTreeModel& model, uint32_t tree_begin,
-                    uint32_t tree_end = 0) const override {
-    int device = ctx_->gpu_id;
-    CHECK_GE(device, 0) << "Set `gpu_id' to positive value for processing GPU data.";
+  void PredictBatch(DMatrix* dmat, PredictionCacheEntry* predts, const gbm::GBTreeModel& model,
+                    uint32_t tree_begin, uint32_t tree_end = 0) const override {
+    CHECK_GE(ctx_->Ordinal(), 0) << "Set `device' to CUDA for processing GPU data.";
     auto* out_preds = &predts->predictions;
     if (tree_end == 0) {
       tree_end = model.trees.size();
@@ -751,7 +744,7 @@ class GPUPredictor : public xgboost::Predictor {
     CHECK_EQ(m->NumColumns(), model.learner_model_param->num_feature)
         << "Number of columns in data must equal to trained model.";
     CHECK_EQ(dh::CurrentDevice(), m->DeviceIdx())
-        << "XGBoost is running on device: " << this->ctx_->gpu_id << ", "
+        << "XGBoost is running on device: " << this->ctx_->Ordinal() << ", "
         << "but data is on: " << m->DeviceIdx();
     if (p_m) {
       p_m->Info().num_row_ = m->NumRows();
@@ -820,8 +813,8 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_weights != nullptr) {
       LOG(FATAL) << "Dart booster feature " << not_implemented;
     }
-    dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
-    out_contribs->SetDevice(ctx_->gpu_id);
+    dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
+    out_contribs->SetDevice(ctx_->DeviceType());
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
@@ -839,12 +832,12 @@ class GPUPredictor : public xgboost::Predictor {
     dh::device_vector<gpu_treeshap::PathElement<ShapSplitCondition>>
         device_paths;
     DeviceModel d_model;
-    d_model.Init(model, 0, tree_end, ctx_->gpu_id);
+    d_model.Init(model, 0, tree_end, ctx_->Ordinal());
     dh::device_vector<uint32_t> categories;
-    ExtractPaths(&device_paths, &d_model, &categories, ctx_->gpu_id);
+    ExtractPaths(&device_paths, &d_model, &categories, ctx_->Ordinal());
     for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
-      batch.data.SetDevice(ctx_->gpu_id);
-      batch.offset.SetDevice(ctx_->gpu_id);
+      batch.data.SetDevice(ctx_->DeviceType());
+      batch.offset.SetDevice(ctx_->DeviceType());
       SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                        model.learner_model_param->num_feature);
       auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
@@ -853,7 +846,7 @@ class GPUPredictor : public xgboost::Predictor {
           dh::tend(phis));
     }
     // Add the base margin term to last column
-    p_fmat->Info().base_margin_.SetDevice(ctx_->gpu_id);
+    p_fmat->Info().base_margin_.SetDevice(ctx_->DeviceType());
     const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
 
     auto base_score = model.learner_model_param->BaseScore(ctx_);
@@ -878,8 +871,8 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_weights != nullptr) {
       LOG(FATAL) << "Dart booster feature " << not_implemented;
     }
-    dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
-    out_contribs->SetDevice(ctx_->gpu_id);
+    dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
+    out_contribs->SetDevice(ctx_->DeviceType());
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
@@ -898,12 +891,12 @@ class GPUPredictor : public xgboost::Predictor {
     dh::device_vector<gpu_treeshap::PathElement<ShapSplitCondition>>
         device_paths;
     DeviceModel d_model;
-    d_model.Init(model, 0, tree_end, ctx_->gpu_id);
+    d_model.Init(model, 0, tree_end, ctx_->Ordinal());
     dh::device_vector<uint32_t> categories;
-    ExtractPaths(&device_paths, &d_model, &categories, ctx_->gpu_id);
+    ExtractPaths(&device_paths, &d_model, &categories, ctx_->Ordinal());
     for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
-      batch.data.SetDevice(ctx_->gpu_id);
-      batch.offset.SetDevice(ctx_->gpu_id);
+      batch.data.SetDevice(ctx_->DeviceType());
+      batch.offset.SetDevice(ctx_->DeviceType());
       SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                        model.learner_model_param->num_feature);
       auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
@@ -912,7 +905,7 @@ class GPUPredictor : public xgboost::Predictor {
           dh::tend(phis));
     }
     // Add the base margin term to last column
-    p_fmat->Info().base_margin_.SetDevice(ctx_->gpu_id);
+    p_fmat->Info().base_margin_.SetDevice(ctx_->DeviceType());
     const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
 
     auto base_score = model.learner_model_param->BaseScore(ctx_);
@@ -937,8 +930,8 @@ class GPUPredictor : public xgboost::Predictor {
   void PredictLeaf(DMatrix *p_fmat, HostDeviceVector<bst_float> *predictions,
                    const gbm::GBTreeModel &model,
                    unsigned tree_end) const override {
-    dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
-    auto max_shared_memory_bytes = ConfigureDevice(ctx_->gpu_id);
+    dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
+    auto max_shared_memory_bytes = ConfigureDevice(ctx_->Ordinal());
 
     const MetaInfo& info = p_fmat->Info();
     constexpr uint32_t kBlockThreads = 128;
@@ -952,15 +945,15 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
-    predictions->SetDevice(ctx_->gpu_id);
+    predictions->SetDevice(ctx_->DeviceType());
     predictions->Resize(num_rows * tree_end);
     DeviceModel d_model;
-    d_model.Init(model, 0, tree_end, this->ctx_->gpu_id);
+    d_model.Init(model, 0, tree_end, this->ctx_->Ordinal());
 
     if (p_fmat->PageExists<SparsePage>()) {
       for (auto const& batch : p_fmat->GetBatches<SparsePage>()) {
-        batch.data.SetDevice(ctx_->gpu_id);
-        batch.offset.SetDevice(ctx_->gpu_id);
+        batch.data.SetDevice(ctx_->DeviceType());
+        batch.offset.SetDevice(ctx_->DeviceType());
         bst_row_t batch_offset = 0;
         SparsePageView data{batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                             model.learner_model_param->num_feature};
@@ -985,7 +978,7 @@ class GPUPredictor : public xgboost::Predictor {
     } else {
       for (auto const& batch : p_fmat->GetBatches<EllpackPage>(ctx_, BatchParam{})) {
         bst_row_t batch_offset = 0;
-        EllpackDeviceAccessor data{batch.Impl()->GetDeviceAccessor(ctx_->gpu_id)};
+        EllpackDeviceAccessor data{batch.Impl()->GetDeviceAccessor(ctx_->Ordinal())};
         size_t num_rows = batch.Size();
         auto grid =
             static_cast<uint32_t>(common::DivRoundUp(num_rows, kBlockThreads));

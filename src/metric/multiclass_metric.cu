@@ -24,8 +24,7 @@
 #include "../common/device_helpers.cuh"
 #endif  // XGBOOST_USE_CUDA
 
-namespace xgboost {
-namespace metric {
+namespace xgboost::metric {
 // tag the this file, used by force static link later.
 DMLC_REGISTRY_FILE_TAG(multiclass_metric);
 
@@ -40,11 +39,10 @@ class MultiClassMetricsReduction {
  public:
   MultiClassMetricsReduction() = default;
 
-  PackedReduceResult
-  CpuReduceMetrics(const HostDeviceVector<bst_float> &weights,
-                   const HostDeviceVector<bst_float> &labels,
-                   const HostDeviceVector<bst_float> &preds,
-                   const size_t n_class, int32_t n_threads) const {
+  [[nodiscard]] PackedReduceResult CpuReduceMetrics(const HostDeviceVector<bst_float>& weights,
+                                                    const HostDeviceVector<bst_float>& labels,
+                                                    const HostDeviceVector<bst_float>& preds,
+                                                    const size_t n_class, int32_t n_threads) const {
     size_t ndata = labels.Size();
 
     const auto& h_labels = labels.HostVector();
@@ -127,7 +125,7 @@ class MultiClassMetricsReduction {
 
 #endif  // XGBOOST_USE_CUDA
 
-  PackedReduceResult Reduce(const Context& tparam, int device, size_t n_class,
+  PackedReduceResult Reduce(Context const* ctx, int device, size_t n_class,
                             const HostDeviceVector<bst_float>& weights,
                             const HostDeviceVector<bst_float>& labels,
                             const HostDeviceVector<bst_float>& preds) {
@@ -135,16 +133,15 @@ class MultiClassMetricsReduction {
 
     if (device < 0) {
       result =
-          CpuReduceMetrics(weights, labels, preds, n_class, tparam.Threads());
+          CpuReduceMetrics(weights, labels, preds, n_class, ctx->Threads());
     }
 #if defined(XGBOOST_USE_CUDA)
     else {  // NOLINT
-      device_ = tparam.gpu_id;
-      preds.SetDevice(device_);
-      labels.SetDevice(device_);
-      weights.SetDevice(device_);
+      preds.SetDevice(ctx->DeviceType());
+      labels.SetDevice(ctx->DeviceType());
+      weights.SetDevice(ctx->DeviceType());
 
-      dh::safe_cuda(cudaSetDevice(device_));
+      dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
       result = DeviceReduceMetrics(weights, labels, preds, n_class);
     }
 #endif  // defined(XGBOOST_USE_CUDA)
@@ -154,7 +151,6 @@ class MultiClassMetricsReduction {
  private:
 #if defined(XGBOOST_USE_CUDA)
   dh::PinnedMemory label_error_;
-  int device_{-1};
 #endif  // defined(XGBOOST_USE_CUDA)
 };
 
@@ -176,9 +172,8 @@ struct EvalMClassBase : public MetricNoCache {
       CHECK_GE(nclass, 1U)
           << "mlogloss and merror are only used for multi-class classification,"
           << " use logloss for binary classification";
-      int device = ctx_->gpu_id;
       auto result =
-          reducer_.Reduce(*ctx_, device, nclass, info.weights_, *info.labels.Data(), preds);
+          reducer_.Reduce(ctx_, ctx_->Ordinal(), nclass, info.weights_, *info.labels.Data(), preds);
       dat[0] = result.Residue();
       dat[1] = result.Weights();
     }
@@ -245,5 +240,4 @@ XGBOOST_REGISTER_METRIC(MatchError, "merror")
 XGBOOST_REGISTER_METRIC(MultiLogLoss, "mlogloss")
     .describe("Multiclass negative loglikelihood.")
     .set_body([](const char*) { return new EvalMultiLogLoss(); });
-}  // namespace metric
-}  // namespace xgboost
+}  // namespace xgboost::metric

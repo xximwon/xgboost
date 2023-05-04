@@ -1,12 +1,12 @@
-// Copyright by Contributors
+/**
+ * Copyright 2019-2023, XGBoost contributors
+ */
 #include <xgboost/metric.h>
 #include <string>
 
 #include "../helpers.h"
 
-namespace xgboost {
-namespace metric {
-
+namespace xgboost::metric {
 inline void CheckDeterministicMetricMultiClass(StringView name, int32_t device) {
   auto ctx = MakeCUDACtx(device);
   std::unique_ptr<Metric> metric{Metric::Create(name.c_str(), &ctx)};
@@ -46,7 +46,6 @@ inline void CheckDeterministicMetricMultiClass(StringView name, int32_t device) 
 
 inline void TestMultiClassError(int device, DataSplitMode data_split_mode) {
   auto ctx = MakeCUDACtx(device);
-  ctx.gpu_id = device;
   xgboost::Metric * metric = xgboost::Metric::Create("merror", &ctx);
   metric->Configure({});
   ASSERT_STREQ(metric->Name(), "merror");
@@ -67,7 +66,6 @@ inline void VerifyMultiClassError(DataSplitMode data_split_mode = DataSplitMode:
 
 inline void TestMultiClassLogLoss(int device, DataSplitMode data_split_mode) {
   auto ctx = MakeCUDACtx(device);
-  ctx.gpu_id = device;
   xgboost::Metric * metric = xgboost::Metric::Create("mlogloss", &ctx);
   metric->Configure({});
   ASSERT_STREQ(metric->Name(), "mlogloss");
@@ -87,5 +85,4 @@ inline void VerifyMultiClassLogLoss(DataSplitMode data_split_mode = DataSplitMod
   CheckDeterministicMetricMultiClass(StringView{"mlogloss"}, GPUIDX);
 }
 
-}  // namespace metric
-}  // namespace xgboost
+}  // namespace xgboost::metric

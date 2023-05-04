@@ -20,7 +20,7 @@ inline gbm::GBTreeModel CreateTestModel(LearnerModelParam const* param, Context 
 
   for (size_t i = 0; i < n_classes; ++i) {
     std::vector<std::unique_ptr<RegTree>> trees;
-    trees.push_back(std::unique_ptr<RegTree>(new RegTree));
+    trees.push_back(std::make_unique<RegTree>());
     if (i == 0) {
       (*trees.back())[0].SetLeaf(1.5f);
       (*trees.back()).Stat(0).sum_hess = 1.0f;
@@ -36,15 +36,12 @@ void TestPredictionFromGradientIndex(std::string name, size_t rows, size_t cols,
                                      std::shared_ptr<DMatrix> p_hist) {
   constexpr size_t kClasses { 3 };
 
-  LearnerModelParam mparam{MakeMP(cols, .5, kClasses)};
-  auto cuda_ctx = MakeCUDACtx(0);
+  Context ctx = MakeCUDACtx(0);
+  LearnerModelParam mparam{MakeMP(cols, .5, kClasses, &ctx)};
 
-  std::unique_ptr<Predictor> predictor =
-      std::unique_ptr<Predictor>(Predictor::Create(name, &cuda_ctx));
+  std::unique_ptr<Predictor> predictor = std::unique_ptr<Predictor>(Predictor::Create(name, &ctx));
   predictor->Configure({});
 
-  Context ctx;
-  ctx.UpdateAllowUnknown(Args{});
   gbm::GBTreeModel model = CreateTestModel(&mparam, &ctx, kClasses);
 
   {
@@ -81,8 +78,8 @@ void TestTrainingPrediction(size_t rows, size_t bins, std::string tree_method,
                             std::shared_ptr<DMatrix> p_full,
                             std::shared_ptr<DMatrix> p_hist);
 
-void TestInplacePrediction(std::shared_ptr<DMatrix> x, std::string predictor, bst_row_t rows,
-                           bst_feature_t cols, int32_t device = -1);
+void TestInplacePrediction(Context const* ctx, std::shared_ptr<DMatrix> x, std::string predictor,
+                           bst_row_t rows, bst_feature_t cols);
 
 void TestPredictionWithLesserFeatures(std::string preditor_name);
 

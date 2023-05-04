@@ -53,6 +53,8 @@ class ObjFunction : public Configurable {
                            int iteration,
                            HostDeviceVector<GradientPair>* out_gpair) = 0;
 
+  [[nodiscard]] auto const* Ctx() const { return ctx_; }
+
   /*! \return the default evaluation metric for the objective */
   virtual const char* DefaultEvalMetric() const = 0;
   /**

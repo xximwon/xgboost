@@ -575,15 +575,15 @@ class QuantileHistMaker : public TreeUpdater {
     }
 
     bst_target_t n_targets = trees.front()->NumTargets();
-    auto h_gpair =
-        linalg::MakeTensorView(ctx_, gpair->HostSpan(), p_fmat->Info().num_row_, n_targets);
+    auto h_gpair = linalg::MakeTensorView(ctx_->DeviceType(), gpair->HostSpan(),
+                                          p_fmat->Info().num_row_, n_targets);
 
     linalg::Matrix<GradientPair> sample_out;
     auto h_sample_out = h_gpair;
     auto need_copy = [&] { return trees.size() > 1 || n_targets > 1; };
     if (need_copy()) {
       // allocate buffer
-      sample_out = decltype(sample_out){h_gpair.Shape(), ctx_->gpu_id, linalg::Order::kF};
+      sample_out = decltype(sample_out){h_gpair.Shape(), ctx_, linalg::Order::kF};
       h_sample_out = sample_out.HostView();
     }
 

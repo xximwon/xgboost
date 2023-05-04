@@ -9,9 +9,7 @@
 #include "dmlc/omp.h"                             // omp_in_parallel
 #include "xgboost/context.h"                      // Context
 
-namespace xgboost {
-namespace common {
-
+namespace xgboost::common {
 TEST(ParallelFor2d, CreateBlockedSpace2d) {
   constexpr size_t kDim1 = 5;
   constexpr size_t kDim2 = 3;
@@ -42,7 +40,7 @@ TEST(ParallelFor2d, Test) {
       kDim1, [&](size_t) { return kDim2; }, kGrainSize);
   Context ctx;
   ctx.UpdateAllowUnknown(Args{{"nthread", "4"}});
-  ASSERT_EQ(ctx.nthread, 4);
+  ASSERT_LE(ctx.Threads(false), 4);
 
   ParallelFor2d(space, ctx.Threads(), [&](size_t i, Range1d r) {
     for (auto j = r.begin(); j < r.end(); ++j) {
@@ -74,7 +72,7 @@ TEST(ParallelFor2d, NonUniform) {
 
   Context ctx;
   ctx.UpdateAllowUnknown(Args{{"nthread", "4"}});
-  ASSERT_EQ(ctx.nthread, 4);
+  ASSERT_EQ(ctx.Threads(false), 4);
 
   ParallelFor2d(space, ctx.Threads(), [&](size_t i, Range1d r) {
     for (auto j = r.begin(); j < r.end(); ++j) {
@@ -102,5 +100,4 @@ TEST(ParallelFor, Basic) {
   });
   ASSERT_FALSE(omp_in_parallel());
 }
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common

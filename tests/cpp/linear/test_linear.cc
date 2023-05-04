@@ -1,5 +1,5 @@
-/*!
- * Copyright 2018-2019 by Contributors
+/**
+ * Copyright 2018-2023, XGBoost Contributors
  */
 #include <xgboost/linear_updater.h>
 #include <xgboost/gbm.h>
@@ -18,7 +18,7 @@ TEST(Linear, Shotgun) {
   auto p_fmat = xgboost::RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
 
   auto ctx = MakeCUDACtx(GPUIDX);
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   {
     auto updater =
@@ -50,7 +50,7 @@ TEST(Linear, coordinate) {
   auto p_fmat = xgboost::RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
 
   auto ctx = MakeCUDACtx(GPUIDX);
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   auto updater = std::unique_ptr<xgboost::LinearUpdater>(
       xgboost::LinearUpdater::Create("coord_descent", &ctx));

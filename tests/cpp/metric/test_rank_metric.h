@@ -18,7 +18,6 @@
 #include "xgboost/json.h"                // for Json, String, Object
 
 namespace xgboost::metric {
-
 inline void VerifyPrecision(DataSplitMode data_split_mode = DataSplitMode::kRow) {
   auto ctx = MakeCUDACtx(GPUIDX);
   std::unique_ptr<xgboost::Metric> metric{Metric::Create("pre", &ctx)};
@@ -154,7 +153,7 @@ inline void VerifyNDCGExpGain(DataSplitMode data_split_mode = DataSplitMode::kRo
 
   auto p_fmat = xgboost::RandomDataGenerator{0, 0, 0}.GenerateDMatrix();
   MetaInfo& info = p_fmat->Info();
-  info.labels = linalg::Matrix<float>{{10.0f, 0.0f, 0.0f, 1.0f, 5.0f}, {5}, ctx.gpu_id};
+  info.labels = linalg::Matrix<float>{{10.0f, 0.0f, 0.0f, 1.0f, 5.0f}, {5}, &ctx};
   info.num_row_ = info.labels.Shape(0);
   info.group_ptr_.resize(2);
   info.group_ptr_[0] = 0;

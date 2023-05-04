@@ -24,7 +24,10 @@
 namespace xgboost::tree {
 void TestEvaluateSplits(bool force_read_by_column) {
   Context ctx;
-  ctx.nthread = 4;
+  ctx.Init(Args{{"nthread", "4"}});
+  // Less in case the host system has lesser than 4 threads.
+  ASSERT_LE(ctx.Threads(), 4);
+
   int static constexpr kRows = 8, kCols = 16;
   auto sampler = std::make_shared<common::ColumnSampler>();
 
@@ -98,7 +101,7 @@ TEST(HistEvaluator, Evaluate) {
 
 TEST(HistMultiEvaluator, Evaluate) {
   Context ctx;
-  ctx.nthread = 1;
+  ctx.Init(Args{{"nthread", "1"}});
 
   TrainParam param;
   param.Init(Args{{"min_child_weight", "0"}, {"reg_lambda", "0"}});
@@ -114,7 +117,7 @@ TEST(HistMultiEvaluator, Evaluate) {
 
   HistMultiEvaluator evaluator{&ctx, p_fmat->Info(), &param, sampler};
   std::vector<common::HistCollection> histogram(n_targets);
-  linalg::Vector<GradientPairPrecise> root_sum({2}, Context::kCpuId);
+  linalg::Vector<GradientPairPrecise> root_sum({2}, &ctx);
   for (bst_target_t t{0}; t < n_targets; ++t) {
     auto &hist = histogram[t];
     hist.Init(n_bins * n_features);
@@ -160,7 +163,8 @@ TEST(HistMultiEvaluator, Evaluate) {
 
 TEST(HistEvaluator, Apply) {
   Context ctx;
-  ctx.nthread = 4;
+  ctx.Init(Args{{"nthread", "4"}});
+
   RegTree tree;
   int static constexpr kNRows = 8, kNCols = 16;
   TrainParam param;

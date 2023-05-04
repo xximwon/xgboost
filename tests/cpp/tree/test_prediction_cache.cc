@@ -70,9 +70,9 @@ class TestPredictionCache : public ::testing::Test {
       Context ctx;
       ctx.InitAllowUnknown(Args{{"nthread", "8"}});
       if (updater_name == "grow_gpu_hist") {
-        ctx.gpu_id = 0;
+        ctx = ctx.MakeCUDA(0);
       } else {
-        ctx.gpu_id = Context::kCpuId;
+        ctx = ctx.MakeCPU();
       }
 
       ObjInfo task{ObjInfo::kRegression};
@@ -86,10 +86,10 @@ class TestPredictionCache : public ::testing::Test {
       std::vector<HostDeviceVector<bst_node_t>> position(1);
       updater->Update(&param, &gpair, Xy_.get(), position, trees);
       HostDeviceVector<float> out_prediction_cached;
-      out_prediction_cached.SetDevice(ctx.gpu_id);
+      out_prediction_cached.SetDevice(ctx.DeviceType());
       out_prediction_cached.Resize(n_samples_);
-      auto cache =
-          linalg::MakeTensorView(&ctx, &out_prediction_cached, out_prediction_cached.Size(), 1);
+      auto cache = linalg::MakeTensorView(ctx.DeviceType(), &out_prediction_cached,
+                                          out_prediction_cached.Size(), 1);
       ASSERT_TRUE(updater->UpdatePredictionCache(Xy_.get(), cache));
     }
 

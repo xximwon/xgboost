@@ -197,10 +197,9 @@ void GBTree::DoBoost(DMatrix* p_fmat, HostDeviceVector<GradientPair>* in_gpair,
   // Weird case that tree method is cpu-based but gpu_id is set.  Ideally we should let
   // `gpu_id` be the single source of determining what algorithms to run, but that will
   // break a lots of existing code.
-  auto device = tparam_.tree_method != TreeMethod::kGPUHist ? Context::kCpuId : ctx_->gpu_id;
+  auto device = tparam_.tree_method != TreeMethod::kGPUHist ? Device::CPU() : ctx_->DeviceType();
   auto out = linalg::MakeTensorView(
-      device,
-      device == Context::kCpuId ? predt->predictions.HostSpan() : predt->predictions.DeviceSpan(),
+      device, device.IsCPU() ? predt->predictions.HostSpan() : predt->predictions.DeviceSpan(),
       p_fmat->Info().num_row_, model_.learner_model_param->OutputLength());
   CHECK_NE(n_groups, 0);
 
@@ -598,7 +597,7 @@ GBTree::GetPredictor(HostDeviceVector<float> const *out_pred,
   auto on_device = is_ellpack || is_from_device;
 
   // Use GPU Predictor if data is already on device and gpu_id is set.
-  if (on_device && ctx_->gpu_id >= 0) {
+  if (on_device && ctx_->IsCUDA()) {
 #if defined(XGBOOST_USE_CUDA)
     CHECK_GE(common::AllVisibleGPUs(), 1) << "No visible GPU is found for XGBoost.";
     CHECK(gpu_predictor_);
@@ -759,8 +758,8 @@ class Dart : public GBTree {
     auto n_groups = model_.learner_model_param->num_output_group;
 
     PredictionCacheEntry predts;  // temporary storage for prediction
-    if (ctx_->gpu_id != Context::kCpuId) {
-      predts.predictions.SetDevice(ctx_->gpu_id);
+    if (ctx_->IsCUDA()) {
+      predts.predictions.SetDevice(ctx_->Ordinal());
     }
     predts.predictions.Resize(p_fmat->Info().num_row_ * n_groups, 0);
     // multi-target is not yet supported.
@@ -824,8 +823,8 @@ class Dart : public GBTree {
     StringView msg{"Unsupported data type for inplace predict."};
 
     PredictionCacheEntry predts;
-    if (ctx_->gpu_id != Context::kCpuId) {
-      predts.predictions.SetDevice(ctx_->gpu_id);
+    if (ctx_->IsCUDA()) {
+      predts.predictions.SetDevice(ctx_->Ordinal());
     }
     predts.predictions.Resize(p_fmat->Info().num_row_ * n_groups, 0);
 
@@ -866,12 +865,12 @@ class Dart : public GBTree {
       size_t n_rows = p_fmat->Info().num_row_;
       if (predts.predictions.DeviceIdx() != Context::kCpuId) {
         p_out_preds->predictions.SetDevice(predts.predictions.DeviceIdx());
-        auto base_score = model_.learner_model_param->BaseScore(predts.predictions.DeviceIdx());
+        auto base_score = model_.learner_model_param->BaseScore(predts.predictions.DeviceType());
         GPUDartInplacePredictInc(p_out_preds->predictions.DeviceSpan(),
                                  predts.predictions.DeviceSpan(), w, n_rows, base_score, n_groups,
                                  group);
       } else {
-        auto base_score = model_.learner_model_param->BaseScore(Context::kCpuId);
+        auto base_score = model_.learner_model_param->BaseScore(Device::CPU());
         auto& h_predts = predts.predictions.HostVector();
         auto& h_out_predts = p_out_preds->predictions.HostVector();
         common::ParallelFor(n_rows, ctx_->Threads(), [&](auto ridx) {

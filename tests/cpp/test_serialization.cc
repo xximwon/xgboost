@@ -205,7 +205,7 @@ void TestLearnerSerialization(Args args, FeatureMap const& fmap, std::shared_ptr
 
     for (auto const& [key, value] : args) {
       if (key == "tree_method" && value == "gpu_hist") {
-        learner->SetParam("gpu_id", "0");
+        learner->SetParam("device", "CUDA:0");
       }
     }
     // Pull data to device
@@ -226,8 +226,8 @@ void TestLearnerSerialization(Args args, FeatureMap const& fmap, std::shared_ptr
     Json m_0 = Json::Load(StringView{model_at_2kiter}, std::ios::binary);
     Json m_1 = Json::Load(StringView{serialised_model_tmp}, std::ios::binary);
     // GPU ID is changed as data is coming from device.
-    ASSERT_EQ(get<Object>(m_0["Config"]["learner"]["generic_param"]).erase("gpu_id"),
-              get<Object>(m_1["Config"]["learner"]["generic_param"]).erase("gpu_id"));
+    ASSERT_EQ(get<Object>(m_0["Config"]["learner"]["generic_param"]).erase("device"),
+              get<Object>(m_1["Config"]["learner"]["generic_param"]).erase("device"));
   }
 }
 

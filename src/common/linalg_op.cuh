@@ -1,5 +1,5 @@
-/*!
- * Copyright 2021-2022 by XGBoost Contributors
+/**
+ * Copyright 2021-2023, XGBoost Contributors
  */
 #ifndef XGBOOST_COMMON_LINALG_OP_CUH_
 #define XGBOOST_COMMON_LINALG_OP_CUH_
@@ -9,11 +9,10 @@
 #include "xgboost/context.h"
 #include "xgboost/linalg.h"
 
-namespace xgboost {
-namespace linalg {
+namespace xgboost::linalg {
 template <typename T, int32_t D, typename Fn>
 void ElementWiseKernelDevice(linalg::TensorView<T, D> t, Fn&& fn, cudaStream_t s = nullptr) {
-  dh::safe_cuda(cudaSetDevice(t.DeviceIdx()));
+  dh::safe_cuda(cudaSetDevice(t.DeviceType().ordinal));
   static_assert(std::is_void<std::result_of_t<Fn(size_t, T&)>>::value,
                 "For function with return, use transform instead.");
   if (t.Contiguous()) {
@@ -44,6 +43,5 @@ template <typename T, int32_t D, typename Fn>
 void ElementWiseKernel(Context const* ctx, linalg::TensorView<T, D> t, Fn&& fn) {
   ctx->IsCPU() ? ElementWiseKernelHost(t, ctx->Threads(), fn) : ElementWiseKernelDevice(t, fn);
 }
-}  // namespace linalg
-}  // namespace xgboost
+}  // namespace xgboost::linalg
 #endif  // XGBOOST_COMMON_LINALG_OP_CUH_

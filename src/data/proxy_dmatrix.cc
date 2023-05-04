@@ -1,18 +1,17 @@
-/*!
- * Copyright 2021 by Contributors
+/**
+ * Copyright 2021-2023, XGBoost Contributors
  * \file proxy_dmatrix.cc
  */
 
 #include "proxy_dmatrix.h"
 
-namespace xgboost {
-namespace data {
+namespace xgboost::data {
 void DMatrixProxy::SetArrayData(char const *c_interface) {
   std::shared_ptr<ArrayAdapter> adapter{new ArrayAdapter(StringView{c_interface})};
   this->batch_ = adapter;
   this->Info().num_col_ = adapter->NumColumns();
   this->Info().num_row_ = adapter->NumRows();
-  this->ctx_.gpu_id = Context::kCpuId;
+  this->ctx_ = this->ctx_.MakeCPU();
 }
 
 void DMatrixProxy::SetCSRData(char const *c_indptr, char const *c_indices,
@@ -23,7 +22,6 @@ void DMatrixProxy::SetCSRData(char const *c_indptr, char const *c_indices,
   this->batch_ = adapter;
   this->Info().num_col_ = adapter->NumColumns();
   this->Info().num_row_ = adapter->NumRows();
-  this->ctx_.gpu_id = Context::kCpuId;
+  this->ctx_ = this->ctx_.MakeCPU();
 }
-}  // namespace data
-}  // namespace xgboost
+}  // namespace xgboost::data

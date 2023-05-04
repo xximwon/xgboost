@@ -55,10 +55,10 @@ class PredictionContainer : public DMatrixCache<PredictionCacheEntry> {
 
  public:
   PredictionContainer() : DMatrixCache<PredictionCacheEntry>{DefaultSize()} {}
-  PredictionCacheEntry& Cache(std::shared_ptr<DMatrix> m, std::int32_t device) {
+  PredictionCacheEntry& Cache(std::shared_ptr<DMatrix> m, Device device) {
     auto p_cache = this->CacheItem(m);
-    if (device != Context::kCpuId) {
-      p_cache->predictions.SetDevice(device);
+    if (device.IsCUDA()) {
+      p_cache->predictions.SetDevice(device.ordinal);
     }
     return *p_cache;
   }

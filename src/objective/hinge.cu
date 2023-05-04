@@ -13,8 +13,7 @@
 #include "../common/transform.h"
 #include "../common/common.h"
 
-namespace xgboost {
-namespace obj {
+namespace xgboost::obj {
 
 #if defined(XGBOOST_USE_CUDA)
 DMLC_REGISTRY_FILE_TAG(hinge_obj_gpu);
@@ -25,7 +24,7 @@ class HingeObj : public ObjFunction {
   HingeObj() = default;
 
   void Configure(Args const&) override {}
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
 
   void GetGradient(const HostDeviceVector<bst_float> &preds, const MetaInfo &info, int /*iter*/,
                    HostDeviceVector<GradientPair> *out_gpair) override {
@@ -62,7 +61,7 @@ class HingeObj : public ObjFunction {
           _out_gpair[_idx] = GradientPair(g, h);
         },
         common::Range{0, static_cast<int64_t>(ndata)}, this->ctx_->Threads(),
-        ctx_->gpu_id).Eval(
+        ctx_->Ordinal()).Eval(
             out_gpair, &preds, info.labels.Data(), &info.weights_);
   }
 
@@ -76,7 +75,7 @@ class HingeObj : public ObjFunction {
         .Eval(io_preds);
   }
 
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return "error";
   }
 
@@ -92,5 +91,4 @@ XGBOOST_REGISTER_OBJECTIVE(HingeObj, "binary:hinge")
 .describe("Hinge loss. Expects labels to be in [0,1f]")
 .set_body([]() { return new HingeObj(); });
 
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

@@ -19,7 +19,7 @@ TEST(GBTree, SelectTreeMethod) {
   size_t constexpr kCols = 10;
 
   Context ctx;
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   std::unique_ptr<GradientBooster> p_gbm {
     GradientBooster::Create("gbtree", &ctx, &mparam)};
@@ -41,7 +41,7 @@ TEST(GBTree, SelectTreeMethod) {
   ASSERT_EQ(tparam.updater_seq, "grow_quantile_histmaker");
 
 #ifdef XGBOOST_USE_CUDA
-  ctx.UpdateAllowUnknown(Args{{"gpu_id", "0"}});
+  ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
   gbtree.Configure({{"tree_method", "gpu_hist"}});
   ASSERT_EQ(tparam.updater_seq, "grow_gpu_hist");
   gbtree.Configure({{"booster", "dart"}, {"tree_method", "gpu_hist"}});
@@ -52,7 +52,7 @@ TEST(GBTree, SelectTreeMethod) {
 TEST(GBTree, PredictionCache) {
   size_t constexpr kRows = 100, kCols = 10;
   Context ctx;
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   std::unique_ptr<GradientBooster> p_gbm {
     GradientBooster::Create("gbtree", &ctx, &mparam)};
@@ -122,7 +122,7 @@ TEST(GBTree, ChoosePredictor) {
   p_dmat->Info().labels.Reshape(kRows);
 
   auto learner = std::unique_ptr<Learner>(Learner::Create({p_dmat}));
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
+  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"device", "CUDA:0"}});
   for (size_t i = 0; i < 4; ++i) {
     learner->UpdateOneIter(i, p_dmat);
   }
@@ -141,7 +141,7 @@ TEST(GBTree, ChoosePredictor) {
     std::unique_ptr<dmlc::Stream> fi(dmlc::Stream::Create(fname.c_str(), "r"));
     learner->Load(fi.get());
   }
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
+  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"device", "CUDA:0"}});
   for (size_t i = 0; i < 4; ++i) {
     learner->UpdateOneIter(i, p_dmat);
   }
@@ -155,7 +155,7 @@ TEST(GBTree, ChoosePredictor) {
 
   // another new learner
   learner = std::unique_ptr<Learner>(Learner::Create({p_dmat}));
-  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"gpu_id", "0"}});
+  learner->SetParams(Args{{"tree_method", "gpu_hist"}, {"device", "CUDA:0"}});
   for (size_t i = 0; i < 4; ++i) {
     learner->UpdateOneIter(i, p_dmat);
   }
@@ -169,7 +169,7 @@ TEST(GBTree, JsonIO) {
   size_t constexpr kRows = 16, kCols = 16;
 
   Context ctx;
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   std::unique_ptr<GradientBooster> gbm {
     CreateTrainedGBM("gbtree", Args{}, kRows, kCols, &mparam, &ctx) };
@@ -203,7 +203,7 @@ TEST(Dart, JsonIO) {
   size_t constexpr kRows = 16, kCols = 16;
 
   Context ctx;
-  LearnerModelParam mparam{MakeMP(kCols, .5, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .5, 1, &ctx)};
 
   std::unique_ptr<GradientBooster> gbm{
       CreateTrainedGBM("dart", Args{}, kRows, kCols, &mparam, &ctx)};

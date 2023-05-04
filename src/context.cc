@@ -3,56 +3,112 @@
  *
  * \brief Context object used for controlling runtime parameters.
  */
-#include <xgboost/context.h>
+#include "xgboost/context.h"
 
 #include "common/common.h"  // AssertGPUSupport
 #include "common/threading_utils.h"
+#include "xgboost/string_view.h"
 
 namespace xgboost {
 
 DMLC_REGISTER_PARAMETER(Context);
 
-std::int32_t constexpr Context::kCpuId;
+bst_d_ordinal_t constexpr Context::kCpuId;
 std::int64_t constexpr Context::kDefaultSeed;
 
 Context::Context() : cfs_cpu_count_{common::GetCfsCPUCount()} {}
 
-void Context::ConfigureGpuId(bool require_gpu) {
+std::int32_t ConfigureGpuId(std::int32_t gpu_id, bool fail_on_invalid) {
 #if defined(XGBOOST_USE_CUDA)
-  if (gpu_id == kCpuId) {  // 0. User didn't specify the `gpu_id'
-    if (require_gpu) {     // 1. `tree_method' or `predictor' or both are using
-                           // GPU.
-      // 2. Use device 0 as default.
-      this->UpdateAllowUnknown(Args{{"gpu_id", "0"}});
-    }
-  }
-
-  // 3. When booster is loaded from a memory image (Python pickle or R
+  // When booster is loaded from a memory image (Python pickle or R
   // raw model), number of available GPUs could be different.  Wrap around it.
-  int32_t n_gpus = common::AllVisibleGPUs();
+  std::int32_t n_gpus = common::AllVisibleGPUs();
   if (n_gpus == 0) {
-    if (gpu_id != kCpuId) {
-      LOG(WARNING) << "No visible GPU is found, setting `gpu_id` to -1";
+    if (gpu_id != Context::kCpuId) {
+      LOG(WARNING) << "No visible GPU is found, setting `ordinal` to -1";
     }
-    this->UpdateAllowUnknown(Args{{"gpu_id", std::to_string(kCpuId)}});
-  } else if (fail_on_invalid_gpu_id) {
-    CHECK(gpu_id == kCpuId || gpu_id < n_gpus)
-        << "Only " << n_gpus << " GPUs are visible, gpu_id " << gpu_id << " is invalid.";
-  } else if (gpu_id != kCpuId && gpu_id >= n_gpus) {
-    LOG(WARNING) << "Only " << n_gpus << " GPUs are visible, setting `gpu_id` to "
-                 << gpu_id % n_gpus;
-    this->UpdateAllowUnknown(Args{{"gpu_id", std::to_string(gpu_id % n_gpus)}});
+    gpu_id = Context::kCpuId;
+  } else if (fail_on_invalid) {
+    CHECK(gpu_id == Context::kCpuId || gpu_id < n_gpus)
+        << "Only " << n_gpus << " GPUs are visible, ordinal " << gpu_id << " is invalid.";
+  } else if (gpu_id != Context::kCpuId && gpu_id >= n_gpus) {
+    gpu_id = gpu_id % n_gpus;
+    LOG(WARNING) << "Only " << n_gpus << " GPUs are visible, setting `ordinal` to " << gpu_id;
   }
 #else
   // Just set it to CPU, don't think about it.
-  this->UpdateAllowUnknown(Args{{"gpu_id", std::to_string(kCpuId)}});
-  (void)(require_gpu);
+  gpu_id = Context::kCpu;
+  (void)(fail_on_invalid);
 #endif  // defined(XGBOOST_USE_CUDA)
 
-  common::SetDevice(this->gpu_id);
+  if (gpu_id != Context::kCpuId) {
+    common::SetDevice(gpu_id);
+  }
+  return gpu_id;
 }
 
-std::int32_t Context::Threads() const {
+void Context::ParseDeviceOrdinal() {
+  auto const& original = this->device;
+  std::int32_t gpu_id{Context::kCpuId};
+  StringView msg{R"(Invalid argument for `device`. Expected to be one of the following:
+- CPU
+- CUDA
+- CUDA:<device ordinal>  # e.g. CUDA:0
+)"};
+  std::string device{original.c_str(), original.size()};
+  // being lenient toward case.
+  std::transform(device.cbegin(), device.cend(), device.begin(),
+                 [](auto c) { return std::toupper(c); });
+  auto split_it = std::find(device.cbegin(), device.cend(), ':');
+  gpu_id = -2;  // mark it invalid for check.
+  if (split_it == device.cend()) {
+    // no ordinal.
+    if (device == "CPU") {
+      gpu_id = Context::kCpuId;
+    } else if (device == "CUDA") {
+      gpu_id = 0;  // use 0 as default;
+    } else {
+      LOG(FATAL) << msg << "Got: " << original;
+    }
+  } else {
+    // must be CUDA when ordinal is specifed.
+    auto splited = common::Split(device, ':');
+    CHECK_EQ(splited.size(), 2) << msg;
+    device = splited[0];
+    CHECK_EQ(device, "CUDA") << msg << "Got: " << original;
+
+    // boost::lexical_cast should be used instead, but for now some basic checks will do
+    auto ordinal = splited[1];
+    CHECK_GE(ordinal.size(), 1) << msg << "Got: " << original;
+    bool valid =
+        std::all_of(ordinal.cbegin(), ordinal.cend(), [](auto c) { return std::isdigit(c); });
+    CHECK(valid) << msg << "Got: " << original;
+    try {
+      gpu_id = std::stoi(splited[1]);
+    } catch (std::exception const& e) {
+      LOG(FATAL) << msg << "Got: " << original;
+    }
+  }
+  CHECK_GE(gpu_id, Context::kCpuId) << msg;
+
+  gpu_id = ConfigureGpuId(gpu_id, this->fail_on_invalid_gpu_id);
+
+  if (gpu_id == kCpuId) {
+    this->device_ = Device{Device::kCPU, kCpuId};
+  } else {
+    this->device_ = Device{Device::kCUDA, kCpuId};
+  }
+
+  if (this->IsCPU()) {
+    CHECK_EQ(this->device_.ordinal, kCpuId);
+  }
+}
+
+std::int32_t Context::Threads(bool config) const {
+  if (!config) {
+    return nthread;
+  }
+
   auto n_threads = common::OmpGetNumThreads(nthread);
   if (cfs_cpu_count_ > 0) {
     n_threads = std::min(n_threads, cfs_cpu_count_);

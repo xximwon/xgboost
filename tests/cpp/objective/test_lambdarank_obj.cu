@@ -13,26 +13,22 @@
 
 namespace xgboost::obj {
 TEST(LambdaRank, GPUNDCGJsonIO) {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
   TestNDCGJsonIO(&ctx);
 }
 
 TEST(LambdaRank, GPUMAPStat) {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
   TestMAPStat(&ctx);
 }
 
 TEST(LambdaRank, GPUNDCGGPair) {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
   TestNDCGGPair(&ctx);
 }
 
 void TestGPUMakePair() {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
 
   MetaInfo info;
   HostDeviceVector<float> predt;
@@ -43,9 +39,9 @@ void TestGPUMakePair() {
   auto make_args = [&](std::shared_ptr<ltr::RankingCache> p_cache, auto rank_idx,
                        common::Span<std::size_t const> y_sorted_idx) {
     linalg::Vector<double> dummy;
-    auto d = dummy.View(ctx.gpu_id);
+    auto d = dummy.View(ctx.DeviceType());
     linalg::Vector<GradientPair> dgpair;
-    auto dg = dgpair.View(ctx.gpu_id);
+    auto dg = dgpair.View(ctx.DeviceType());
     cuda_impl::KernelInputs args{d,
                                  d,
                                  d,
@@ -53,7 +49,7 @@ void TestGPUMakePair() {
                                  p_cache->DataGroupPtr(&ctx),
                                  p_cache->CUDAThreadsGroupPtr(),
                                  rank_idx,
-                                 info.labels.View(ctx.gpu_id),
+                                 info.labels.View(ctx.DeviceType()),
                                  predt.ConstDeviceSpan(),
                                  {},
                                  dg,
@@ -126,8 +122,7 @@ void TestGPUMakePair() {
 TEST(LambdaRank, GPUMakePair) { TestGPUMakePair(); }
 
 TEST(LambdaRank, GPUUnbiasedNDCG) {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
   TestUnbiasedNDCG(&ctx);
 }
 
@@ -161,8 +156,7 @@ TEST(LambdaRank, RankItemCountOnRight) {
 }
 
 TEST(LambdaRank, GPUMAPGPair) {
-  Context ctx;
-  ctx.gpu_id = 0;
+  Context ctx = MakeCUDACtx(0);
   TestMAPGPair(&ctx);
 }
 }  // namespace xgboost::obj

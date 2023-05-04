@@ -40,8 +40,7 @@
 #include "../common/linalg_op.cuh"
 #endif  // defined(XGBOOST_USE_CUDA)
 
-namespace xgboost {
-namespace obj {
+namespace xgboost::obj {
 namespace {
 void CheckRegInputs(MetaInfo const& info, HostDeviceVector<bst_float> const& preds) {
   CheckInitInputs(info);
@@ -75,9 +74,9 @@ class RegLossObj : public FitIntercept {
     param_.UpdateAllowUnknown(args);
   }
 
-  ObjInfo Task() const override { return Loss::Info(); }
+  [[nodiscard]] ObjInfo Task() const override { return Loss::Info(); }
 
-  bst_target_t Targets(MetaInfo const& info) const override {
+  [[nodiscard]] bst_target_t Targets(MetaInfo const& info) const override {
     // Multi-target regression.
     return std::max(static_cast<size_t>(1), info.labels.Shape(1));
   }
@@ -88,7 +87,6 @@ class RegLossObj : public FitIntercept {
     CheckRegInputs(info, preds);
     size_t const ndata = preds.Size();
     out_gpair->Resize(ndata);
-    auto device = ctx_->gpu_id;
     additional_input_.HostVector().begin()[0] = 1;  // Fill the label_correct flag
 
     bool is_null_weight = info.weights_.Size() == 0;
@@ -97,10 +95,10 @@ class RegLossObj : public FitIntercept {
     additional_input_.HostVector().begin()[2] = is_null_weight;
 
     const size_t nthreads = ctx_->Threads();
-    bool on_device = device >= 0;
     // On CPU we run the transformation each thread processing a contigious block of data
     // for better performance.
-    const size_t n_data_blocks = std::max(static_cast<size_t>(1), (on_device ? ndata : nthreads));
+    const size_t n_data_blocks =
+        std::max(static_cast<size_t>(1), (ctx_->IsCUDA() ? ndata : nthreads));
     const size_t block_size = ndata / n_data_blocks + !!(ndata % n_data_blocks);
     auto const n_targets = std::max(info.labels.Shape(1), static_cast<size_t>(1));
 
@@ -135,7 +133,7 @@ class RegLossObj : public FitIntercept {
                                               Loss::SecondOrderGradient(p, label) * w);
           }
         },
-        common::Range{0, static_cast<int64_t>(n_data_blocks)}, nthreads, device)
+        common::Range{0, static_cast<int64_t>(n_data_blocks)}, nthreads, ctx_->Ordinal())
         .Eval(&additional_input_, out_gpair, &preds, info.labels.Data(),
               &info.weights_);
 
@@ -146,7 +144,7 @@ class RegLossObj : public FitIntercept {
   }
 
  public:
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return Loss::DefaultEvalMetric();
   }
 
@@ -160,7 +158,7 @@ class RegLossObj : public FitIntercept {
         .Eval(io_preds);
   }
 
-  float ProbToMargin(float base_score) const override {
+  [[nodiscard]] float ProbToMargin(float base_score) const override {
     return Loss::ProbToMargin(base_score);
   }
 
@@ -215,8 +213,8 @@ class PseudoHuberRegression : public FitIntercept {
 
  public:
   void Configure(Args const& args) override { param_.UpdateAllowUnknown(args); }
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
-  bst_target_t Targets(MetaInfo const& info) const override {
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] bst_target_t Targets(MetaInfo const& info) const override {
     return std::max(static_cast<size_t>(1), info.labels.Shape(1));
   }
 
@@ -225,16 +223,16 @@ class PseudoHuberRegression : public FitIntercept {
     CheckRegInputs(info, preds);
     auto slope = param_.huber_slope;
     CHECK_NE(slope, 0.0) << "slope for pseudo huber cannot be 0.";
-    auto labels = info.labels.View(ctx_->gpu_id);
+    auto labels = info.labels.View(ctx_->DeviceType());
 
-    out_gpair->SetDevice(ctx_->gpu_id);
+    out_gpair->SetDevice(ctx_->DeviceType());
     out_gpair->Resize(info.labels.Size());
     auto gpair = linalg::MakeVec(out_gpair);
 
-    preds.SetDevice(ctx_->gpu_id);
+    preds.SetDevice(ctx_->DeviceType());
     auto predt = linalg::MakeVec(&preds);
 
-    info.weights_.SetDevice(ctx_->gpu_id);
+    info.weights_.SetDevice(ctx_->DeviceType());
     common::OptionalWeights weight{ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                  : info.weights_.ConstDeviceSpan()};
 
@@ -252,7 +250,7 @@ class PseudoHuberRegression : public FitIntercept {
     });
   }
 
-  const char* DefaultEvalMetric() const override { return "mphe"; }
+  [[nodiscard]] const char* DefaultEvalMetric() const override { return "mphe"; }
 
   void SaveConfig(Json* p_out) const override {
     auto& out = *p_out;
@@ -292,7 +290,7 @@ class PoissonRegression : public FitIntercept {
     param_.UpdateAllowUnknown(args);
   }
 
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
 
   void GetGradient(const HostDeviceVector<bst_float>& preds,
                    const MetaInfo &info, int,
@@ -301,7 +299,7 @@ class PoissonRegression : public FitIntercept {
     CHECK_EQ(preds.Size(), info.labels.Size()) << "labels are not correctly provided";
     size_t const ndata = preds.Size();
     out_gpair->Resize(ndata);
-    auto device = ctx_->gpu_id;
+    auto device = ctx_->DeviceType();
     label_correct_.Resize(1);
     label_correct_.Fill(1);
 
@@ -327,7 +325,7 @@ class PoissonRegression : public FitIntercept {
           _out_gpair[_idx] = GradientPair{(expf(p) - y) * w,
                                           expf(p + max_delta_step) * w};
         },
-        common::Range{0, static_cast<int64_t>(ndata)}, this->ctx_->Threads(), device).Eval(
+        common::Range{0, static_cast<int64_t>(ndata)}, this->ctx_->Threads(), device.ordinal).Eval(
             &label_correct_, out_gpair, &preds, info.labels.Data(), &info.weights_);
     // copy "label correct" flags back to host
     std::vector<int>& label_correct_h = label_correct_.HostVector();
@@ -349,10 +347,10 @@ class PoissonRegression : public FitIntercept {
   void EvalTransform(HostDeviceVector<bst_float> *io_preds) override {
     PredTransform(io_preds);
   }
-  bst_float ProbToMargin(bst_float base_score) const override {
+  [[nodiscard]] float ProbToMargin(bst_float base_score) const override {
     return std::log(base_score);
   }
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return "poisson-nloglik";
   }
 
@@ -383,7 +381,7 @@ XGBOOST_REGISTER_OBJECTIVE(PoissonRegression, "count:poisson")
 class CoxRegression : public FitIntercept {
  public:
   void Configure(Args const&) override {}
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
 
   void GetGradient(const HostDeviceVector<bst_float>& preds,
                    const MetaInfo &info, int,
@@ -457,10 +455,10 @@ class CoxRegression : public FitIntercept {
   void EvalTransform(HostDeviceVector<bst_float> *io_preds) override {
     PredTransform(io_preds);
   }
-  bst_float ProbToMargin(bst_float base_score) const override {
+  [[nodiscard]] float ProbToMargin(bst_float base_score) const override {
     return std::log(base_score);
   }
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return "cox-nloglik";
   }
 
@@ -480,7 +478,7 @@ XGBOOST_REGISTER_OBJECTIVE(CoxRegression, "survival:cox")
 class GammaRegression : public FitIntercept {
  public:
   void Configure(Args const&) override {}
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
 
   void GetGradient(const HostDeviceVector<bst_float> &preds,
                    const MetaInfo &info, int,
@@ -488,7 +486,7 @@ class GammaRegression : public FitIntercept {
     CHECK_NE(info.labels.Size(), 0U) << "label set cannot be empty";
     CHECK_EQ(preds.Size(), info.labels.Size()) << "labels are not correctly provided";
     const size_t ndata = preds.Size();
-    auto device = ctx_->gpu_id;
+    auto device = ctx_->DeviceType();
     out_gpair->Resize(ndata);
     label_correct_.Resize(1);
     label_correct_.Fill(1);
@@ -499,12 +497,10 @@ class GammaRegression : public FitIntercept {
           << "Number of weights should be equal to number of data points.";
     }
     common::Transform<>::Init(
-        [=] XGBOOST_DEVICE(size_t _idx,
-                           common::Span<int> _label_correct,
-                           common::Span<GradientPair> _out_gpair,
-                           common::Span<const bst_float> _preds,
-                           common::Span<const bst_float> _labels,
-                           common::Span<const bst_float> _weights) {
+        [=] XGBOOST_DEVICE(
+            size_t _idx, common::Span<int> _label_correct, common::Span<GradientPair> _out_gpair,
+            common::Span<const bst_float> _preds, common::Span<const bst_float> _labels,
+            common::Span<const bst_float> _weights) {
           bst_float p = _preds[_idx];
           bst_float w = is_null_weight ? 1.0f : _weights[_idx];
           bst_float y = _labels[_idx];
@@ -513,8 +509,8 @@ class GammaRegression : public FitIntercept {
           }
           _out_gpair[_idx] = GradientPair((1 - y / expf(p)) * w, y / expf(p) * w);
         },
-        common::Range{0, static_cast<int64_t>(ndata)}, this->ctx_->Threads(), device).Eval(
-            &label_correct_, out_gpair, &preds, info.labels.Data(), &info.weights_);
+        common::Range{0, static_cast<int64_t>(ndata)}, this->ctx_->Threads(), device.ordinal)
+        .Eval(&label_correct_, out_gpair, &preds, info.labels.Data(), &info.weights_);
 
     // copy "label correct" flags back to host
     std::vector<int>& label_correct_h = label_correct_.HostVector();
@@ -536,10 +532,10 @@ class GammaRegression : public FitIntercept {
   void EvalTransform(HostDeviceVector<bst_float> *io_preds) override {
     PredTransform(io_preds);
   }
-  bst_float ProbToMargin(bst_float base_score) const override {
+  [[nodiscard]] float ProbToMargin(bst_float base_score) const override {
     return std::log(base_score);
   }
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return "gamma-nloglik";
   }
   void SaveConfig(Json* p_out) const override {
@@ -578,7 +574,7 @@ class TweedieRegression : public FitIntercept {
     metric_ = os.str();
   }
 
-  ObjInfo Task() const override { return ObjInfo::kRegression; }
+  [[nodiscard]] ObjInfo Task() const override { return ObjInfo::kRegression; }
 
   void GetGradient(const HostDeviceVector<bst_float>& preds,
                    const MetaInfo &info, int,
@@ -588,7 +584,7 @@ class TweedieRegression : public FitIntercept {
     const size_t ndata = preds.Size();
     out_gpair->Resize(ndata);
 
-    auto device = ctx_->gpu_id;
+    auto device = ctx_->DeviceType();
     label_correct_.Resize(1);
     label_correct_.Fill(1);
 
@@ -618,7 +614,7 @@ class TweedieRegression : public FitIntercept {
               std::exp((1 - rho) * p) + (2 - rho) * expf((2 - rho) * p);
           _out_gpair[_idx] = GradientPair(grad * w, hess * w);
         },
-        common::Range{0, static_cast<int64_t>(ndata), 1}, this->ctx_->Threads(), device)
+        common::Range{0, static_cast<int64_t>(ndata), 1}, this->ctx_->Threads(), device.ordinal)
         .Eval(&label_correct_, out_gpair, &preds, info.labels.Data(), &info.weights_);
 
     // copy "label correct" flags back to host
@@ -639,11 +635,11 @@ class TweedieRegression : public FitIntercept {
         .Eval(io_preds);
   }
 
-  bst_float ProbToMargin(bst_float base_score) const override {
+  [[nodiscard]] float ProbToMargin(bst_float base_score) const override {
     return std::log(base_score);
   }
 
-  const char* DefaultEvalMetric() const override {
+  [[nodiscard]] const char* DefaultEvalMetric() const override {
     return metric_.c_str();
   }
 
@@ -672,23 +668,23 @@ XGBOOST_REGISTER_OBJECTIVE(TweedieRegression, "reg:tweedie")
 class MeanAbsoluteError : public ObjFunction {
  public:
   void Configure(Args const&) override {}
-  ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
-  bst_target_t Targets(MetaInfo const& info) const override {
+  [[nodiscard]] ObjInfo Task() const override { return {ObjInfo::kRegression, true, true}; }
+  [[nodiscard]] bst_target_t Targets(MetaInfo const& info) const override {
     return std::max(static_cast<size_t>(1), info.labels.Shape(1));
   }
 
   void GetGradient(HostDeviceVector<bst_float> const& preds, const MetaInfo& info, int /*iter*/,
                    HostDeviceVector<GradientPair>* out_gpair) override {
     CheckRegInputs(info, preds);
-    auto labels = info.labels.View(ctx_->gpu_id);
+    auto labels = info.labels.View(ctx_->DeviceType());
 
-    out_gpair->SetDevice(ctx_->gpu_id);
+    out_gpair->SetDevice(ctx_->DeviceType());
     out_gpair->Resize(info.labels.Size());
     auto gpair = linalg::MakeVec(out_gpair);
 
-    preds.SetDevice(ctx_->gpu_id);
+    preds.SetDevice(ctx_->DeviceType());
     auto predt = linalg::MakeVec(&preds);
-    info.weights_.SetDevice(ctx_->gpu_id);
+    info.weights_.SetDevice(ctx_->DeviceType());
     common::OptionalWeights weight{ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                  : info.weights_.ConstDeviceSpan()};
 
@@ -748,7 +744,7 @@ class MeanAbsoluteError : public ObjFunction {
                                    p_tree);
   }
 
-  const char* DefaultEvalMetric() const override { return "mae"; }
+  [[nodiscard]] const char* DefaultEvalMetric() const override { return "mae"; }
 
   void SaveConfig(Json* p_out) const override {
     auto& out = *p_out;
@@ -763,5 +759,4 @@ class MeanAbsoluteError : public ObjFunction {
 XGBOOST_REGISTER_OBJECTIVE(MeanAbsoluteError, "reg:absoluteerror")
     .describe("Mean absoluate error.")
     .set_body([]() { return new MeanAbsoluteError(); });
-}  // namespace obj
-}  // namespace xgboost
+}  // namespace xgboost::obj

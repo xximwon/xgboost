@@ -17,7 +17,6 @@
 #include "test_predictor.h"
 
 namespace xgboost {
-
 namespace {
 void TestBasic(DMatrix* dmat) {
   Context ctx;
@@ -27,9 +26,8 @@ void TestBasic(DMatrix* dmat) {
   size_t const kRows = dmat->Info().num_row_;
   size_t const kCols = dmat->Info().num_col_;
 
-  LearnerModelParam mparam{MakeMP(kCols, .0, 1)};
+  LearnerModelParam mparam{MakeMP(kCols, .0, 1, &ctx)};
 
-  ctx.UpdateAllowUnknown(Args{});
   gbm::GBTreeModel model = CreateTestModel(&mparam, &ctx);
 
   // Test predict batch
@@ -140,6 +138,8 @@ TEST(CpuPredictor, InplacePredict) {
   bst_row_t constexpr kRows{128};
   bst_feature_t constexpr kCols{64};
   auto gen = RandomDataGenerator{kRows, kCols, 0.5}.Device(-1);
+  Context ctx;
+
   {
     HostDeviceVector<float> data;
     gen.GenerateDense(&data);
@@ -149,7 +149,7 @@ TEST(CpuPredictor, InplacePredict) {
     std::string arr_str;
     Json::Dump(array_interface, &arr_str);
     x->SetArrayData(arr_str.data());
-    TestInplacePrediction(x, "cpu_predictor", kRows, kCols, Context::kCpuId);
+    TestInplacePrediction(&ctx, x, "cpu_predictor", kRows, kCols);
   }
 
   {
@@ -166,14 +166,14 @@ TEST(CpuPredictor, InplacePredict) {
     Json::Dump(col_interface, &col_str);
     std::shared_ptr<data::DMatrixProxy> x{new data::DMatrixProxy};
     x->SetCSRData(rptr_str.data(), col_str.data(), data_str.data(), kCols, true);
-    TestInplacePrediction(x, "cpu_predictor", kRows, kCols, Context::kCpuId);
+    TestInplacePrediction(&ctx, x, "cpu_predictor", kRows, kCols);
   }
 }
 
 void TestUpdatePredictionCache(bool use_subsampling) {
   size_t constexpr kRows = 64, kCols = 16, kClasses = 4;
-  LearnerModelParam mparam{MakeMP(kCols, .0, kClasses)};
   Context ctx;
+  LearnerModelParam mparam{MakeMP(kCols, .0, kClasses, &ctx)};
 
   std::unique_ptr<gbm::GBTree> gbm;
   gbm.reset(static_cast<gbm::GBTree*>(GradientBooster::Create("gbtree", &ctx, &mparam)));
@@ -263,7 +263,6 @@ TEST(CpuPredictor, SparseColumnSplit) {
 
 TEST(CpuPredictor, Multi) {
   Context ctx;
-  ctx.nthread = 1;
   TestVectorLeafPrediction(&ctx);
 }
 }  // namespace xgboost

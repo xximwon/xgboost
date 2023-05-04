@@ -309,7 +309,7 @@ template <typename T>
 size_t HostDeviceVector<T>::Size() const { return impl_->Size(); }
 
 template <typename T>
-int HostDeviceVector<T>::DeviceIdx() const { return impl_->DeviceIdx(); }
+bst_d_ordinal_t HostDeviceVector<T>::DeviceIdx() const { return impl_->DeviceIdx(); }
 
 template <typename T>
 T* HostDeviceVector<T>::DevicePointer() {

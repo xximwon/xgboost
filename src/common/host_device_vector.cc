@@ -81,7 +81,7 @@ template <typename T>
 size_t HostDeviceVector<T>::Size() const { return impl_->Vec().size(); }
 
 template <typename T>
-int HostDeviceVector<T>::DeviceIdx() const { return -1; }
+bst_d_ordinal_t HostDeviceVector<T>::DeviceIdx() const { return -1; }
 
 template <typename T>
 T* HostDeviceVector<T>::DevicePointer() { return nullptr; }

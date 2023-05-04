@@ -11,9 +11,7 @@
 #include "../helpers.h"
 #include "test_hist_util.h"
 
-namespace xgboost {
-namespace common {
-
+namespace xgboost::common {
 void ParallelGHistBuilderReset() {
   constexpr size_t kBins = 10;
   constexpr size_t kNodes = 5;
@@ -147,7 +145,7 @@ TEST(CutsBuilder, SearchGroupInd) {
 
   EXPECT_ANY_THROW(HostSketchContainer::SearchGroupIndFromRow(p_mat->Info().group_ptr_, 17));
 
-  p_mat->Info().Validate(-1);
+  p_mat->Info().Validate(Device::CPU());
   EXPECT_THROW(HostSketchContainer::SearchGroupIndFromRow(p_mat->Info().group_ptr_, 17),
                dmlc::Error);
 
@@ -405,5 +403,4 @@ TEST(HistUtil, SketchCategoricalFeatures) {
     return SketchOnDMatrix(&ctx, p_fmat, num_bins);
   });
 }
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common

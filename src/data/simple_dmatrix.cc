@@ -21,8 +21,7 @@
 #include "xgboost/c_api.h"
 #include "xgboost/data.h"
 
-namespace xgboost {
-namespace data {
+namespace xgboost::data {
 MetaInfo& SimpleDMatrix::Info() { return info_; }
 
 const MetaInfo& SimpleDMatrix::Info() const { return info_; }
@@ -245,7 +244,7 @@ SimpleDMatrix::SimpleDMatrix(AdapterT* adapter, float missing, int nthread,
     }
     if (batch.BaseMargin() != nullptr) {
       info_.base_margin_ = decltype(info_.base_margin_){
-          batch.BaseMargin(), batch.BaseMargin() + batch.Size(), {batch.Size()}, Context::kCpuId};
+          batch.BaseMargin(), batch.BaseMargin() + batch.Size(), {batch.Size()}, &ctx};
     }
     if (batch.Qid() != nullptr) {
       qids.insert(qids.end(), batch.Qid(), batch.Qid() + batch.Size());
@@ -358,7 +357,7 @@ template <>
 SimpleDMatrix::SimpleDMatrix(RecordBatchesIterAdapter* adapter, float missing, int nthread,
                              DataSplitMode data_split_mode) {
   Context ctx;
-  ctx.nthread = nthread;
+  ctx.Init(Args{{"nthread", std::to_string(nthread)}});
 
   auto& offset_vec = sparse_page_->offset.HostVector();
   auto& data_vec = sparse_page_->data.HostVector();
@@ -427,5 +426,4 @@ SimpleDMatrix::SimpleDMatrix(RecordBatchesIterAdapter* adapter, float missing, i
 
   fmat_ctx_ = ctx;
 }
-}  // namespace data
-}  // namespace xgboost
+}  // namespace xgboost::data

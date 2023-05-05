@@ -205,7 +205,7 @@ struct DeviceAdapterLoader {
       __syncthreads();
     }
 
-  XGBOOST_DEV_INLINE  float GetElement(size_t  ridx, size_t  fidx) const {
+  [[nodiscard]] XGBOOST_DEV_INLINE  float GetElement(size_t  ridx, size_t  fidx) const {
     if (use_shared) {
       return smem[threadIdx.x * columns + fidx];
     }
@@ -996,19 +996,18 @@ class GPUPredictor : public xgboost::Predictor {
 
   void PredictContribution(DMatrix* p_fmat,
                            HostDeviceVector<bst_float>* out_contribs,
-                           const gbm::GBTreeModel& model, unsigned tree_end,
+                           const gbm::GBTreeModel& model, bst_tree_t tree_end,
                            std::vector<bst_float> const* tree_weights,
                            bool approximate, int,
                            unsigned) const override {}
 
   void PredictInteractionContributions(DMatrix* p_fmat, HostDeviceVector<bst_float>* out_contribs,
-                                       const gbm::GBTreeModel& model, unsigned tree_end,
+                                       const gbm::GBTreeModel& model, bst_tree_t tree_end,
                                        std::vector<bst_float> const* tree_weights,
                                        bool approximate) const override {}
 
-  void PredictInstance(const SparsePage::Inst&,
-                       std::vector<bst_float>*,
-                       const gbm::GBTreeModel&, unsigned) const override {
+  void PredictInstance(const SparsePage::Inst&, std::vector<bst_float>*, const gbm::GBTreeModel&,
+                       bst_tree_t) const override {
     LOG(FATAL) << "[Internal error]: " << __func__
                << " is not implemented in GPU Predictor.";
   }

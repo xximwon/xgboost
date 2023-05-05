@@ -19,11 +19,9 @@
 #include <vector>
 
 // Forward declarations
-namespace xgboost {
-namespace gbm {
+namespace xgboost::gbm {
 struct GBTreeModel;
-}  // namespace gbm
-}  // namespace xgboost
+}  // namespace xgboost::gbm
 
 namespace xgboost {
 /**
@@ -31,7 +29,7 @@ namespace xgboost {
  */
 struct PredictionCacheEntry {
   // A storage for caching prediction values
-  HostDeviceVector<bst_float> predictions;
+  HostDeviceVector<float> predictions;
   // The version of current cache, corresponding number of layers of trees
   std::uint32_t version{0};
 
@@ -96,7 +94,7 @@ class Predictor {
    * \param model Tree model used for prediction.
    */
   static void InitOutPredictions(Context const* ctx, const MetaInfo& info,
-                                 HostDeviceVector<bst_float>* out_predt,
+                                 HostDeviceVector<float>* out_predt,
                                  const gbm::GBTreeModel& model);
 
   /**
@@ -142,7 +140,7 @@ class Predictor {
    */
 
   virtual void PredictInstance(const SparsePage::Inst& inst, std::vector<float>* out_preds,
-                               const gbm::GBTreeModel& model, unsigned tree_end = 0) const = 0;
+                               const gbm::GBTreeModel& model, bst_tree_t tree_end = 0) const = 0;
 
   /**
    * \brief predict the leaf index of each tree, the output will be nsample *
@@ -172,18 +170,17 @@ class Predictor {
    * \param           condition_feature  Feature to condition on (i.e. fix) during calculations.
    */
 
-  virtual void
-  PredictContribution(DMatrix *dmat, HostDeviceVector<bst_float> *out_contribs,
-                      const gbm::GBTreeModel &model, unsigned tree_end = 0,
-                      std::vector<bst_float> const *tree_weights = nullptr,
-                      bool approximate = false, int condition = 0,
-                      unsigned condition_feature = 0) const = 0;
+  virtual void PredictContribution(DMatrix* dmat, HostDeviceVector<float>* out_contribs,
+                                   const gbm::GBTreeModel& model, bst_tree_t tree_end = 0,
+                                   std::vector<float> const* tree_weights = nullptr,
+                                   bool approximate = false, int condition = 0,
+                                   unsigned condition_feature = 0) const = 0;
 
-  virtual void PredictInteractionContributions(
-      DMatrix *dmat, HostDeviceVector<bst_float> *out_contribs,
-      const gbm::GBTreeModel &model, unsigned tree_end = 0,
-      std::vector<bst_float> const *tree_weights = nullptr,
-      bool approximate = false) const = 0;
+  virtual void PredictInteractionContributions(DMatrix* dmat, HostDeviceVector<float>* out_contribs,
+                                               const gbm::GBTreeModel& model,
+                                               bst_tree_t tree_end = 0,
+                                               std::vector<float> const* tree_weights = nullptr,
+                                               bool approximate = false) const = 0;
 
   /**
    * \brief Creates a new Predictor*.

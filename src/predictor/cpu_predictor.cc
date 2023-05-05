@@ -180,7 +180,7 @@ void FVecDrop(std::size_t const block_size, std::size_t const fvec_offset,
   }
 }
 
-static std::size_t constexpr kUnroll = 8;
+inline std::size_t constexpr kUnroll = 8;
 
 struct SparsePageView {
   bst_row_t base_rowid;
@@ -188,7 +188,7 @@ struct SparsePageView {
 
   explicit SparsePageView(SparsePage const *p) : base_rowid{p->base_rowid} { view = p->GetView(); }
   SparsePage::Inst operator[](size_t i) { return view[i]; }
-  size_t Size() const { return view.Size(); }
+  [[nodiscard]] std::size_t Size() const { return view.Size(); }
 };
 
 struct GHistIndexMatrixView {
@@ -240,7 +240,7 @@ struct GHistIndexMatrixView {
     }
     return ret;
   }
-  size_t Size() const { return page_.Size(); }
+  [[nodiscard]] std::size_t Size() const { return page_.Size(); }
 };
 
 template <typename Adapter>
@@ -280,7 +280,7 @@ class AdapterView {
     return ret;
   }
 
-  size_t Size() const { return adapter_->NumRows(); }
+  [[nodiscard]] std::size_t Size() const { return adapter_->NumRows(); }
 
   bst_row_t const static base_rowid = 0;  // NOLINT
 };
@@ -733,9 +733,8 @@ class CPUPredictor : public Predictor {
     return true;
   }
 
-  void PredictInstance(const SparsePage::Inst& inst,
-                       std::vector<bst_float>* out_preds,
-                       const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
+  void PredictInstance(const SparsePage::Inst &inst, std::vector<bst_float> *out_preds,
+                       const gbm::GBTreeModel &model, bst_tree_t ntree_limit) const override {
     if (ctx_->IsCUDA()) {
       LOG(FATAL) << "Not implemented";
     }
@@ -744,7 +743,7 @@ class CPUPredictor : public Predictor {
     feat_vecs.resize(1, RegTree::FVec());
     feat_vecs[0].Init(model.learner_model_param->num_feature);
     ntree_limit *= model.learner_model_param->num_output_group;
-    if (ntree_limit == 0 || ntree_limit > model.trees.size()) {
+    if (ntree_limit == 0 || ntree_limit > static_cast<bst_tree_t>(model.trees.size())) {
       ntree_limit = static_cast<unsigned>(model.trees.size());
     }
     out_preds->resize(model.learner_model_param->num_output_group);
@@ -804,7 +803,7 @@ class CPUPredictor : public Predictor {
   }
 
   void PredictContribution(DMatrix *p_fmat, HostDeviceVector<float> *out_contribs,
-                           const gbm::GBTreeModel &model, uint32_t ntree_limit,
+                           const gbm::GBTreeModel &model, bst_tree_t ntree_limit,
                            std::vector<bst_float> const *tree_weights, bool approximate,
                            int condition, unsigned condition_feature) const override {
     CHECK(!model.learner_model_param->IsVectorLeaf())
@@ -821,7 +820,7 @@ class CPUPredictor : public Predictor {
     InitThreadTemp(n_threads, &feat_vecs);
     const MetaInfo& info = p_fmat->Info();
     // number of valid trees
-    if (ntree_limit == 0 || ntree_limit > model.trees.size()) {
+    if (ntree_limit == 0 || ntree_limit > static_cast<bst_tree_t>(model.trees.size())) {
       ntree_limit = static_cast<unsigned>(model.trees.size());
     }
     const int ngroup = model.learner_model_param->num_output_group;
@@ -858,7 +857,7 @@ class CPUPredictor : public Predictor {
           bst_float* p_contribs = &contribs[(row_idx * ngroup + gid) * ncolumns];
           feats.Fill(page[i]);
           // calculate contributions
-          for (unsigned j = 0; j < ntree_limit; ++j) {
+          for (bst_tree_t j = 0; j < ntree_limit; ++j) {
             auto *tree_mean_values = &mean_values.at(j);
             std::fill(this_tree_contribs.begin(), this_tree_contribs.end(), 0);
             if (model.tree_info[j] != gid) {
@@ -890,9 +889,9 @@ class CPUPredictor : public Predictor {
     }
   }
 
-  void PredictInteractionContributions(DMatrix *p_fmat, HostDeviceVector<bst_float> *out_contribs,
-                                       const gbm::GBTreeModel &model, unsigned ntree_limit,
-                                       std::vector<bst_float> const *tree_weights,
+  void PredictInteractionContributions(DMatrix *p_fmat, HostDeviceVector<float> *out_contribs,
+                                       const gbm::GBTreeModel &model, bst_tree_t ntree_limit,
+                                       std::vector<float> const *tree_weights,
                                        bool approximate) const override {
     CHECK(!model.learner_model_param->IsVectorLeaf())
         << "Predict interaction contribution" << MTNotImplemented();
@@ -910,13 +909,13 @@ class CPUPredictor : public Predictor {
     const unsigned crow_chunk = ngroup * (ncolumns + 1);
 
     // allocate space for (number of features^2) times the number of rows and tmp off/on contribs
-    std::vector<bst_float>& contribs = out_contribs->HostVector();
+    std::vector<float>& contribs = out_contribs->HostVector();
     contribs.resize(info.num_row_ * ngroup * (ncolumns + 1) * (ncolumns + 1));
-    HostDeviceVector<bst_float> contribs_off_hdv(info.num_row_ * ngroup * (ncolumns + 1));
+    HostDeviceVector<float> contribs_off_hdv(info.num_row_ * ngroup * (ncolumns + 1));
     auto &contribs_off = contribs_off_hdv.HostVector();
-    HostDeviceVector<bst_float> contribs_on_hdv(info.num_row_ * ngroup * (ncolumns + 1));
+    HostDeviceVector<float> contribs_on_hdv(info.num_row_ * ngroup * (ncolumns + 1));
     auto &contribs_on = contribs_on_hdv.HostVector();
-    HostDeviceVector<bst_float> contribs_diag_hdv(info.num_row_ * ngroup * (ncolumns + 1));
+    HostDeviceVector<float> contribs_diag_hdv(info.num_row_ * ngroup * (ncolumns + 1));
     auto &contribs_diag = contribs_diag_hdv.HostVector();
 
     // Compute the difference in effects when conditioning on each of the features on and off

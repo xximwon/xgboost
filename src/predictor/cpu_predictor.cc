@@ -686,11 +686,11 @@ class CPUPredictor : public Predictor {
         << "Number of columns in data must equal to trained model.";
     if (p_m) {
       p_m->Info().num_row_ = m->NumRows();
-      this->InitOutPredictions(p_m->Info(), &(out_preds->predictions), model);
+      this->InitOutPredictions(ctx_, p_m->Info(), &(out_preds->predictions), model);
     } else {
       MetaInfo info;
       info.num_row_ = m->NumRows();
-      this->InitOutPredictions(info, &(out_preds->predictions), model);
+      this->InitOutPredictions(ctx_, info, &(out_preds->predictions), model);
     }
 
     std::vector<Entry> workspace(m->NumColumns() * kUnroll * n_threads);

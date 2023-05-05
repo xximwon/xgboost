@@ -889,6 +889,12 @@ class CPUPredictor : public Predictor {
                                        bool approximate) const override {
     CHECK(!model.learner_model_param->IsVectorLeaf())
         << "Predict interaction contribution" << MTNotImplemented();
+    if (ctx_->IsCUDA()) {
+      cuda_impl::PredictInteractionContributions(ctx_, p_fmat, out_contribs, model, ntree_limit,
+                                                 tree_weights, approximate);
+      return;
+    }
+
     const MetaInfo& info = p_fmat->Info();
     const int ngroup = model.learner_model_param->num_output_group;
     size_t const ncolumns = model.learner_model_param->num_feature;

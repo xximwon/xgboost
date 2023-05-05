@@ -7,13 +7,14 @@
 #include "../common/categorical.h"            // for IsCat, Decision
 #include "xgboost/base.h"                     // for bst_note_t
 #include "xgboost/context.h"                  // for Context
-#include "xgboost/data.h"                     // for DMatrix
 #include "xgboost/host_device_vector.h"       // for HostDeviceVector
 #include "xgboost/multi_target_tree_model.h"  // for MultiTargetTree
 #include "xgboost/tree_model.h"               // for RegTree
 
 namespace xgboost {
 struct PredictionCacheEntry;
+class DMatrix;
+
 namespace gbm {
 struct GBTreeModel;
 }  // namespace gbm
@@ -60,6 +61,11 @@ namespace cuda_impl {
 bool InplacePredict(Context const* ctx, std::shared_ptr<DMatrix> p_m, const gbm::GBTreeModel& model,
                     float missing, PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
                     bst_tree_t tree_end);
+
+void PredictInteractionContributions(Context const* ctx, DMatrix* p_fmat,
+                                     HostDeviceVector<float>* out_contribs,
+                                     const gbm::GBTreeModel& model, unsigned tree_end,
+                                     std::vector<float> const* tree_weights, bool approximate);
 
 void PredictLeaf(Context const* ctx, DMatrix* p_fmat, HostDeviceVector<float>* predictions,
                  const gbm::GBTreeModel& model, bst_tree_t tree_end);

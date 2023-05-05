@@ -808,6 +808,12 @@ class CPUPredictor : public Predictor {
                            int condition, unsigned condition_feature) const override {
     CHECK(!model.learner_model_param->IsVectorLeaf())
         << "Predict contribution" << MTNotImplemented();
+    if (ctx_->IsCUDA()) {
+      cuda_impl::PredictContribution(ctx_, p_fmat, out_contribs, model, ntree_limit, tree_weights,
+                                     approximate, condition, condition_feature);
+      return;
+    }
+
     auto const n_threads = this->ctx_->Threads();
     const int num_feature = model.learner_model_param->num_feature;
     std::vector<RegTree::FVec> feat_vecs;

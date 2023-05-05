@@ -434,7 +434,7 @@ struct ShapSplitCondition {
   bool is_missing_branch;
 
   // Does this instance flow down this path?
-  XGBOOST_DEVICE bool EvaluateSplit(float x) const {
+  [[nodiscard]] XGBOOST_DEVICE bool EvaluateSplit(float x) const {
     // is nan
     if (isnan(x)) {
       return is_missing_branch;
@@ -694,6 +694,60 @@ bool InplacePredict(Context const* ctx, std::shared_ptr<DMatrix> p_m, const gbm:
   return true;
 }
 
+void PredictContribution(Context const* ctx, DMatrix* p_fmat,
+                         HostDeviceVector<bst_float>* out_contribs, const gbm::GBTreeModel& model,
+                         bst_tree_t tree_end, std::vector<bst_float> const* tree_weights,
+                         bool approximate, int, unsigned) {
+  StringView not_implemented{
+      "contribution is not implemented in GPU predictor, use `cpu_predictor` instead."};
+  if (approximate) {
+    LOG(FATAL) << "Approximated " << not_implemented;
+  }
+  if (tree_weights != nullptr) {
+    LOG(FATAL) << "Dart booster feature " << not_implemented;
+  }
+
+  dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
+  out_contribs->SetDevice(ctx->gpu_id);
+  if (tree_end == 0 || tree_end > model.trees.size()) {
+    tree_end = static_cast<uint32_t>(model.trees.size());
+  }
+
+  const int ngroup = model.learner_model_param->num_output_group;
+  CHECK_NE(ngroup, 0);
+  // allocate space for (number of features + bias) times the number of rows
+  size_t contributions_columns = model.learner_model_param->num_feature + 1;  // +1 for bias
+  out_contribs->Resize(p_fmat->Info().num_row_ * contributions_columns *
+                       model.learner_model_param->num_output_group);
+  out_contribs->Fill(0.0f);
+  auto phis = out_contribs->DeviceSpan();
+
+  dh::device_vector<gpu_treeshap::PathElement<ShapSplitCondition>> device_paths;
+  DeviceModel d_model;
+  d_model.Init(model, 0, tree_end, ctx->gpu_id);
+  dh::device_vector<uint32_t> categories;
+  ExtractPaths(&device_paths, &d_model, &categories, ctx->gpu_id);
+  for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
+    batch.data.SetDevice(ctx->gpu_id);
+    batch.offset.SetDevice(ctx->gpu_id);
+    SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
+                     model.learner_model_param->num_feature);
+    auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
+    gpu_treeshap::GPUTreeShap<dh::XGBDeviceAllocator<int>>(
+        X, device_paths.begin(), device_paths.end(), ngroup, begin, dh::tend(phis));
+  }
+  // Add the base margin term to last column
+  p_fmat->Info().base_margin_.SetDevice(ctx->gpu_id);
+  const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
+
+  auto base_score = model.learner_model_param->BaseScore(ctx);
+  dh::LaunchN(p_fmat->Info().num_row_ * model.learner_model_param->num_output_group,
+              [=] __device__(size_t idx) {
+                phis[(idx + 1) * contributions_columns - 1] +=
+                    margin.empty() ? base_score(0) : margin[idx];
+              });
+}
+
 void PredictInteractionContributions(Context const* ctx, DMatrix* p_fmat,
                                      HostDeviceVector<float>* out_contribs,
                                      const gbm::GBTreeModel& model, unsigned tree_end,
@@ -945,58 +999,7 @@ class GPUPredictor : public xgboost::Predictor {
                            const gbm::GBTreeModel& model, unsigned tree_end,
                            std::vector<bst_float> const* tree_weights,
                            bool approximate, int,
-                           unsigned) const override {
-    std::string not_implemented{"contribution is not implemented in GPU "
-                                "predictor, use `cpu_predictor` instead."};
-    if (approximate) {
-      LOG(FATAL) << "Approximated " << not_implemented;
-    }
-    if (tree_weights != nullptr) {
-      LOG(FATAL) << "Dart booster feature " << not_implemented;
-    }
-    dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
-    out_contribs->SetDevice(ctx_->gpu_id);
-    if (tree_end == 0 || tree_end > model.trees.size()) {
-      tree_end = static_cast<uint32_t>(model.trees.size());
-    }
-
-    const int ngroup = model.learner_model_param->num_output_group;
-    CHECK_NE(ngroup, 0);
-    // allocate space for (number of features + bias) times the number of rows
-    size_t contributions_columns =
-        model.learner_model_param->num_feature + 1;  // +1 for bias
-    out_contribs->Resize(p_fmat->Info().num_row_ * contributions_columns *
-                    model.learner_model_param->num_output_group);
-    out_contribs->Fill(0.0f);
-    auto phis = out_contribs->DeviceSpan();
-
-    dh::device_vector<gpu_treeshap::PathElement<ShapSplitCondition>>
-        device_paths;
-    DeviceModel d_model;
-    d_model.Init(model, 0, tree_end, ctx_->gpu_id);
-    dh::device_vector<uint32_t> categories;
-    ExtractPaths(&device_paths, &d_model, &categories, ctx_->gpu_id);
-    for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
-      batch.data.SetDevice(ctx_->gpu_id);
-      batch.offset.SetDevice(ctx_->gpu_id);
-      SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
-                       model.learner_model_param->num_feature);
-      auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
-      gpu_treeshap::GPUTreeShap<dh::XGBDeviceAllocator<int>>(
-          X, device_paths.begin(), device_paths.end(), ngroup, begin,
-          dh::tend(phis));
-    }
-    // Add the base margin term to last column
-    p_fmat->Info().base_margin_.SetDevice(ctx_->gpu_id);
-    const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
-
-    auto base_score = model.learner_model_param->BaseScore(ctx_);
-    dh::LaunchN(p_fmat->Info().num_row_ * model.learner_model_param->num_output_group,
-                [=] __device__(size_t idx) {
-                  phis[(idx + 1) * contributions_columns - 1] +=
-                      margin.empty() ? base_score(0) : margin[idx];
-                });
-  }
+                           unsigned) const override {}
 
   void PredictInteractionContributions(DMatrix* p_fmat, HostDeviceVector<bst_float>* out_contribs,
                                        const gbm::GBTreeModel& model, unsigned tree_end,

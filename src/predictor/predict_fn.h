@@ -62,6 +62,11 @@ bool InplacePredict(Context const* ctx, std::shared_ptr<DMatrix> p_m, const gbm:
                     float missing, PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
                     bst_tree_t tree_end);
 
+void PredictContribution(Context const* ctx_, DMatrix* p_fmat,
+                         HostDeviceVector<bst_float>* out_contribs, const gbm::GBTreeModel& model,
+                         bst_tree_t tree_end, std::vector<bst_float> const* tree_weights,
+                         bool approximate, int, unsigned);
+
 void PredictInteractionContributions(Context const* ctx, DMatrix* p_fmat,
                                      HostDeviceVector<float>* out_contribs,
                                      const gbm::GBTreeModel& model, unsigned tree_end,

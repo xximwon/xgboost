@@ -5,13 +5,13 @@
  *  performs predictions for a gradient booster.
  */
 #pragma once
-#include <xgboost/base.h>
-#include <xgboost/cache.h>  // DMatrixCache
+#include <xgboost/base.h>   // for bst_tree_t
+#include <xgboost/cache.h>  // for DMatrixCache
 #include <xgboost/context.h>
 #include <xgboost/data.h>
 #include <xgboost/host_device_vector.h>
 
-#include <functional>  // std::function
+#include <functional>  // for function
 #include <memory>
 #include <string>
 #include <thread>   // for get_id
@@ -156,8 +156,7 @@ class Predictor {
    */
 
   virtual void PredictLeaf(DMatrix* dmat, HostDeviceVector<bst_float>* out_preds,
-                           const gbm::GBTreeModel& model,
-                           unsigned tree_end = 0) const = 0;
+                           const gbm::GBTreeModel& model, bst_tree_t tree_end = 0) const = 0;
 
   /**
    * \brief feature contributions to individual predictions; the output will be

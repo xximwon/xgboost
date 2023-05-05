@@ -3,14 +3,24 @@
  */
 #ifndef XGBOOST_PREDICTOR_PREDICT_FN_H_
 #define XGBOOST_PREDICTOR_PREDICT_FN_H_
-#include "../common/categorical.h"
-#include "xgboost/tree_model.h"
+
+#include "../common/categorical.h"            // for IsCat, Decision
+#include "xgboost/base.h"                     // for bst_note_t
+#include "xgboost/context.h"                  // for Context
+#include "xgboost/data.h"                     // for DMatrix
+#include "xgboost/host_device_vector.h"       // for HostDeviceVector
+#include "xgboost/multi_target_tree_model.h"  // for MultiTargetTree
+#include "xgboost/tree_model.h"               // for RegTree
+
+namespace xgboost::gbm {
+struct GBTreeModel;
+}  // namespace xgboost::gbm
 
 namespace xgboost::predictor {
 template <bool has_missing, bool has_categorical>
-inline XGBOOST_DEVICE bst_node_t GetNextNode(const RegTree::Node &node, const bst_node_t nid,
+inline XGBOOST_DEVICE bst_node_t GetNextNode(const RegTree::Node& node, const bst_node_t nid,
                                              float fvalue, bool is_missing,
-                                             RegTree::CategoricalSplitMatrix const &cats) {
+                                             RegTree::CategoricalSplitMatrix const& cats) {
   if (has_missing && is_missing) {
     return node.DefaultChild();
   } else {
@@ -25,10 +35,10 @@ inline XGBOOST_DEVICE bst_node_t GetNextNode(const RegTree::Node &node, const bs
 }
 
 template <bool has_missing, bool has_categorical>
-inline XGBOOST_DEVICE bst_node_t GetNextNodeMulti(MultiTargetTree const &tree,
+inline XGBOOST_DEVICE bst_node_t GetNextNodeMulti(MultiTargetTree const& tree,
                                                   bst_node_t const nidx, float fvalue,
                                                   bool is_missing,
-                                                  RegTree::CategoricalSplitMatrix const &cats) {
+                                                  RegTree::CategoricalSplitMatrix const& cats) {
   if (has_missing && is_missing) {
     return tree.DefaultChild(nidx);
   } else {
@@ -43,5 +53,9 @@ inline XGBOOST_DEVICE bst_node_t GetNextNodeMulti(MultiTargetTree const &tree,
   }
 }
 
+namespace cuda_impl {
+void PredictLeaf(Context const* ctx, DMatrix* p_fmat, HostDeviceVector<float>* predictions,
+                 const gbm::GBTreeModel& model, bst_tree_t tree_end);
+}
 }  // namespace xgboost::predictor
 #endif  // XGBOOST_PREDICTOR_PREDICT_FN_H_

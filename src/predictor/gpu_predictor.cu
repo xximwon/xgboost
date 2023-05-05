@@ -622,7 +622,79 @@ size_t SharedMemoryBytes(size_t cols, size_t max_shared_memory_bytes) {
   }
   return shared_memory_bytes;
 }
+size_t ConfigureDevice(int device) {
+  if (device >= 0) {
+    return dh::MaxSharedMemory(device);
+  }
+  return 0;
+}
 }  // anonymous namespace
+
+namespace cuda_impl {
+void PredictLeaf(Context const* ctx, DMatrix* p_fmat, HostDeviceVector<float>* predictions,
+                 const gbm::GBTreeModel& model, bst_tree_t tree_end) {
+  dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
+  auto max_shared_memory_bytes = ConfigureDevice(ctx->gpu_id);
+
+  const MetaInfo& info = p_fmat->Info();
+  constexpr uint32_t kBlockThreads = 128;
+  size_t shared_memory_bytes =
+      SharedMemoryBytes<kBlockThreads>(info.num_col_, max_shared_memory_bytes);
+  bool use_shared = shared_memory_bytes != 0;
+  bst_feature_t num_features = info.num_col_;
+  bst_row_t num_rows = info.num_row_;
+  size_t entry_start = 0;
+
+  if (tree_end == 0 || tree_end > static_cast<bst_tree_t>(model.trees.size())) {
+    tree_end = model.trees.size();
+  }
+  predictions->SetDevice(ctx->gpu_id);
+  predictions->Resize(num_rows * tree_end);
+  DeviceModel d_model;
+  d_model.Init(model, 0, tree_end, ctx->gpu_id);
+
+  if (p_fmat->PageExists<SparsePage>()) {
+    for (auto const& batch : p_fmat->GetBatches<SparsePage>()) {
+      batch.data.SetDevice(ctx->gpu_id);
+      batch.offset.SetDevice(ctx->gpu_id);
+      bst_row_t batch_offset = 0;
+      SparsePageView data{batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
+                          model.learner_model_param->num_feature};
+      size_t num_rows = batch.Size();
+      auto grid = static_cast<uint32_t>(common::DivRoundUp(num_rows, kBlockThreads));
+      dh::LaunchKernel{grid, kBlockThreads, shared_memory_bytes}(
+          PredictLeafKernel<SparsePageLoader, SparsePageView>, data,
+          d_model.nodes.ConstDeviceSpan(), predictions->DeviceSpan().subspan(batch_offset),
+          d_model.tree_segments.ConstDeviceSpan(),
+
+          d_model.split_types.ConstDeviceSpan(), d_model.categories_tree_segments.ConstDeviceSpan(),
+          d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
+
+          d_model.tree_beg_, d_model.tree_end_, num_features, num_rows, entry_start, use_shared,
+          nan(""));
+      batch_offset += batch.Size();
+    }
+  } else {
+    for (auto const& batch : p_fmat->GetBatches<EllpackPage>(ctx, BatchParam{})) {
+      bst_row_t batch_offset = 0;
+      EllpackDeviceAccessor data{batch.Impl()->GetDeviceAccessor(ctx->gpu_id)};
+      size_t num_rows = batch.Size();
+      auto grid = static_cast<uint32_t>(common::DivRoundUp(num_rows, kBlockThreads));
+      dh::LaunchKernel{grid, kBlockThreads, shared_memory_bytes}(
+          PredictLeafKernel<EllpackLoader, EllpackDeviceAccessor>, data,
+          d_model.nodes.ConstDeviceSpan(), predictions->DeviceSpan().subspan(batch_offset),
+          d_model.tree_segments.ConstDeviceSpan(),
+
+          d_model.split_types.ConstDeviceSpan(), d_model.categories_tree_segments.ConstDeviceSpan(),
+          d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
+
+          d_model.tree_beg_, d_model.tree_end_, num_features, num_rows, entry_start, use_shared,
+          nan(""));
+      batch_offset += batch.Size();
+    }
+  }
+}
+}  // namespace cuda_impl
 
 class GPUPredictor : public xgboost::Predictor {
  private:
@@ -934,77 +1006,9 @@ class GPUPredictor : public xgboost::Predictor {
                << " is not implemented in GPU Predictor.";
   }
 
-  void PredictLeaf(DMatrix *p_fmat, HostDeviceVector<bst_float> *predictions,
-                   const gbm::GBTreeModel &model,
-                   unsigned tree_end) const override {
-    dh::safe_cuda(cudaSetDevice(ctx_->gpu_id));
-    auto max_shared_memory_bytes = ConfigureDevice(ctx_->gpu_id);
-
-    const MetaInfo& info = p_fmat->Info();
-    constexpr uint32_t kBlockThreads = 128;
-    size_t shared_memory_bytes = SharedMemoryBytes<kBlockThreads>(
-        info.num_col_, max_shared_memory_bytes);
-    bool use_shared = shared_memory_bytes != 0;
-    bst_feature_t num_features = info.num_col_;
-    bst_row_t num_rows = info.num_row_;
-    size_t entry_start = 0;
-
-    if (tree_end == 0 || tree_end > model.trees.size()) {
-      tree_end = static_cast<uint32_t>(model.trees.size());
-    }
-    predictions->SetDevice(ctx_->gpu_id);
-    predictions->Resize(num_rows * tree_end);
-    DeviceModel d_model;
-    d_model.Init(model, 0, tree_end, this->ctx_->gpu_id);
-
-    if (p_fmat->PageExists<SparsePage>()) {
-      for (auto const& batch : p_fmat->GetBatches<SparsePage>()) {
-        batch.data.SetDevice(ctx_->gpu_id);
-        batch.offset.SetDevice(ctx_->gpu_id);
-        bst_row_t batch_offset = 0;
-        SparsePageView data{batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
-                            model.learner_model_param->num_feature};
-        size_t num_rows = batch.Size();
-        auto grid =
-            static_cast<uint32_t>(common::DivRoundUp(num_rows, kBlockThreads));
-        dh::LaunchKernel {grid, kBlockThreads, shared_memory_bytes} (
-            PredictLeafKernel<SparsePageLoader, SparsePageView>, data,
-            d_model.nodes.ConstDeviceSpan(),
-            predictions->DeviceSpan().subspan(batch_offset),
-            d_model.tree_segments.ConstDeviceSpan(),
-
-            d_model.split_types.ConstDeviceSpan(),
-            d_model.categories_tree_segments.ConstDeviceSpan(),
-            d_model.categories_node_segments.ConstDeviceSpan(),
-            d_model.categories.ConstDeviceSpan(),
-
-            d_model.tree_beg_, d_model.tree_end_, num_features, num_rows,
-            entry_start, use_shared, nan(""));
-        batch_offset += batch.Size();
-      }
-    } else {
-      for (auto const& batch : p_fmat->GetBatches<EllpackPage>(ctx_, BatchParam{})) {
-        bst_row_t batch_offset = 0;
-        EllpackDeviceAccessor data{batch.Impl()->GetDeviceAccessor(ctx_->gpu_id)};
-        size_t num_rows = batch.Size();
-        auto grid =
-            static_cast<uint32_t>(common::DivRoundUp(num_rows, kBlockThreads));
-        dh::LaunchKernel {grid, kBlockThreads, shared_memory_bytes} (
-            PredictLeafKernel<EllpackLoader, EllpackDeviceAccessor>, data,
-            d_model.nodes.ConstDeviceSpan(),
-            predictions->DeviceSpan().subspan(batch_offset),
-            d_model.tree_segments.ConstDeviceSpan(),
-
-            d_model.split_types.ConstDeviceSpan(),
-            d_model.categories_tree_segments.ConstDeviceSpan(),
-            d_model.categories_node_segments.ConstDeviceSpan(),
-            d_model.categories.ConstDeviceSpan(),
-
-            d_model.tree_beg_, d_model.tree_end_, num_features, num_rows,
-            entry_start, use_shared, nan(""));
-        batch_offset += batch.Size();
-      }
-    }
+  void PredictLeaf(DMatrix* p_fmat, HostDeviceVector<bst_float>* predictions,
+                   const gbm::GBTreeModel& model, bst_tree_t tree_end) const override {
+    LOG(FATAL);
   }
 
   void Configure(const std::vector<std::pair<std::string, std::string>>& cfg) override {

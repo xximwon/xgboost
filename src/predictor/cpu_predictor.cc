@@ -750,15 +750,20 @@ class CPUPredictor : public Predictor {
   }
 
   void PredictLeaf(DMatrix *p_fmat, HostDeviceVector<bst_float> *out_preds,
-                   const gbm::GBTreeModel &model, unsigned ntree_limit) const override {
+                   const gbm::GBTreeModel &model, bst_tree_t ntree_limit) const override {
+    if (this->ctx_->IsCUDA()) {
+      cuda_impl::PredictLeaf(ctx_, p_fmat, out_preds, model, ntree_limit);
+      return;
+    }
+
     auto const n_threads = this->ctx_->Threads();
     std::vector<RegTree::FVec> feat_vecs;
     const int num_feature = model.learner_model_param->num_feature;
     InitThreadTemp(n_threads, &feat_vecs);
     const MetaInfo &info = p_fmat->Info();
     // number of valid trees
-    if (ntree_limit == 0 || ntree_limit > model.trees.size()) {
-      ntree_limit = static_cast<unsigned>(model.trees.size());
+    if (ntree_limit == 0 || ntree_limit > static_cast<bst_tree_t>(model.trees.size())) {
+      ntree_limit = static_cast<bst_tree_t>(model.trees.size());
     }
     std::vector<bst_float> &preds = out_preds->HostVector();
     preds.resize(info.num_row_ * ntree_limit);
@@ -774,7 +779,7 @@ class CPUPredictor : public Predictor {
           feats.Init(num_feature);
         }
         feats.Fill(page[i]);
-        for (std::uint32_t j = 0; j < ntree_limit; ++j) {
+        for (bst_tree_t j = 0; j < ntree_limit; ++j) {
           auto const &tree = *model.trees[j];
           auto const &cats = tree.GetCategoriesMatrix();
           bst_node_t nidx;

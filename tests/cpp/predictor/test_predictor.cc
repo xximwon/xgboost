@@ -227,7 +227,7 @@ void TestCategoricalPrediction(std::string name) {
   gbm::GBTreeModel model(&mparam, &ctx);
   GBTreeModelForTest(&model, split_ind, split_cat, left_weight, right_weight);
 
-  ctx.UpdateAllowUnknown(Args{{"gpu_id", "0"}});
+  ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
   std::unique_ptr<Predictor> predictor{Predictor::Create(name.c_str(), &ctx)};
 
   std::vector<float> row(kCols);
@@ -237,7 +237,7 @@ void TestCategoricalPrediction(std::string name) {
   std::vector<FeatureType> types(10, FeatureType::kCategorical);
   m->Info().feature_types.HostVector() = types;
 
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(&ctx, m->Info(), &out_predictions.predictions, model);
   predictor->PredictBatch(m.get(), &out_predictions, model, 0);
   auto score = mparam.BaseScore(Context::kCpuId)(0);
   ASSERT_EQ(out_predictions.predictions.Size(), 1ul);
@@ -247,7 +247,7 @@ void TestCategoricalPrediction(std::string name) {
   row[split_ind] = split_cat + 1;
   m = GetDMatrixFromData(row, 1, kCols);
   out_predictions.version = 0;
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(&ctx, m->Info(), &out_predictions.predictions, model);
   predictor->PredictBatch(m.get(), &out_predictions, model, 0);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0], left_weight + score);
 }
@@ -284,7 +284,7 @@ void TestCategoricalPredictLeaf(StringView name) {
   row[split_ind] = split_cat + 1;
   m = GetDMatrixFromData(row, 1, kCols);
   out_predictions.version = 0;
-  predictor->InitOutPredictions(m->Info(), &out_predictions.predictions, model);
+  predictor->InitOutPredictions(&ctx, m->Info(), &out_predictions.predictions, model);
   predictor->PredictLeaf(m.get(), &out_predictions.predictions, model);
   ASSERT_EQ(out_predictions.predictions.HostVector()[0], 1);
 }
@@ -451,7 +451,7 @@ void TestVectorLeafPrediction(Context const *ctx) {
     {
       auto p_fmat = GetDMatrixFromData(p_data->ConstHostVector(), kRows, kCols);
       PredictionCacheEntry predt_cache;
-      cpu_predictor->InitOutPredictions(p_fmat->Info(), &predt_cache.predictions, model);
+      cpu_predictor->InitOutPredictions(ctx, p_fmat->Info(), &predt_cache.predictions, model);
       ASSERT_EQ(predt_cache.predictions.Size(), kRows * mparam.LeafLength());
       cpu_predictor->PredictBatch(p_fmat.get(), &predt_cache, model, 0, 1);
       auto const &h_predt = predt_cache.predictions.HostVector();
@@ -464,7 +464,7 @@ void TestVectorLeafPrediction(Context const *ctx) {
       // inplace
       PredictionCacheEntry predt_cache;
       auto p_fmat = GetDMatrixFromData(p_data->ConstHostVector(), kRows, kCols);
-      cpu_predictor->InitOutPredictions(p_fmat->Info(), &predt_cache.predictions, model);
+      cpu_predictor->InitOutPredictions(ctx, p_fmat->Info(), &predt_cache.predictions, model);
       auto arr = GetArrayInterface(p_data, kRows, kCols);
       std::string str;
       Json::Dump(arr, &str);
@@ -488,7 +488,7 @@ void TestVectorLeafPrediction(Context const *ctx) {
       }
       auto p_fmat = GetDMatrixFromData(p_data->ConstHostVector(), kRows, kCols);
 
-      cpu_predictor->InitOutPredictions(p_fmat->Info(), &predt_cache.predictions, model);
+      cpu_predictor->InitOutPredictions(ctx, p_fmat->Info(), &predt_cache.predictions, model);
 
       auto iter = NumpyArrayIterForTest{ctx, *p_data, kRows, static_cast<bst_feature_t>(kCols),
                                         static_cast<std::size_t>(1)};
@@ -496,7 +496,7 @@ void TestVectorLeafPrediction(Context const *ctx) {
           std::make_shared<data::IterativeDMatrix>(&iter, iter.Proxy(), nullptr, Reset, Next,
                                                    std::numeric_limits<float>::quiet_NaN(), 0, 256);
 
-      cpu_predictor->InitOutPredictions(p_fmat->Info(), &predt_cache.predictions, model);
+      cpu_predictor->InitOutPredictions(ctx, p_fmat->Info(), &predt_cache.predictions, model);
       cpu_predictor->PredictBatch(p_fmat.get(), &predt_cache, model, 0, 1);
       auto const &h_predt = predt_cache.predictions.HostVector();
       // the smallest v uses the min_value from histogram cuts, which leads to a left leaf

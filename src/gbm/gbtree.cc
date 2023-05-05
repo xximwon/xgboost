@@ -592,7 +592,7 @@ void GBTree::PredictBatch(DMatrix* p_fmat, PredictionCacheEntry* out_preds, bool
   if (out_preds->version == 0) {
     // out_preds->Size() can be non-zero as it's initialized here before any
     // tree is built at the 0^th iterator.
-    predictor->InitOutPredictions(p_fmat->Info(), &out_preds->predictions, model_);
+    predictor->InitOutPredictions(ctx_, p_fmat->Info(), &out_preds->predictions, model_);
   }
 
   auto [tree_begin, tree_end] = detail::LayerToTree(model_, layer_begin, layer_end);
@@ -798,8 +798,7 @@ class Dart : public GBTree {
     CHECK(!this->model_.learner_model_param->IsVectorLeaf()) << "dart" << MTNotImplemented();
     auto &predictor = this->GetPredictor(&p_out_preds->predictions, p_fmat);
     CHECK(predictor);
-    predictor->InitOutPredictions(p_fmat->Info(), &p_out_preds->predictions,
-                                  model_);
+    predictor->InitOutPredictions(ctx_, p_fmat->Info(), &p_out_preds->predictions, model_);
     p_out_preds->version = 0;
     auto [tree_begin, tree_end] = detail::LayerToTree(model_, layer_begin, layer_end);
     auto n_groups = model_.learner_model_param->num_output_group;
@@ -902,7 +901,7 @@ class Dart : public GBTree {
     for (bst_tree_t i = tree_begin; i < tree_end; ++i) {
       predict_impl(i);
       if (i == tree_begin) {
-        predictor->InitOutPredictions(p_fmat->Info(), &p_out_preds->predictions, model_);
+        predictor->InitOutPredictions(ctx_, p_fmat->Info(), &p_out_preds->predictions, model_);
       }
       // Multiple the tree weight
       auto w = this->weight_drop_.at(i);

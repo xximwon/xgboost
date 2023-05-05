@@ -18,24 +18,21 @@
 
 namespace xgboost {
 TEST(CpuPredictor, Basic) {
-  auto lparam = CreateEmptyGenericParam(GPUIDX);
-  std::unique_ptr<Predictor> cpu_predictor =
-      std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &lparam));
+  auto ctx = CreateEmptyGenericParam(GPUIDX);
+  auto cpu_predictor = std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &ctx));
 
   size_t constexpr kRows = 5;
   size_t constexpr kCols = 5;
 
   LearnerModelParam mparam{MakeMP(kCols, .0, 1)};
 
-  Context ctx;
-  ctx.UpdateAllowUnknown(Args{});
   gbm::GBTreeModel model = CreateTestModel(&mparam, &ctx);
 
   auto dmat = RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
 
   // Test predict batch
   PredictionCacheEntry out_predictions;
-  cpu_predictor->InitOutPredictions(dmat->Info(), &out_predictions.predictions, model);
+  cpu_predictor->InitOutPredictions(&ctx, dmat->Info(), &out_predictions.predictions, model);
   cpu_predictor->PredictBatch(dmat.get(), &out_predictions, model, 0);
 
   std::vector<float>& out_predictions_h = out_predictions.predictions.HostVector();
@@ -110,7 +107,7 @@ void TestColumnSplitPredictBatch() {
 
   // Test predict batch
   PredictionCacheEntry out_predictions;
-  cpu_predictor->InitOutPredictions(dmat->Info(), &out_predictions.predictions, model);
+  cpu_predictor->InitOutPredictions(&ctx, dmat->Info(), &out_predictions.predictions, model);
   auto sliced = std::unique_ptr<DMatrix>{dmat->SliceCol(world_size, rank)};
   cpu_predictor->PredictBatch(sliced.get(), &out_predictions, model, 0);
 
@@ -135,20 +132,18 @@ TEST(CpuPredictor, ExternalMemory) {
   size_t constexpr kEntries = kPageSize * kEntriesPerCol * 2;
 
   std::unique_ptr<DMatrix> dmat = CreateSparsePageDMatrix(kEntries);
-  auto lparam = CreateEmptyGenericParam(GPUIDX);
+  auto ctx = CreateEmptyGenericParam(GPUIDX);
 
   std::unique_ptr<Predictor> cpu_predictor =
-      std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &lparam));
+      std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &ctx));
 
   LearnerModelParam mparam{MakeMP(dmat->Info().num_col_, .0, 1)};
 
-  Context ctx;
-  ctx.UpdateAllowUnknown(Args{});
   gbm::GBTreeModel model = CreateTestModel(&mparam, &ctx);
 
   // Test predict batch
   PredictionCacheEntry out_predictions;
-  cpu_predictor->InitOutPredictions(dmat->Info(), &out_predictions.predictions, model);
+  cpu_predictor->InitOutPredictions(&ctx, dmat->Info(), &out_predictions.predictions, model);
   cpu_predictor->PredictBatch(dmat.get(), &out_predictions, model, 0);
   std::vector<float> &out_predictions_h = out_predictions.predictions.HostVector();
   ASSERT_EQ(out_predictions.predictions.Size(), dmat->Info().num_row_);

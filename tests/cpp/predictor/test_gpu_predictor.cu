@@ -15,17 +15,16 @@
 #include "../helpers.h"
 #include "test_predictor.h"
 
-namespace xgboost {
-namespace predictor {
+namespace xgboost::predictor {
 
 TEST(GPUPredictor, Basic) {
-  auto cpu_lparam = CreateEmptyGenericParam(-1);
-  auto gpu_lparam = CreateEmptyGenericParam(0);
+  auto cpu_ctx = CreateEmptyGenericParam(-1);
+  auto gpu_ctx = CreateEmptyGenericParam(0);
 
   std::unique_ptr<Predictor> gpu_predictor =
-      std::unique_ptr<Predictor>(Predictor::Create("gpu_predictor", &gpu_lparam));
+      std::unique_ptr<Predictor>(Predictor::Create("gpu_predictor", &gpu_ctx));
   std::unique_ptr<Predictor> cpu_predictor =
-      std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &cpu_lparam));
+      std::unique_ptr<Predictor>(Predictor::Create("cpu_predictor", &cpu_ctx));
 
   gpu_predictor->Configure({});
   cpu_predictor->Configure({});
@@ -43,9 +42,11 @@ TEST(GPUPredictor, Basic) {
     PredictionCacheEntry gpu_out_predictions;
     PredictionCacheEntry cpu_out_predictions;
 
-    gpu_predictor->InitOutPredictions(dmat->Info(), &gpu_out_predictions.predictions, model);
+    gpu_predictor->InitOutPredictions(&gpu_ctx, dmat->Info(), &gpu_out_predictions.predictions,
+                                      model);
     gpu_predictor->PredictBatch(dmat.get(), &gpu_out_predictions, model, 0);
-    cpu_predictor->InitOutPredictions(dmat->Info(), &cpu_out_predictions.predictions, model);
+    cpu_predictor->InitOutPredictions(&cpu_ctx, dmat->Info(), &cpu_out_predictions.predictions,
+                                      model);
     cpu_predictor->PredictBatch(dmat.get(), &cpu_out_predictions, model, 0);
 
     std::vector<float>& gpu_out_predictions_h = gpu_out_predictions.predictions.HostVector();
@@ -84,14 +85,12 @@ TEST(GPUPredictor, EllpackTraining) {
 }
 
 TEST(GPUPredictor, ExternalMemoryTest) {
-  auto lparam = CreateEmptyGenericParam(0);
+  auto ctx = MakeCUDACtx(0);
   std::unique_ptr<Predictor> gpu_predictor =
-      std::unique_ptr<Predictor>(Predictor::Create("gpu_predictor", &lparam));
+      std::unique_ptr<Predictor>(Predictor::Create("gpu_predictor", &ctx));
   gpu_predictor->Configure({});
 
   const int n_classes = 3;
-  Context ctx;
-  ctx.gpu_id = 0;
   LearnerModelParam mparam{MakeMP(5, .5, n_classes, ctx.gpu_id)};
 
   gbm::GBTreeModel model = CreateTestModel(&mparam, &ctx, n_classes);
@@ -106,7 +105,7 @@ TEST(GPUPredictor, ExternalMemoryTest) {
         {dmat->Info().num_row_, static_cast<size_t>(n_classes)}, 0};
     dmat->Info().base_margin_.Data()->Fill(0.5);
     PredictionCacheEntry out_predictions;
-    gpu_predictor->InitOutPredictions(dmat->Info(), &out_predictions.predictions, model);
+    gpu_predictor->InitOutPredictions(&ctx, dmat->Info(), &out_predictions.predictions, model);
     gpu_predictor->PredictBatch(dmat.get(), &out_predictions, model, 0);
     EXPECT_EQ(out_predictions.predictions.Size(), dmat->Info().num_row_ * n_classes);
     const std::vector<float> &host_vector = out_predictions.predictions.ConstHostVector();
@@ -242,5 +241,4 @@ TEST(GPUPredictor, Sparse) {
   TestSparsePrediction(0.2, "gpu_predictor");
   TestSparsePrediction(0.8, "gpu_predictor");
 }
-}  // namespace predictor
-}  // namespace xgboost
+}  // namespace xgboost::predictor

@@ -43,14 +43,15 @@ void ValidateBaseMarginShape(linalg::Tensor<float, D> const& margin, bst_row_t n
   CHECK_EQ(margin.Shape(1), n_groups) << expected;
 }
 
-void Predictor::InitOutPredictions(const MetaInfo& info, HostDeviceVector<bst_float>* out_preds,
-                                   const gbm::GBTreeModel& model) const {
+void Predictor::InitOutPredictions(Context const* ctx, const MetaInfo& info,
+                                   HostDeviceVector<bst_float>* out_preds,
+                                   const gbm::GBTreeModel& model) {
   CHECK_NE(model.learner_model_param->num_output_group, 0);
   std::size_t n{model.learner_model_param->OutputLength() * info.num_row_};
 
   const HostDeviceVector<bst_float>* base_margin = info.base_margin_.Data();
-  if (ctx_->gpu_id >= 0) {
-    out_preds->SetDevice(ctx_->gpu_id);
+  if (ctx->gpu_id >= 0) {
+    out_preds->SetDevice(ctx->gpu_id);
   }
   if (!base_margin->Empty()) {
     out_preds->Resize(n);

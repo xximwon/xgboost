@@ -631,6 +631,51 @@ size_t ConfigureDevice(int device) {
 }  // anonymous namespace
 
 namespace cuda_impl {
+template <typename Adapter, typename Loader>
+void DispatchedInplacePredict(Context const* ctx, std::any const& x, std::shared_ptr<DMatrix> p_m,
+                              const gbm::GBTreeModel& model, float missing,
+                              PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
+                              bst_tree_t tree_end) {
+  uint32_t const output_groups = model.learner_model_param->num_output_group;
+
+  auto m = std::any_cast<std::shared_ptr<Adapter>>(x);
+  CHECK_EQ(m->NumColumns(), model.learner_model_param->num_feature)
+      << "Number of columns in data must equal to trained model.";
+  CHECK_EQ(dh::CurrentDevice(), m->DeviceIdx())
+      << "XGBoost is running on device: " << ctx->gpu_id << ", "
+      << "but data is on: " << m->DeviceIdx();
+  if (p_m) {
+    p_m->Info().num_row_ = m->NumRows();
+    Predictor::InitOutPredictions(ctx, p_m->Info(), &(out_preds->predictions), model);
+  } else {
+    MetaInfo info;
+    info.num_row_ = m->NumRows();
+    Predictor::InitOutPredictions(ctx, info, &(out_preds->predictions), model);
+  }
+  out_preds->predictions.SetDevice(m->DeviceIdx());
+
+  const uint32_t BLOCK_THREADS = 128;
+  auto GRID_SIZE = static_cast<uint32_t>(common::DivRoundUp(m->NumRows(), BLOCK_THREADS));
+
+  auto max_shared_memory_bytes = dh::MaxSharedMemory(m->DeviceIdx());
+  size_t shared_memory_bytes =
+      SharedMemoryBytes<BLOCK_THREADS>(m->NumColumns(), max_shared_memory_bytes);
+  DeviceModel d_model;
+  d_model.Init(model, tree_begin, tree_end, m->DeviceIdx());
+
+  bool use_shared = shared_memory_bytes != 0;
+  size_t entry_start = 0;
+
+  dh::LaunchKernel{GRID_SIZE, BLOCK_THREADS, shared_memory_bytes}(
+      PredictKernel<Loader, typename Loader::BatchT>, m->Value(), d_model.nodes.ConstDeviceSpan(),
+      out_preds->predictions.DeviceSpan(), d_model.tree_segments.ConstDeviceSpan(),
+      d_model.tree_group.ConstDeviceSpan(), d_model.split_types.ConstDeviceSpan(),
+      d_model.categories_tree_segments.ConstDeviceSpan(),
+      d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
+      tree_begin, tree_end, m->NumColumns(), m->NumRows(), entry_start, use_shared, output_groups,
+      missing);
+}
+
 void PredictLeaf(Context const* ctx, DMatrix* p_fmat, HostDeviceVector<float>* predictions,
                  const gbm::GBTreeModel& model, bst_tree_t tree_end) {
   dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
@@ -859,8 +904,8 @@ class GPUPredictor : public xgboost::Predictor {
   }
 
   bool InplacePredict(std::shared_ptr<DMatrix> p_m, const gbm::GBTreeModel& model, float missing,
-                      PredictionCacheEntry* out_preds, uint32_t tree_begin,
-                      unsigned tree_end) const override {
+                      PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
+                      bst_tree_t tree_end) const override {
     auto proxy = dynamic_cast<data::DMatrixProxy*>(p_m.get());
     CHECK(proxy)<< "Inplace predict accepts only DMatrixProxy as input.";
     auto x = proxy->Adapter();

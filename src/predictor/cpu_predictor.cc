@@ -705,8 +705,8 @@ class CPUPredictor : public Predictor {
   }
 
   bool InplacePredict(std::shared_ptr<DMatrix> p_m, const gbm::GBTreeModel &model, float missing,
-                      PredictionCacheEntry *out_preds, uint32_t tree_begin,
-                      unsigned tree_end) const override {
+                      PredictionCacheEntry *out_preds, bst_tree_t tree_begin,
+                      bst_tree_t tree_end) const override {
     auto proxy = dynamic_cast<data::DMatrixProxy *>(p_m.get());
     CHECK(proxy)<< "Inplace predict accepts only DMatrixProxy as input.";
     auto x = proxy->Adapter();
@@ -731,6 +731,9 @@ class CPUPredictor : public Predictor {
   void PredictInstance(const SparsePage::Inst& inst,
                        std::vector<bst_float>* out_preds,
                        const gbm::GBTreeModel& model, unsigned ntree_limit) const override {
+    if (ctx_->IsCUDA()) {
+      LOG(FATAL) << "Not implemented";
+    }
     CHECK(!model.learner_model_param->IsVectorLeaf()) << "predict instance" << MTNotImplemented();
     std::vector<RegTree::FVec> feat_vecs;
     feat_vecs.resize(1, RegTree::FVec());

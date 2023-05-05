@@ -95,8 +95,9 @@ class Predictor {
    * \param out_predt Prediction vector to be initialized.
    * \param model Tree model used for prediction.
    */
-  void InitOutPredictions(const MetaInfo& info, HostDeviceVector<bst_float>* out_predt,
-                          const gbm::GBTreeModel& model) const;
+  static void InitOutPredictions(Context const* ctx, const MetaInfo& info,
+                                 HostDeviceVector<bst_float>* out_predt,
+                                 const gbm::GBTreeModel& model);
 
   /**
    * \brief Generate batch predictions for a given feature matrix. May use
@@ -127,7 +128,7 @@ class Predictor {
    */
   virtual bool InplacePredict(std::shared_ptr<DMatrix> p_fmat, const gbm::GBTreeModel& model,
                               float missing, PredictionCacheEntry* out_preds,
-                              uint32_t tree_begin = 0, uint32_t tree_end = 0) const = 0;
+                              bst_tree_t tree_begin = 0, bst_tree_t tree_end = 0) const = 0;
   /**
    * \brief online prediction function, predict score for one instance at a time
    * NOTE: use the batch prediction interface if possible, batch prediction is
@@ -140,10 +141,8 @@ class Predictor {
    * \param           tree_end    (Optional) The tree end index.
    */
 
-  virtual void PredictInstance(const SparsePage::Inst& inst,
-                               std::vector<bst_float>* out_preds,
-                               const gbm::GBTreeModel& model,
-                               unsigned tree_end = 0) const = 0;
+  virtual void PredictInstance(const SparsePage::Inst& inst, std::vector<float>* out_preds,
+                               const gbm::GBTreeModel& model, unsigned tree_end = 0) const = 0;
 
   /**
    * \brief predict the leaf index of each tree, the output will be nsample *
@@ -155,7 +154,7 @@ class Predictor {
    * \param           tree_end    (Optional) The tree end index.
    */
 
-  virtual void PredictLeaf(DMatrix* dmat, HostDeviceVector<bst_float>* out_preds,
+  virtual void PredictLeaf(DMatrix* dmat, HostDeviceVector<float>* out_preds,
                            const gbm::GBTreeModel& model, bst_tree_t tree_end = 0) const = 0;
 
   /**

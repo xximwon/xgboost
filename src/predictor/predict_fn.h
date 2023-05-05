@@ -12,9 +12,12 @@
 #include "xgboost/multi_target_tree_model.h"  // for MultiTargetTree
 #include "xgboost/tree_model.h"               // for RegTree
 
-namespace xgboost::gbm {
+namespace xgboost {
+struct PredictionCacheEntry;
+namespace gbm {
 struct GBTreeModel;
-}  // namespace xgboost::gbm
+}  // namespace gbm
+}  // namespace xgboost
 
 namespace xgboost::predictor {
 template <bool has_missing, bool has_categorical>
@@ -54,8 +57,12 @@ inline XGBOOST_DEVICE bst_node_t GetNextNodeMulti(MultiTargetTree const& tree,
 }
 
 namespace cuda_impl {
+bool InplacePredict(Context const* ctx, std::shared_ptr<DMatrix> p_m, const gbm::GBTreeModel& model,
+                    float missing, PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
+                    bst_tree_t tree_end);
+
 void PredictLeaf(Context const* ctx, DMatrix* p_fmat, HostDeviceVector<float>* predictions,
                  const gbm::GBTreeModel& model, bst_tree_t tree_end);
-}
+}  // namespace cuda_impl
 }  // namespace xgboost::predictor
 #endif  // XGBOOST_PREDICTOR_PREDICT_FN_H_

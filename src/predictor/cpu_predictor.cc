@@ -708,8 +708,9 @@ class CPUPredictor : public Predictor {
                       PredictionCacheEntry *out_preds, bst_tree_t tree_begin,
                       bst_tree_t tree_end) const override {
     auto proxy = dynamic_cast<data::DMatrixProxy *>(p_m.get());
-    CHECK(proxy)<< "Inplace predict accepts only DMatrixProxy as input.";
+    CHECK(proxy) << "Inplace predict accepts only DMatrixProxy as input.";
     auto x = proxy->Adapter();
+
     if (x.type() == typeid(std::shared_ptr<data::DenseAdapter>)) {
       this->DispatchedInplacePredict<data::DenseAdapter, kBlockOfRowsSize>(
           x, p_m, model, missing, out_preds, tree_begin, tree_end);
@@ -722,9 +723,12 @@ class CPUPredictor : public Predictor {
     } else if (x.type() == typeid(std::shared_ptr<data::CSRArrayAdapter>)) {
       this->DispatchedInplacePredict<data::CSRArrayAdapter, 1>(x, p_m, model, missing, out_preds,
                                                                tree_begin, tree_end);
+    } else if (cuda_impl::InplacePredict(ctx_, p_m, model, missing, out_preds, tree_begin,
+                                         tree_end)) {
     } else {
       return false;
     }
+
     return true;
   }
 

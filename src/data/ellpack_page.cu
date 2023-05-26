@@ -168,7 +168,7 @@ struct WriteCompressedEllpackFunctor {
         bin_idx = accessor.SearchBin<false>(e.value, e.column_idx);
       }
       if (accessor.is_dense) {
-        auto offset = accessor.gidx_fvalue_map[e.column_idx];
+        auto offset = accessor.feature_segments[e.column_idx];
         bin_idx -= offset;
       }
       writer.AtomicWriteSymbol(d_buffer, bin_idx, output_position);
@@ -485,18 +485,13 @@ void EllpackPageImpl::Compact(int device, EllpackPageImpl const* page,
 
 // Initialize the buffer to stored compressed features.
 void EllpackPageImpl::InitCompressedData(int device) {
+  gidx_buffer.SetDevice(device);
   std::size_t num_symbols = NumSymbols();
-
-  if (this->is_dense) {
-    auto const dptrs = this->cuts_.cut_ptrs_.ConstDeviceSpan();
-    num_symbols = CalcNSymbolsDense(dptrs);
-  }
 
   // Required buffer size for storing data matrix in ELLPack format.
   std::size_t compressed_size_bytes =
       common::CompressedBufferWriter::CalculateBufferSize(row_stride * n_rows, num_symbols);
   std::cout << compressed_size_bytes << std::endl;
-  gidx_buffer.SetDevice(device);
   // Don't call fill unnecessarily
   if (gidx_buffer.Size() == 0) {
     gidx_buffer.Resize(compressed_size_bytes, 0);

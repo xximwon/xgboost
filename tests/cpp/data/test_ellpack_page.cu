@@ -111,8 +111,8 @@ TEST(EllpackPage, FromCategoricalBasic) {
 
   std::vector<common::CompressedByteT> const &h_gidx_buffer =
       ellpack.Impl()->gidx_buffer.HostVector();
-  auto h_gidx_iter = common::CompressedIterator<uint32_t>(
-      h_gidx_buffer.data(), accessor.NumSymbols());
+  auto h_gidx_iter =
+      common::CompressedIterator<uint32_t>(h_gidx_buffer.data(), ellpack.Impl()->NumSymbols());
 
   for (size_t i = 0; i < x.size(); ++i) {
     auto bin = h_gidx_iter[i];

@@ -128,7 +128,7 @@ struct EllpackDeviceAccessor {
     // fixme: compile time dispatch
     auto gidx = this->gidx_iter[idx];
     if (this->is_dense) {
-      auto fidx = idx % this->row_stride;
+      auto [_, fidx] = linalg::UnravelIndex(idx, n_rows, row_stride);
       gidx += feature_segments[fidx];
     }
     return gidx;

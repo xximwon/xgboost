@@ -106,6 +106,9 @@ struct EllpackDeviceAccessor {
     if (gidx == -1) {
       return nan("");
     }
+    if (this->is_dense) {
+      gidx += feature_segments[fidx];
+    }
     return gidx_fvalue_map[gidx];
   }
 

@@ -207,6 +207,7 @@ std::size_t CalcNSymbolsDense(common::Span<std::uint32_t const> dptrs) {
 }
 
 std::size_t EllpackPageImpl::NumSymbols() const {
+  this->cuts_.cut_ptrs_.SetDevice(gidx_buffer.DeviceIdx());
   if (this->is_dense) {
     return CalcNSymbolsDense(this->cuts_.cut_ptrs_.ConstDeviceSpan());
   }

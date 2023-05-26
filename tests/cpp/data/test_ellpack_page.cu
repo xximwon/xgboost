@@ -6,7 +6,9 @@
 #include <utility>
 
 #include "../../../src/common/categorical.h"
+#include "../../../src/common/hist_util.cuh"  // for ProcessSlidingWindow
 #include "../../../src/common/hist_util.h"
+#include "../../../src/data/device_adapter.cuh"
 #include "../../../src/data/ellpack_page.cuh"
 #include "../../../src/tree/param.h"  // TrainParam
 #include "../helpers.h"
@@ -37,6 +39,7 @@ TEST(EllpackPage, BuildGidxDense) {
   common::CompressedIterator<uint32_t> gidx(h_gidx_buffer.data(), page->NumSymbols());
 
   ASSERT_EQ(page->row_stride, kNCols);
+  ASSERT_TRUE(page->is_dense);
 
   std::vector<uint32_t> solution = {
     0, 3, 8,  9, 14, 17, 20, 21,
@@ -57,6 +60,7 @@ TEST(EllpackPage, BuildGidxDense) {
     1, 4, 7, 10, 14, 16, 19, 21,
   };
   for (size_t i = 0; i < kNRows * kNCols; ++i) {
+    auto [ridx, fidx] = linalg::UnravelIndex(i, kNRows, kNCols);
     ASSERT_EQ(solution[i], gidx[i]);
   }
 }
@@ -241,6 +245,53 @@ TEST(EllpackPage, Compact) {
       current_row++;
     }
   }
+}
+
+void TestEllpackAdapter() {
+  auto missing = std::numeric_limits<float>::quiet_NaN();
+  auto ctx = MakeCUDACtx(0);
+  bool is_dense = true;
+
+  HostDeviceVector<FeatureType> feature_types;
+  feature_types.SetDevice(ctx.gpu_id);
+  common::Span<FeatureType const> d_feature_types = feature_types.ConstDeviceSpan();
+
+  std::size_t row_stride = 3;
+  bst_row_t rows = 14;
+  HostDeviceVector<float> storage;
+  auto str_interface = RandomDataGenerator{rows, row_stride, 0.0}
+                           .Device(ctx.gpu_id)
+                           .GenerateArrayInterface(&storage);
+  data::CupyAdapter adapter{str_interface};
+  auto value = adapter.Value();
+  dh::device_vector<std::size_t> row_counts(rows, 0);
+  auto row_counts_span = dh::ToSpan(row_counts);
+  GetRowCounts(value, row_counts_span, ctx.gpu_id, missing);
+
+  MetaInfo info;
+  info.num_row_ = rows;
+  info.num_col_ = row_stride;
+  info.num_nonzero_ = rows * row_stride;
+
+  bst_bin_t n_bins = 5;
+  common::SketchContainer container{
+      feature_types, n_bins, static_cast<bst_feature_t>(info.num_col_), info.num_row_, ctx.gpu_id};
+  AdapterDeviceSketch(value, n_bins, info, missing, &container);
+  common::HistogramCuts cuts;
+  container.MakeCuts(&cuts);
+
+  auto e = EllpackPageImpl(value, missing, ctx.gpu_id, is_dense, row_counts_span, d_feature_types,
+                           row_stride, rows, cuts);
+
+  auto accessor = e.GetDeviceAccessor(ctx.gpu_id, d_feature_types);
+  dh::LaunchN(rows * row_stride, [=] XGBOOST_DEVICE(std::size_t idx) {
+    bst_bin_t bin_idx = accessor[idx];
+    printf("idx: %lu, bin: %d\n", idx, bin_idx);
+  });  
+}
+
+TEST(EllpackPage, Adapter) {
+  TestEllpackAdapter();
 }
 
 namespace {

@@ -157,10 +157,8 @@ class HistogramAgent {
          idx < std::min(offset + kBlockThreads * kItemsPerTile, n_elements_);
          idx += kBlockThreads) {
       int ridx = d_ridx_[idx / feature_stride_];
-      int gidx =
-          matrix_
-              .gidx_iter[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_] -
-          group_.start_bin;
+      int gidx = matrix_[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_] -
+                 group_.start_bin;
       if (matrix_.is_dense || gidx != matrix_.NumBins()) {
         auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
         AtomicAddGpairShared(smem_arr_ + gidx, adjusted);
@@ -186,8 +184,8 @@ class HistogramAgent {
 #pragma unroll
     for (int i = 0; i < kItemsPerThread; i++) {
       gpair[i] = d_gpair_[ridx[i]];
-      gidx[i] = matrix_.gidx_iter[ridx[i] * matrix_.row_stride + group_.start_feature +
-                                 idx[i] % feature_stride_];
+      gidx[i] =
+          matrix_[ridx[i] * matrix_.row_stride + group_.start_feature + idx[i] % feature_stride_];
     }
 #pragma unroll
     for (int i = 0; i < kItemsPerThread; i++) {
@@ -218,9 +216,7 @@ class HistogramAgent {
   __device__ void BuildHistogramWithGlobal() {
     for (auto idx : dh::GridStrideRange(static_cast<std::size_t>(0), n_elements_)) {
       int ridx = d_ridx_[idx / feature_stride_];
-      int gidx =
-          matrix_
-              .gidx_iter[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_];
+      auto gidx = matrix_[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_];
       if (matrix_.is_dense || gidx != matrix_.NumBins()) {
         auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
         AtomicAddGpairGlobal(d_node_hist_ + gidx, adjusted);

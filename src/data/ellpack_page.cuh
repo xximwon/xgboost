@@ -18,13 +18,16 @@ namespace xgboost {
  * device. Does not own underlying memory and may be trivially copied into
  * kernels.*/
 struct EllpackDeviceAccessor {
+ private:
+  common::CompressedIterator<uint32_t> gidx_iter;
+
+ public:
   /*! \brief Whether or not if the matrix is dense. */
   bool is_dense;
   /*! \brief Row length for ELLPACK, equal to number of features. */
   size_t row_stride;
   size_t base_rowid{};
   size_t n_rows{};
-  common::CompressedIterator<uint32_t> gidx_iter;
   /*! \brief Minimum value for each feature. Size equals to number of features. */
   common::Span<const bst_float> min_fvalue;
   /*! \brief Histogram cut pointers. Size equals to (number of features + 1). */
@@ -112,13 +115,24 @@ struct EllpackDeviceAccessor {
   }
   /*! \brief Return the total number of symbols (total number of bins plus 1 for
    * not found). */
-  XGBOOST_DEVICE size_t NumSymbols() const { return gidx_fvalue_map.size() + 1; }
+  // XGBOOST_DEVICE size_t NumSymbols() const { return gidx_fvalue_map.size() + 1; }
 
   XGBOOST_DEVICE size_t NullValue() const { return gidx_fvalue_map.size(); }
 
   XGBOOST_DEVICE size_t NumBins() const { return gidx_fvalue_map.size(); }
 
   XGBOOST_DEVICE size_t NumFeatures() const { return min_fvalue.size(); }
+
+  template <typename IdxT>
+  XGBOOST_DEVICE auto operator[](IdxT const idx) const {
+    // fixme: compile time dispatch
+    auto gidx = this->gidx_iter[idx];
+    if (this->is_dense) {
+      auto fidx = idx % this->row_stride;
+      gidx += feature_segments[fidx];
+    }
+    return gidx;
+  }
 };
 
 
@@ -203,7 +217,7 @@ class EllpackPageImpl {
 
   /*! \brief Return the total number of symbols (total number of bins plus 1 for
    * not found). */
-  size_t NumSymbols() const { return cuts_.TotalBins() + 1; }
+  std::size_t NumSymbols() const;
 
   EllpackDeviceAccessor
   GetDeviceAccessor(int device,

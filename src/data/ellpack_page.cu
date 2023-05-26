@@ -167,6 +167,10 @@ struct WriteCompressedEllpackFunctor {
       } else {
         bin_idx = accessor.SearchBin<false>(e.value, e.column_idx);
       }
+      if (accessor.is_dense) {
+        auto offset = accessor.gidx_fvalue_map[e.column_idx];
+        bin_idx -= offset;
+      }
       writer.AtomicWriteSymbol(d_buffer, bin_idx, output_position);
     }
     return 0;
@@ -185,6 +189,29 @@ struct TupleScanOp {
     return b;
   }
 };
+
+std::size_t CalcNSymbolsDense(common::Span<std::uint32_t const> dptrs) {
+  using PtrT = typename decltype(dptrs)::value_type;
+  auto it = dh::MakeTransformIterator<PtrT>(
+      thrust::make_counting_iterator(1ul),
+      [=] XGBOOST_DEVICE(std::size_t i) { return dptrs[i] - dptrs[i - 1]; });
+  CHECK_GE(dptrs.size(), 2);
+  auto max_it = thrust::max_element(thrust::device, it, it + dptrs.size() - 1);
+  dh::TemporaryArray<PtrT> max_element(1);
+  auto d_me = max_element.data();
+  dh::LaunchN(1, [=] XGBOOST_DEVICE(std::size_t i) { d_me[i] = *max_it; });
+  PtrT h_me{0};
+  dh::safe_cuda(cudaMemcpy(&h_me, d_me.get(), sizeof(PtrT), cudaMemcpyDeviceToHost));
+  // no missing, hence no null value, hence no + 1 symbol.
+  return h_me;
+}
+
+std::size_t EllpackPageImpl::NumSymbols() const {
+  if (this->is_dense) {
+    return CalcNSymbolsDense(this->cuts_.cut_ptrs_.ConstDeviceSpan());
+  }
+  return cuts_.TotalBins() + 1;
+}
 
 // Here the data is already correctly ordered and simply needs to be compacted
 // to remove missing data
@@ -223,7 +250,7 @@ void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType cons
   using Tuple = thrust::tuple<size_t, size_t, size_t>;
 
   auto device_accessor = dst->GetDeviceAccessor(device_idx);
-  common::CompressedBufferWriter writer(device_accessor.NumSymbols());
+  common::CompressedBufferWriter writer(dst->NumSymbols());
   auto d_compressed_buffer = dst->gidx_buffer.DevicePointer();
 
   // We redirect the scan output into this functor to do the actual writing
@@ -261,11 +288,10 @@ void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType cons
 #endif
 }
 
-void WriteNullValues(EllpackPageImpl* dst, int device_idx,
-                     common::Span<size_t> row_counts) {
+void WriteNullValues(EllpackPageImpl* dst, int device_idx, common::Span<size_t> row_counts) {
   // Write the null values
   auto device_accessor = dst->GetDeviceAccessor(device_idx);
-  common::CompressedBufferWriter writer(device_accessor.NumSymbols());
+  common::CompressedBufferWriter writer(dst->NumSymbols());
   auto d_compressed_buffer = dst->gidx_buffer.DevicePointer();
   auto row_stride = dst->row_stride;
   dh::LaunchN(row_stride * dst->n_rows, [=] __device__(size_t idx) {
@@ -274,8 +300,7 @@ void WriteNullValues(EllpackPageImpl* dst, int device_idx,
     size_t row_idx = idx / row_stride;
     size_t row_offset = idx % row_stride;
     if (row_offset >= row_counts[row_idx]) {
-      writer_non_const.AtomicWriteSymbol(d_compressed_buffer,
-                                         device_accessor.NullValue(), idx);
+      writer_non_const.AtomicWriteSymbol(d_compressed_buffer, device_accessor.NullValue(), idx);
     }
   });
 }
@@ -460,12 +485,17 @@ void EllpackPageImpl::Compact(int device, EllpackPageImpl const* page,
 
 // Initialize the buffer to stored compressed features.
 void EllpackPageImpl::InitCompressedData(int device) {
-  size_t num_symbols = NumSymbols();
+  std::size_t num_symbols = NumSymbols();
+
+  if (this->is_dense) {
+    auto const dptrs = this->cuts_.cut_ptrs_.ConstDeviceSpan();
+    num_symbols = CalcNSymbolsDense(dptrs);
+  }
 
   // Required buffer size for storing data matrix in ELLPack format.
-  size_t compressed_size_bytes =
-    common::CompressedBufferWriter::CalculateBufferSize(row_stride * n_rows,
-      num_symbols);
+  std::size_t compressed_size_bytes =
+      common::CompressedBufferWriter::CalculateBufferSize(row_stride * n_rows, num_symbols);
+  std::cout << compressed_size_bytes << std::endl;
   gidx_buffer.SetDevice(device);
   // Don't call fill unnecessarily
   if (gidx_buffer.Size() == 0) {

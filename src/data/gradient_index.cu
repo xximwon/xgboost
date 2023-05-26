@@ -32,7 +32,7 @@ void SetIndexData(Context const* ctx, EllpackPageImpl const* page,
     size_t out_rbegin = out->row_ptr[i];
     auto r_size = out->row_ptr[i + 1] - out->row_ptr[i];
     for (size_t j = 0; j < r_size; ++j) {
-      auto bin_idx = accessor.gidx_iter[in_rbegin + j];
+      auto bin_idx = accessor[in_rbegin + j];
       assert(bin_idx != kNull);
       index_data_span[out_rbegin + j] = get_offset(bin_idx, j);
       ++hit_count_tloc[tid * n_bins_total + bin_idx];
@@ -53,7 +53,7 @@ void GetRowPtrFromEllpack(Context const* ctx, EllpackPageImpl const* page,
     common::ParallelFor(page->Size(), ctx->Threads(), [&](auto i) {
       size_t ibegin = page->row_stride * i;
       for (size_t j = 0; j < page->row_stride; ++j) {
-        bst_bin_t bin_idx = accessor.gidx_iter[ibegin + j];
+        bst_bin_t bin_idx = accessor[ibegin + j];
         if (bin_idx != kNull) {
           row_ptr[i + 1]++;
         }

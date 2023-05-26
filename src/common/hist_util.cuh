@@ -245,21 +245,35 @@ std::size_t RequiredMemory(bst_row_t num_rows, bst_feature_t num_columns, std::s
  * \param p_sorted_idx     Output sorted index of input data (batch_iter).
  */
 template <typename BatchIter>
-void MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range, data::IsValidFunctor is_valid,
-                            std::size_t columns, std::size_t cuts_per_feature, int device,
-                            HostDeviceVector<SketchContainer::OffsetT>* p_cut_sizes_scan,
-                            dh::caching_device_vector<size_t>* p_column_sizes_scan,
-                            dh::device_vector<SortedIdxT>* p_sorted_idx) {
+std::size_t MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range,
+                                   data::IsValidFunctor is_valid, std::size_t n_features,
+                                   std::size_t cuts_per_feature, int device,
+                                   HostDeviceVector<SketchContainer::OffsetT>* p_cut_sizes_scan,
+                                   dh::caching_device_vector<size_t>* p_column_sizes_scan,
+                                   dh::device_vector<SortedIdxT>* p_sorted_idx) {
+  dh::PinnedMemory pinned_results;
+  auto h_n = pinned_results.GetSpan<std::size_t>(2);
+
   auto n = range.end() - range.begin();
   auto span = IterSpan{batch_iter + range.begin(), n};
   // Work out how many valid entries we have in each column
-  GetColumnSizesScan(device, columns, cuts_per_feature, span, is_valid, p_cut_sizes_scan,
+  GetColumnSizesScan(device, n_features, cuts_per_feature, span, is_valid, p_cut_sizes_scan,
                      p_column_sizes_scan);
   // Sort the current subset of valid elements.
   dh::device_vector<SortedIdxT>& sorted_idx = *p_sorted_idx;
   sorted_idx.resize(span.size());
 
-  std::size_t n_valids = p_column_sizes_scan->back();
+  dh::CUDAStream copy_stream;
+  dh::CUDAEvent e;
+  e.Record(dh::DefaultStream());
+  copy_stream.View().Wait(e);
+
+  dh::safe_cuda(cudaMemcpyAsync(
+      h_n.data(), p_cut_sizes_scan->ConstDevicePointer() + p_cut_sizes_scan->Size() - 1,
+      sizeof(SketchContainer::OffsetT), cudaMemcpyDefault, copy_stream.Handle()));
+  dh::safe_cuda(cudaMemcpyAsync(h_n.data() + 1,
+                                p_column_sizes_scan->data().get() + p_column_sizes_scan->size() - 1,
+                                sizeof(std::size_t), cudaMemcpyDefault, copy_stream.Handle()));
 
   auto key_it = dh::MakeTransformIterator<Entry>(
       span.data(), [=] XGBOOST_DEVICE(data::COOTuple const& tup) -> Entry {
@@ -271,7 +285,12 @@ void MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range, data::IsValidFu
       });
   ArgSortEntry(key_it, &sorted_idx);
 
+  copy_stream.Sync();
+  std::size_t total_cuts = h_n[0];
+  std::size_t n_valids = h_n[1];
+
   sorted_idx.resize(n_valids);
+  return total_cuts;
 }
 
 template <typename BatchIter>
@@ -352,13 +371,15 @@ void ProcessSlidingWindow(AdapterBatch const& batch, MetaInfo const& info, int d
 
   dh::device_vector<detail::SortedIdxT> sorted_idx;
   data::IsValidFunctor is_valid(missing);
-  detail::MakeEntriesFromAdapter(batch_iter, {begin, end}, is_valid, columns, num_cuts, device,
-                                 &cuts_ptr, &column_sizes_scan, &sorted_idx);
+  auto total_cuts =
+      detail::MakeEntriesFromAdapter(batch_iter, {begin, end}, is_valid, columns, num_cuts, device,
+                                     &cuts_ptr, &column_sizes_scan, &sorted_idx);
 
   if (sketch_container->HasCategorical()) {
     auto d_cuts_ptr = cuts_ptr.DeviceSpan();
     detail::RemoveDuplicatedCategories(device, info, d_cuts_ptr, batch_iter + begin, &sorted_idx,
                                        &column_sizes_scan);
+    total_cuts = cuts_ptr.ConstHostVector().back();
   }
   auto entry_it = dh::MakeTransformIterator<Entry>(
       batch_iter + begin, [=] __device__(data::COOTuple const& tup) {
@@ -367,10 +388,8 @@ void ProcessSlidingWindow(AdapterBatch const& batch, MetaInfo const& info, int d
   auto d_sorted_entry_it = thrust::make_permutation_iterator(entry_it, sorted_idx.cbegin());
 
   auto d_cuts_ptr = cuts_ptr.DeviceSpan();
-  auto const& h_cuts_ptr = cuts_ptr.HostVector();
   // Extract the cuts from all columns concurrently
-  sketch_container->Push(d_sorted_entry_it, dh::ToSpan(column_sizes_scan), d_cuts_ptr,
-                         h_cuts_ptr.back());
+  sketch_container->Push(d_sorted_entry_it, dh::ToSpan(column_sizes_scan), d_cuts_ptr, total_cuts);
 }
 
 template <typename Batch>

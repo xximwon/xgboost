@@ -1,5 +1,5 @@
-/*!
- * Copyright 2021 by XGBoost Contributors
+/**
+ * Copyright 2021-2023, XGBoost Contributors
  */
 #ifndef XGBOOST_DATA_VALIDATION_H_
 #define XGBOOST_DATA_VALIDATION_H_
@@ -11,8 +11,8 @@
 
 namespace xgboost {
 namespace data {
-struct LabelsCheck {
-  XGBOOST_DEVICE bool operator()(float y) {
+struct LabelInvalidOp {
+  XGBOOST_DEVICE bool operator()(float y) const {
 #if defined(__CUDA_ARCH__)
     return ::isnan(y) || ::isinf(y);
 #else
@@ -22,7 +22,7 @@ struct LabelsCheck {
 };
 
 struct WeightsCheck {
-  XGBOOST_DEVICE bool operator()(float w) { return LabelsCheck{}(w) || w < 0; }  // NOLINT
+  XGBOOST_DEVICE bool operator()(float w) const { return LabelInvalidOp{}(w) || w < 0; }  // NOLINT
 };
 
 inline void ValidateQueryGroup(std::vector<bst_group_t> const &group_ptr_) {

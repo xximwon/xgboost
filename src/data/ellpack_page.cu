@@ -217,8 +217,9 @@ std::size_t EllpackPageImpl::NumSymbols() const {
 // Here the data is already correctly ordered and simply needs to be compacted
 // to remove missing data
 template <typename AdapterBatchT>
-void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType const> feature_types,
-                       EllpackPageImpl* dst, int device_idx, float missing) {
+void CopyDataToEllpack(Context const* ctx, const AdapterBatchT& batch,
+                       common::Span<FeatureType const> feature_types, EllpackPageImpl* dst,
+                       float missing) {
   // Some witchcraft happens here
   // The goal is to copy valid elements out of the input to an ELLPACK matrix
   // with a given row stride, using no extra working memory Standard stream
@@ -228,7 +229,7 @@ void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType cons
   // correct output position
   auto counting = thrust::make_counting_iterator(0llu);
   data::IsValidFunctor is_valid(missing);
-  bool valid = data::NoInfInData(batch, is_valid);
+  bool valid = data::NoInfInData(ctx, batch, is_valid);
   CHECK(valid) << error::InfInData();
 
   auto key_iter = dh::MakeTransformIterator<size_t>(
@@ -250,7 +251,7 @@ void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType cons
   // Tuple[2] = The index in the input data
   using Tuple = thrust::tuple<size_t, size_t, size_t>;
 
-  auto device_accessor = dst->GetDeviceAccessor(device_idx);
+  auto device_accessor = dst->GetDeviceAccessor(ctx->gpu_id);
   common::CompressedBufferWriter writer(dst->NumSymbols());
   auto d_compressed_buffer = dst->gidx_buffer.DevicePointer();
 
@@ -307,20 +308,21 @@ void WriteNullValues(EllpackPageImpl* dst, int device_idx, common::Span<size_t> 
 }
 
 template <typename AdapterBatch>
-EllpackPageImpl::EllpackPageImpl(AdapterBatch batch, float missing, int device, bool is_dense,
-                                 common::Span<size_t> row_counts_span,
+EllpackPageImpl::EllpackPageImpl(Context const* ctx, AdapterBatch batch, float missing,
+                                 bool is_dense, common::Span<size_t> row_counts_span,
                                  common::Span<FeatureType const> feature_types, size_t row_stride,
                                  size_t n_rows, common::HistogramCuts const& cuts) {
+  auto device = ctx->gpu_id;
   dh::safe_cuda(cudaSetDevice(device));
 
   *this = EllpackPageImpl(device, cuts, is_dense, row_stride, n_rows);
-  CopyDataToEllpack(batch, feature_types, this, device, missing);
+  CopyDataToEllpack(ctx, batch, feature_types, this, missing);
   WriteNullValues(this, device, row_counts_span);
 }
 
 #define ELLPACK_BATCH_SPECIALIZE(__BATCH_T)                                                \
   template EllpackPageImpl::EllpackPageImpl(                                               \
-      __BATCH_T batch, float missing, int device, bool is_dense,                           \
+      Context const* ctx, __BATCH_T batch, float missing, bool is_dense,                   \
       common::Span<size_t> row_counts_span, common::Span<FeatureType const> feature_types, \
       size_t row_stride, size_t n_rows, common::HistogramCuts const& cuts);
 

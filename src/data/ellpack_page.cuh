@@ -175,7 +175,7 @@ class EllpackPageImpl {
   explicit EllpackPageImpl(Context const* ctx, DMatrix* dmat, const BatchParam& parm);
 
   template <typename AdapterBatch>
-  explicit EllpackPageImpl(AdapterBatch batch, float missing, int device, bool is_dense,
+  explicit EllpackPageImpl(Context const* ctx, AdapterBatch batch, float missing, bool is_dense,
                            common::Span<size_t> row_counts_span,
                            common::Span<FeatureType const> feature_types, size_t row_stride,
                            size_t n_rows, common::HistogramCuts const& cuts);

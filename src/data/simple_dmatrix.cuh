@@ -62,11 +62,12 @@ void CountRowOffsets(const AdapterBatchT& batch, common::Span<bst_row_t> offset,
 }
 
 template <typename AdapterBatchT>
-size_t CopyToSparsePage(AdapterBatchT const& batch, int32_t device, float missing,
-                        SparsePage* page) {
-  bool valid = NoInfInData(batch, IsValidFunctor{missing});
+std::size_t CopyToSparsePage(Context const* ctx, AdapterBatchT const& batch, float missing,
+                             SparsePage* page) {
+  bool valid = NoInfInData(ctx, batch, IsValidFunctor{missing});
   CHECK(valid) << error::InfInData();
 
+  std::int32_t device = ctx->gpu_id;
   page->offset.SetDevice(device);
   page->data.SetDevice(device);
   page->offset.Resize(batch.NumRows() + 1);

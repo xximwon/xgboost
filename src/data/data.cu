@@ -10,6 +10,7 @@
 #include "array_interface.h"
 #include "device_adapter.cuh"
 #include "simple_dmatrix.h"
+#include "validation.cuh"
 #include "validation.h"
 #include "xgboost/data.h"
 #include "xgboost/json.h"
@@ -128,7 +129,8 @@ void MetaInfo::SetInfoFromCUDA(Context const& ctx, StringView key, Json array) {
   } else if (key == "label") {
     CopyTensorInfoImpl(ctx.CUDACtx(), array, &labels);
     auto ptr = labels.Data()->ConstDevicePointer();
-    auto valid = thrust::none_of(thrust::device, ptr, ptr + labels.Size(), data::LabelsCheck{});
+    bool valid =
+        data::cuda_impl::NoneOfInvalid(&ctx, ptr, ptr + labels.Size(), data::LabelInvalidOp{});
     CHECK(valid) << "Label contains NaN, infinity or a value too large.";
     return;
   }
@@ -150,7 +152,8 @@ void MetaInfo::SetInfoFromCUDA(Context const& ctx, StringView key, Json array) {
   if (key == "weight") {
     this->weights_ = std::move(*t.Data());
     auto ptr = weights_.ConstDevicePointer();
-    auto valid = thrust::none_of(thrust::device, ptr, ptr + weights_.Size(), data::WeightsCheck{});
+    bool valid =
+        data::cuda_impl::NoneOfInvalid(&ctx, ptr, ptr + weights_.Size(), data::WeightsCheck{});
     CHECK(valid) << "Weights must be positive values.";
   } else if (key == "label_lower_bound") {
     this->labels_lower_bound_ = std::move(*t.Data());
@@ -159,9 +162,8 @@ void MetaInfo::SetInfoFromCUDA(Context const& ctx, StringView key, Json array) {
   } else if (key == "feature_weights") {
     this->feature_weights = std::move(*t.Data());
     auto d_feature_weights = feature_weights.ConstDeviceSpan();
-    auto valid =
-        thrust::none_of(ctx.CUDACtx()->CTP(), d_feature_weights.data(),
-                        d_feature_weights.data() + d_feature_weights.size(), data::WeightsCheck{});
+    bool valid = data::cuda_impl::NoneOfInvalid(&ctx, dh::tcbegin(d_feature_weights),
+                                                dh::tcend(d_feature_weights), data::WeightsCheck{});
     CHECK(valid) << "Feature weight must be greater than 0.";
   } else {
     LOG(FATAL) << "Unknown key for MetaInfo: " << key;

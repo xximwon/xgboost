@@ -7,7 +7,7 @@
 #include <thrust/iterator/counting_iterator.h>  // for make_counting_iterator
 #include <thrust/logical.h>                     // for none_of
 
-#include <cstddef>                              // for size_t
+#include <cstddef>  // for size_t
 #include <limits>
 #include <memory>
 #include <string>
@@ -16,6 +16,7 @@
 #include "../common/math.h"
 #include "adapter.h"
 #include "array_interface.h"
+#include "validation.cuh"  // for AllOfValid
 
 namespace xgboost {
 namespace data {
@@ -221,24 +222,19 @@ size_t GetRowCounts(const AdapterBatchT batch, common::Span<size_t> offset,
  * \brief Check there's no inf in data.
  */
 template <typename AdapterBatchT>
-bool NoInfInData(AdapterBatchT const& batch, IsValidFunctor is_valid) {
+bool NoInfInData(Context const* ctx, AdapterBatchT const& batch, IsValidFunctor is_valid) {
   auto counting = thrust::make_counting_iterator(0llu);
-  auto value_iter = dh::MakeTransformIterator<bool>(counting, [=] XGBOOST_DEVICE(std::size_t idx) {
-    auto v = batch.GetElement(idx).value;
-    if (!is_valid(v)) {
-      // discard the invalid elements.
-      return true;
-    }
-    // check that there's no inf in data.
-    return !std::isinf(v);
-  });
-  dh::XGBCachingDeviceAllocator<char> alloc;
-  // The default implementation in thrust optimizes any_of/none_of/all_of by using small
-  // intervals to early stop. But we expect all data to be valid here, using small
-  // intervals only decreases performance due to excessive kernel launch and stream
-  // synchronization.
-  auto valid = dh::Reduce(thrust::cuda::par(alloc), value_iter, value_iter + batch.Size(), true,
-                          thrust::logical_and<>{});
+  auto it = dh::MakeTransformIterator<float>(
+      counting, [=] XGBOOST_DEVICE(std::size_t idx) { return batch.GetElement(idx).value; });
+  auto valid =
+      cuda_impl::AllOfValid(ctx, it, it + batch.Size(), [is_valid] XGBOOST_DEVICE(float v) {
+        if (!is_valid(v)) {
+          // discard the invalid elements.
+          return true;
+        }
+        // check that there's no inf in data.
+        return !std::isinf(v);
+      });
   return valid;
 }
 };  // namespace data

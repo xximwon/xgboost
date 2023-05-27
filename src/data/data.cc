@@ -485,7 +485,7 @@ void MetaInfo::SetInfoFromHost(Context const& ctx, StringView key, Json arr) {
       this->labels.Reshape(this->num_row_, n_targets);
     }
     auto const& h_labels = labels.Data()->ConstHostVector();
-    auto valid = std::none_of(h_labels.cbegin(), h_labels.cend(), data::LabelsCheck{});
+    auto valid = std::none_of(h_labels.cbegin(), h_labels.cend(), data::LabelInvalidOp{});
     CHECK(valid) << "Label contains NaN, infinity or a value too large.";
     return;
   }

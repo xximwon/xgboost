@@ -1355,10 +1355,16 @@ class CUDAStream {
   CUDAStream() { dh::safe_cuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking)); }
   ~CUDAStream() { dh::safe_cuda(cudaStreamDestroy(stream_)); }
 
+  CUDAStream(CUDAStream const &) = delete;
+  CUDAStream(CUDAStream &&) = delete;
+  CUDAStream &operator=(CUDAStream const &) = delete;
+  CUDAStream &operator=(CUDAStream &&) = delete;
+
   [[nodiscard]] CUDAStreamView View() const { return CUDAStreamView{stream_}; }
   [[nodiscard]] cudaStream_t Handle() const { return stream_; }
 
   void Sync() { this->View().Sync(); }
+  void Wait(CUDAEvent const &e) { this->View().Wait(e); }
 };
 
 // Force nvcc to load data as constant

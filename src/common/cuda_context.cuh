@@ -12,6 +12,7 @@ struct CUDAContext {
  private:
   dh::XGBCachingDeviceAllocator<char> caching_alloc_;
   dh::XGBDeviceAllocator<char> alloc_;
+  dh::CUDAStream async_stream_;
 
  public:
   /**
@@ -23,6 +24,12 @@ struct CUDAContext {
    */
   auto TP() const { return thrust::cuda::par(alloc_).on(dh::DefaultStream()); }
   auto Stream() const { return dh::DefaultStream(); }
+  auto AsyncStream() {
+    dh::CUDAEvent e;
+    e.Record(this->Stream());
+    async_stream_.View().Wait(e);
+    return async_stream_.View();
+  }
 };
 }  // namespace xgboost
 #endif  // XGBOOST_COMMON_CUDA_CONTEXT_CUH_

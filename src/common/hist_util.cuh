@@ -13,11 +13,12 @@
 
 #include "../cub_sort/device/device_radix_sort.cuh"
 #include "../data/device_adapter.cuh"
-#include "cuda_context.cuh"
+#include "cuda_context.cuh"  // for CUDAContext
 #include "device_helpers.cuh"
 #include "hist_util.h"
 #include "quantile.cuh"
 #include "timer.h"
+#include "xgboost/context.h"  // for Context
 
 namespace xgboost::common {
 namespace cuda_impl {
@@ -99,11 +100,12 @@ std::uint32_t EstimateGridSize(std::int32_t device, Kernel kernel, std::size_t s
  * \param out_column_size Output buffer for the size of each column.
  */
 template <typename BatchIt, bool force_use_global_memory = false, bool force_use_u64 = false>
-void LaunchGetColumnSizeKernel(std::int32_t device, IterSpan<BatchIt> batch_iter,
+void LaunchGetColumnSizeKernel(Context const* ctx, IterSpan<BatchIt> batch_iter,
                                data::IsValidFunctor is_valid, Span<std::size_t> out_column_size) {
-  thrust::fill_n(thrust::device, dh::tbegin(out_column_size), out_column_size.size(), 0);
+  auto cuctx = ctx->CUDACtx();
+  thrust::fill_n(cuctx->CTP(), dh::tbegin(out_column_size), out_column_size.size(), 0);
 
-  std::size_t max_shared_memory = dh::MaxSharedMemory(device);
+  std::size_t max_shared_memory = dh::MaxSharedMemory(ctx->gpu_id);
   // Not strictly correct as we should use number of samples to determine the type of
   // counter. However, the sample size is not known due to sliding window on number of
   // elements.
@@ -126,18 +128,18 @@ void LaunchGetColumnSizeKernel(std::int32_t device, IterSpan<BatchIt> batch_iter
     if (use_u32) {
       CHECK(!force_use_u64);
       auto kernel = GetColumnSizeSharedMemKernel<kBlockThreads, std::uint32_t, BatchIt>;
-      auto grid_size = EstimateGridSize<kBlockThreads>(device, kernel, required_shared_memory);
-      dh::LaunchKernel{grid_size, kBlockThreads, required_shared_memory, dh::DefaultStream()}(
+      auto grid_size = EstimateGridSize<kBlockThreads>(ctx->gpu_id, kernel, required_shared_memory);
+      dh::LaunchKernel{grid_size, kBlockThreads, required_shared_memory, cuctx->Stream()}(
           kernel, batch_iter, is_valid, out_column_size);
     } else {
       auto kernel = GetColumnSizeSharedMemKernel<kBlockThreads, std::size_t, BatchIt>;
-      auto grid_size = EstimateGridSize<kBlockThreads>(device, kernel, required_shared_memory);
-      dh::LaunchKernel{grid_size, kBlockThreads, required_shared_memory, dh::DefaultStream()}(
+      auto grid_size = EstimateGridSize<kBlockThreads>(ctx->gpu_id, kernel, required_shared_memory);
+      dh::LaunchKernel{grid_size, kBlockThreads, required_shared_memory, cuctx->Stream()}(
           kernel, batch_iter, is_valid, out_column_size);
     }
   } else {
     auto d_out_column_size = out_column_size;
-    dh::LaunchN(batch_iter.size(), [=] __device__(size_t idx) {
+    dh::LaunchN(batch_iter.size(), cuctx->Stream(), [=] __device__(size_t idx) {
       auto e = batch_iter[idx];
       if (is_valid(e)) {
         atomicAdd(&d_out_column_size[e.column_idx], static_cast<size_t>(1));
@@ -147,26 +149,26 @@ void LaunchGetColumnSizeKernel(std::int32_t device, IterSpan<BatchIt> batch_iter
 }
 
 template <typename BatchIt>
-void GetColumnSizesScan(int device, size_t num_columns, std::size_t num_cuts_per_feature,
+void GetColumnSizesScan(Context const* ctx, size_t num_columns, std::size_t num_cuts_per_feature,
                         IterSpan<BatchIt> batch_iter, data::IsValidFunctor is_valid,
                         HostDeviceVector<SketchContainer::OffsetT>* cuts_ptr,
                         dh::caching_device_vector<size_t>* column_sizes_scan) {
   column_sizes_scan->resize(num_columns + 1);
-  cuts_ptr->SetDevice(device);
+  cuts_ptr->SetDevice(ctx->gpu_id);
   cuts_ptr->Resize(num_columns + 1, 0);
 
-  dh::XGBCachingDeviceAllocator<char> alloc;
   auto d_column_sizes_scan = dh::ToSpan(*column_sizes_scan);
-  LaunchGetColumnSizeKernel(device, batch_iter, is_valid, d_column_sizes_scan);
+  LaunchGetColumnSizeKernel(ctx, batch_iter, is_valid, d_column_sizes_scan);
   // Calculate cuts CSC pointer
   auto cut_ptr_it = dh::MakeTransformIterator<size_t>(
       column_sizes_scan->begin(), [=] __device__(size_t column_size) {
         return thrust::min(num_cuts_per_feature, column_size);
       });
-  thrust::exclusive_scan(thrust::cuda::par(alloc), cut_ptr_it,
-                         cut_ptr_it + column_sizes_scan->size(), cuts_ptr->DevicePointer());
-  thrust::exclusive_scan(thrust::cuda::par(alloc), column_sizes_scan->begin(),
-                         column_sizes_scan->end(), column_sizes_scan->begin());
+  auto cuctx = ctx->CUDACtx();
+  thrust::exclusive_scan(cuctx->CTP(), cut_ptr_it, cut_ptr_it + column_sizes_scan->size(),
+                         cuts_ptr->DevicePointer());
+  thrust::exclusive_scan(cuctx->CTP(), column_sizes_scan->begin(), column_sizes_scan->end(),
+                         column_sizes_scan->begin());
 }
 
 /**
@@ -183,19 +185,20 @@ inline constexpr std::size_t kMaxNumEntrySort = std::numeric_limits<SortedIdxT>:
  * \brief Return sorted index of input entries. KeyIt is an iterator that returns `xgboost::Entry`.
  */
 template <typename KeyIt>
-void ArgSortEntry(KeyIt key_it, dh::device_vector<SortedIdxT>* p_sorted_idx) {
+void ArgSortEntry(CUDAContext const* cuctx, KeyIt key_it,
+                  dh::device_vector<SortedIdxT>* p_sorted_idx) {
   auto& sorted_idx = *p_sorted_idx;
   std::size_t n = sorted_idx.size();
   CHECK_LE(n, kMaxNumEntrySort);
 
   std::size_t bytes{0};
   std::byte* ptr{nullptr};
-  cub_argsort::DeviceRadixSort<cub_argsort::EntryExtractor>::Argsort(ptr, bytes, key_it,
-                                                                     sorted_idx.data().get(), n);
+  cub_argsort::DeviceRadixSort<cub_argsort::EntryExtractor>::Argsort(
+      ptr, bytes, key_it, sorted_idx.data().get(), n, cuctx->Stream());
   dh::device_vector<std::byte> alloc(bytes);
   ptr = alloc.data().get();
-  cub_argsort::DeviceRadixSort<cub_argsort::EntryExtractor>::Argsort(ptr, bytes, key_it,
-                                                                     sorted_idx.data().get(), n);
+  cub_argsort::DeviceRadixSort<cub_argsort::EntryExtractor>::Argsort(
+      ptr, bytes, key_it, sorted_idx.data().get(), n, cuctx->Stream());
 }
 
 /**
@@ -245,9 +248,9 @@ std::size_t RequiredMemory(bst_row_t num_rows, bst_feature_t num_columns, std::s
  * \param p_sorted_idx     Output sorted index of input data (batch_iter).
  */
 template <typename BatchIter>
-std::size_t MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range,
+std::size_t MakeEntriesFromAdapter(Context const* ctx, BatchIter batch_iter, Range1d range,
                                    data::IsValidFunctor is_valid, std::size_t n_features,
-                                   std::size_t cuts_per_feature, int device,
+                                   std::size_t cuts_per_feature,
                                    HostDeviceVector<SketchContainer::OffsetT>* p_cut_sizes_scan,
                                    dh::caching_device_vector<size_t>* p_column_sizes_scan,
                                    dh::device_vector<SortedIdxT>* p_sorted_idx) {
@@ -257,23 +260,20 @@ std::size_t MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range,
   auto n = range.end() - range.begin();
   auto span = IterSpan{batch_iter + range.begin(), n};
   // Work out how many valid entries we have in each column
-  GetColumnSizesScan(device, n_features, cuts_per_feature, span, is_valid, p_cut_sizes_scan,
+  GetColumnSizesScan(ctx, n_features, cuts_per_feature, span, is_valid, p_cut_sizes_scan,
                      p_column_sizes_scan);
   // Sort the current subset of valid elements.
   dh::device_vector<SortedIdxT>& sorted_idx = *p_sorted_idx;
   sorted_idx.resize(span.size());
 
-  dh::CUDAStream copy_stream;
-  dh::CUDAEvent e;
-  e.Record(dh::DefaultStream());
-  copy_stream.View().Wait(e);
+  dh::CUDAStreamView copy_stream = ctx->CUDACtx()->AsyncStream();
 
   dh::safe_cuda(cudaMemcpyAsync(
       h_n.data(), p_cut_sizes_scan->ConstDevicePointer() + p_cut_sizes_scan->Size() - 1,
-      sizeof(SketchContainer::OffsetT), cudaMemcpyDefault, copy_stream.Handle()));
+      sizeof(SketchContainer::OffsetT), cudaMemcpyDefault, copy_stream));
   dh::safe_cuda(cudaMemcpyAsync(h_n.data() + 1,
                                 p_column_sizes_scan->data().get() + p_column_sizes_scan->size() - 1,
-                                sizeof(std::size_t), cudaMemcpyDefault, copy_stream.Handle()));
+                                sizeof(std::size_t), cudaMemcpyDefault, copy_stream));
 
   auto key_it = dh::MakeTransformIterator<Entry>(
       span.data(), [=] XGBOOST_DEVICE(data::COOTuple const& tup) -> Entry {
@@ -283,7 +283,7 @@ std::size_t MakeEntriesFromAdapter(BatchIter batch_iter, Range1d range,
         // Push invalid elements to the end
         return {std::numeric_limits<bst_feature_t>::max(), std::numeric_limits<float>::max()};
       });
-  ArgSortEntry(key_it, &sorted_idx);
+  ArgSortEntry(ctx->CUDACtx(), key_it, &sorted_idx);
 
   copy_stream.Sync();
   std::size_t total_cuts = h_n[0];
@@ -344,41 +344,41 @@ void RemoveDuplicatedCategories(int32_t device, MetaInfo const& info, Span<bst_r
 
 // Compute sketch on DMatrix.
 // sketch_batch_num_elements 0 means autodetect. Only modify this for testing.
-HistogramCuts DeviceSketch(int device, DMatrix* dmat, int max_bins,
+HistogramCuts DeviceSketch(Context const* ctx, DMatrix* dmat, int max_bins,
                            size_t sketch_batch_num_elements = 0);
 
 // Quantile sketching on DMatrix. Exposed for tests.
-void ProcessBatch(std::int32_t device, MetaInfo const& info, const SparsePage& page,
+void ProcessBatch(Context const* ctx, MetaInfo const& info, const SparsePage& page,
                   std::size_t begin, std::size_t end, SketchContainer* sketch_container,
                   bst_bin_t num_cuts_per_feature, std::size_t num_columns);
 
 // Quantile sketching on DMatrix with weighted samples. Exposed for tests.
-void ProcessWeightedBatch(int device, MetaInfo const& info, const SparsePage& page,
+void ProcessWeightedBatch(Context const* ctx, MetaInfo const& info, const SparsePage& page,
                           std::size_t begin, std::size_t end, SketchContainer* sketch_container,
                           bst_bin_t num_cuts_per_feature, bst_feature_t num_columns,
                           bool is_ranking, Span<bst_group_t const> d_group_ptr);
 
 template <typename AdapterBatch>
-void ProcessSlidingWindow(AdapterBatch const& batch, MetaInfo const& info, int device,
-                          std::size_t columns, std::size_t begin, std::size_t end, float missing,
-                          SketchContainer* sketch_container, int num_cuts) {
+void ProcessSlidingWindow(Context const* ctx, AdapterBatch const& batch, MetaInfo const& info,
+                          std::size_t begin, std::size_t end, float missing,
+                          SketchContainer* sketch_container, bst_bin_t num_cuts) {
   dh::caching_device_vector<size_t> column_sizes_scan;
   auto batch_iter = dh::MakeTransformIterator<data::COOTuple>(
       thrust::make_counting_iterator(0llu),
       [=] __device__(std::size_t idx) { return batch.GetElement(idx); });
   HostDeviceVector<SketchContainer::OffsetT> cuts_ptr;
-  cuts_ptr.SetDevice(device);
+  cuts_ptr.SetDevice(ctx->gpu_id);
 
   dh::device_vector<detail::SortedIdxT> sorted_idx;
   data::IsValidFunctor is_valid(missing);
   auto total_cuts =
-      detail::MakeEntriesFromAdapter(batch_iter, {begin, end}, is_valid, columns, num_cuts, device,
-                                     &cuts_ptr, &column_sizes_scan, &sorted_idx);
+      detail::MakeEntriesFromAdapter(ctx, batch_iter, {begin, end}, is_valid, batch.NumCols(),
+                                     num_cuts, &cuts_ptr, &column_sizes_scan, &sorted_idx);
 
   if (sketch_container->HasCategorical()) {
     auto d_cuts_ptr = cuts_ptr.DeviceSpan();
-    detail::RemoveDuplicatedCategories(device, info, d_cuts_ptr, batch_iter + begin, &sorted_idx,
-                                       &column_sizes_scan);
+    detail::RemoveDuplicatedCategories(ctx->gpu_id, info, d_cuts_ptr, batch_iter + begin,
+                                       &sorted_idx, &column_sizes_scan);
     total_cuts = cuts_ptr.ConstHostVector().back();
   }
   auto entry_it = dh::MakeTransformIterator<Entry>(
@@ -393,15 +393,14 @@ void ProcessSlidingWindow(AdapterBatch const& batch, MetaInfo const& info, int d
 }
 
 template <typename Batch>
-void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info, int num_cuts_per_feature,
-                                  bool is_ranking, float missing, int device, size_t columns,
+void ProcessWeightedSlidingWindow(Context const* ctx, Batch batch, MetaInfo const& info,
+                                  int num_cuts_per_feature, bool is_ranking, float missing,
                                   std::size_t begin, std::size_t end,
                                   SketchContainer* sketch_container) {
+  auto device = ctx->gpu_id;
   dh::safe_cuda(cudaSetDevice(device));
   info.weights_.SetDevice(device);
   auto weights = info.weights_.ConstDeviceSpan();
-
-  dh::XGBCachingDeviceAllocator<char> alloc;
 
   auto batch_iter = dh::MakeTransformIterator<data::COOTuple>(
       thrust::make_counting_iterator(0llu),
@@ -411,12 +410,13 @@ void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info, int num_cut
 
   dh::device_vector<detail::SortedIdxT> sorted_idx;
   data::IsValidFunctor is_valid(missing);
-  detail::MakeEntriesFromAdapter(batch_iter, {begin, end}, is_valid, columns, num_cuts_per_feature,
-                                 device, &cuts_ptr, &column_sizes_scan, &sorted_idx);
+  detail::MakeEntriesFromAdapter(ctx, batch_iter, {begin, end}, is_valid, batch.NumCols(),
+                                 num_cuts_per_feature, &cuts_ptr, &column_sizes_scan, &sorted_idx);
 
   // sorted_idx.size() represents the number of valid elements.
   dh::device_vector<float> temp_weights(sorted_idx.size());
   auto d_temp_weights = dh::ToSpan(temp_weights);
+  auto cuctx = ctx->CUDACtx();
 
   if (is_ranking) {
     if (!weights.empty()) {
@@ -430,20 +430,20 @@ void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info, int num_cut
           bst_group_t group_idx = dh::SegmentId(d_group_ptr, ridx);
           return weights[group_idx];
         });
-    auto retit = thrust::copy_if(thrust::cuda::par(alloc), weight_iter + begin, weight_iter + end,
-                                 batch_iter + begin,
-                                 d_temp_weights.data(),  // output
-                                 is_valid);
+    auto retit =
+        thrust::copy_if(cuctx->CTP(), weight_iter + begin, weight_iter + end, batch_iter + begin,
+                        d_temp_weights.data(),  // output
+                        is_valid);
     CHECK_EQ(retit - d_temp_weights.data(), d_temp_weights.size());
   } else {
     CHECK_EQ(batch.NumRows(), weights.size());
     auto const weight_iter = dh::MakeTransformIterator<float>(
         thrust::make_counting_iterator(0lu),
         [=] __device__(size_t idx) -> float { return weights[batch.GetElement(idx).row_idx]; });
-    auto retit = thrust::copy_if(thrust::cuda::par(alloc), weight_iter + begin, weight_iter + end,
-                                 batch_iter + begin,
-                                 d_temp_weights.data(),  // output
-                                 is_valid);
+    auto retit =
+        thrust::copy_if(cuctx->CTP(), weight_iter + begin, weight_iter + end, batch_iter + begin,
+                        d_temp_weights.data(),  // output
+                        is_valid);
     CHECK_EQ(retit - d_temp_weights.data(), d_temp_weights.size());
   }
 
@@ -456,8 +456,8 @@ void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info, int num_cut
       thrust::make_permutation_iterator(dh::tbegin(d_temp_weights), sorted_idx.cbegin());
 
   thrust::inclusive_scan_by_key(
-      thrust::cuda::par(alloc), d_sorted_entry_it, d_sorted_entry_it + sorted_idx.size(),
-      d_sorted_weight_it, d_sorted_weight_it,
+      cuctx->CTP(), d_sorted_entry_it, d_sorted_entry_it + sorted_idx.size(), d_sorted_weight_it,
+      d_sorted_weight_it,
       [=] __device__(const Entry& a, const Entry& b) { return a.index == b.index; });
 
   if (sketch_container->HasCategorical()) {
@@ -486,8 +486,8 @@ void ProcessWeightedSlidingWindow(Batch batch, MetaInfo const& info, int num_cut
  *                                  testing.
  */
 template <typename Batch>
-void AdapterDeviceSketch(Batch const& batch, bst_bin_t num_bins, MetaInfo const& info,
-                         float missing, SketchContainer* sketch_container,
+void AdapterDeviceSketch(Context const* ctx, Batch const& batch, bst_bin_t num_bins,
+                         MetaInfo const& info, float missing, SketchContainer* sketch_container,
                          std::size_t sketch_batch_num_elements = 0) {
   size_t num_rows = batch.NumRows();
   size_t num_cols = batch.NumCols();
@@ -502,9 +502,9 @@ void AdapterDeviceSketch(Batch const& batch, bst_bin_t num_bins, MetaInfo const&
     for (auto begin = 0ull; begin < batch.Size(); begin += sketch_batch_num_elements) {
       size_t end =
           std::min(batch.Size(), static_cast<std::size_t>(begin + sketch_batch_num_elements));
-      ProcessWeightedSlidingWindow(batch, info, num_cuts_per_feature,
-                                   HostSketchContainer::UseGroup(info), missing, device, num_cols,
-                                   begin, end, sketch_container);
+      ProcessWeightedSlidingWindow(ctx, batch, info, num_cuts_per_feature,
+                                   HostSketchContainer::UseGroup(info), missing, begin, end,
+                                   sketch_container);
     }
   } else {
     sketch_batch_num_elements = detail::SketchBatchNumElements(
@@ -513,7 +513,7 @@ void AdapterDeviceSketch(Batch const& batch, bst_bin_t num_bins, MetaInfo const&
     for (auto begin = 0ull; begin < batch.Size(); begin += sketch_batch_num_elements) {
       size_t end =
           std::min(batch.Size(), static_cast<std::size_t>(begin + sketch_batch_num_elements));
-      ProcessSlidingWindow(batch, info, device, num_cols, begin, end, missing, sketch_container,
+      ProcessSlidingWindow(ctx, batch, info, begin, end, missing, sketch_container,
                            num_cuts_per_feature);
     }
   }

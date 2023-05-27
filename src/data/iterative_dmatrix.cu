@@ -55,7 +55,6 @@ void IterativeDMatrix::InitFromCUDA(Context const* ctx, BatchParam const& p,
   dh::PinnedMemory pinned;
   do {
     // We use do while here as the first batch is fetched in ctor
-    // ctx_.gpu_id = proxy->DeviceIdx();
     CHECK_LT(ctx->gpu_id, common::AllVisibleGPUs());
     dh::safe_cuda(cudaSetDevice(ctx->gpu_id));
     if (cols == 0) {
@@ -71,7 +70,7 @@ void IterativeDMatrix::InitFromCUDA(Context const* ctx, BatchParam const& p,
       auto* p_sketch = &sketch_containers.back();
       proxy->Info().weights_.SetDevice(ctx->gpu_id);
       Dispatch(proxy, [&](auto const& value) {
-        common::AdapterDeviceSketch(value, p.max_bin, proxy->Info(), missing, p_sketch);
+        common::AdapterDeviceSketch(ctx, value, p.max_bin, proxy->Info(), missing, p_sketch);
       });
     }
     auto batch_rows = num_rows();

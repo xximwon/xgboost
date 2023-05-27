@@ -22,7 +22,7 @@ BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
     MakeCache(this, ".ellpack.page", cache_prefix_, &cache_info_);
     std::unique_ptr<common::HistogramCuts> cuts;
     cuts.reset(
-        new common::HistogramCuts{common::DeviceSketch(ctx->gpu_id, this, param.max_bin, 0)});
+        new common::HistogramCuts{common::DeviceSketch(ctx, this, param.max_bin, 0)});
     this->InitializeSparsePage(ctx);  // reset after use.
 
     row_stride = GetRowStride(this);

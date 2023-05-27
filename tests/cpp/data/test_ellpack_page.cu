@@ -60,7 +60,6 @@ TEST(EllpackPage, BuildGidxDense) {
     1, 4, 7, 10, 14, 16, 19, 21,
   };
   for (size_t i = 0; i < kNRows * kNCols; ++i) {
-    auto [ridx, fidx] = linalg::UnravelIndex(i, kNRows, kNCols);
     ASSERT_EQ(solution[i], gidx[i]);
   }
 }
@@ -276,18 +275,18 @@ void TestEllpackAdapter() {
   bst_bin_t n_bins = 5;
   common::SketchContainer container{
       feature_types, n_bins, static_cast<bst_feature_t>(info.num_col_), info.num_row_, ctx.gpu_id};
-  AdapterDeviceSketch(value, n_bins, info, missing, &container);
+  AdapterDeviceSketch(&ctx, value, n_bins, info, missing, &container);
   common::HistogramCuts cuts;
   container.MakeCuts(&cuts);
 
-  auto e = EllpackPageImpl(value, missing, ctx.gpu_id, is_dense, row_counts_span, d_feature_types,
+  auto e = EllpackPageImpl(&ctx, value, missing, is_dense, row_counts_span, d_feature_types,
                            row_stride, rows, cuts);
 
   auto accessor = e.GetDeviceAccessor(ctx.gpu_id, d_feature_types);
   dh::LaunchN(rows * row_stride, [=] XGBOOST_DEVICE(std::size_t idx) {
     bst_bin_t bin_idx = accessor[idx];
     printf("idx: %lu, bin: %d\n", idx, bin_idx);
-  });  
+  });
 }
 
 TEST(EllpackPage, Adapter) {

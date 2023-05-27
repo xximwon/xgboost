@@ -24,7 +24,7 @@ struct CUDAContext {
    */
   auto TP() const { return thrust::cuda::par(alloc_).on(dh::DefaultStream()); }
   auto Stream() const { return dh::DefaultStream(); }
-  auto AsyncStream() {
+  auto AsyncStream() const {
     dh::CUDAEvent e;
     e.Record(this->Stream());
     async_stream_.View().Wait(e);

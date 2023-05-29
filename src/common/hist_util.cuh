@@ -254,8 +254,8 @@ std::size_t MakeEntriesFromAdapter(Context const* ctx, BatchIter batch_iter, Ran
                                    HostDeviceVector<SketchContainer::OffsetT>* p_cut_sizes_scan,
                                    dh::caching_device_vector<size_t>* p_column_sizes_scan,
                                    dh::device_vector<SortedIdxT>* p_sorted_idx) {
-  dh::PinnedMemory pinned_results;
-  auto h_n = pinned_results.GetSpan<std::size_t>(2);
+  auto cuctx = ctx->CUDACtx();
+  auto h_n = cuctx->TempPinned<std::size_t>(2);
 
   auto n = range.end() - range.begin();
   auto span = IterSpan{batch_iter + range.begin(), n};

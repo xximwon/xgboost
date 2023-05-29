@@ -221,6 +221,13 @@ void ProcessWeightedBatch(Context const* ctx, MetaInfo const& info, const Sparse
     });
   }
 
+  thrust::device_allocator<char> alloc;
+  auto system = thrust::detail::allocator_system<thrust::device_allocator<char>>::get(alloc);
+  auto exec = ctx->CUDACtx()->CTP();
+  exec = system;
+  // static_assert(std::is_same_v<decltype(exec), decltype(system)>);
+  thrust::for_each_n(system, entries_view.data(), 2, []XGBOOST_DEVICE(Entry v) { return v; });
+
   detail::ArgSortEntry(ctx->CUDACtx(), std::as_const(entries_view).data(), &sorted_idx);
   auto d_sorted_entry_it =
       thrust::make_permutation_iterator(entries_view.data(), sorted_idx.cbegin());

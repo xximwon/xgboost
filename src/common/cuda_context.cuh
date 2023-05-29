@@ -14,21 +14,29 @@ struct CUDAContext {
   dh::XGBDeviceAllocator<char> alloc_;
   dh::CUDAStream async_stream_;
 
+  mutable dh::PinnedMemory caching_pinned_alloc_;
+
  public:
   /**
    * \brief Caching thrust policy.
    */
-  auto CTP() const { return thrust::cuda::par(caching_alloc_).on(dh::DefaultStream()); }
+  auto CTP() const { return thrust::cuda::par_nosync(caching_alloc_).on(dh::DefaultStream()); }
   /**
    * \brief Thrust policy without caching allocator.
    */
-  auto TP() const { return thrust::cuda::par(alloc_).on(dh::DefaultStream()); }
+  auto TP() const { return thrust::cuda::par_nosync(alloc_).on(dh::DefaultStream()); }
   auto Stream() const { return dh::DefaultStream(); }
   auto AsyncStream() const {
     dh::CUDAEvent e;
     e.Record(this->Stream());
     async_stream_.View().Wait(e);
     return async_stream_.View();
+  }
+  // Get a temporary pinned memory buffer, must go out of scope before the next call as data is
+  // cached.
+  template <typename T>
+  common::Span<T> TempPinned(std::size_t n) const {
+    return caching_pinned_alloc_.GetSpan<T>(n);
   }
 };
 }  // namespace xgboost

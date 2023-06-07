@@ -856,7 +856,9 @@ class Tensor {
   auto HostView() const { return this->View(-1); }
   auto HostView() { return this->View(-1); }
 
-  [[nodiscard]] size_t Size() const { return data_.Size(); }
+  [[nodiscard]] std::size_t Size() const { return data_.Size(); }
+  [[nodiscard]] bool Empty() const { return Size() == 0; }
+
   auto Shape() const { return common::Span<size_t const, kDim>{shape_}; }
   auto Shape(size_t i) const { return shape_[i]; }
 

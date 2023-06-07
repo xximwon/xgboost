@@ -203,7 +203,7 @@ class GHistIndexMatrix {
   // Call ColumnMatrix::PushBatch
   template <typename Batch>
   void PushAdapterBatchColumns(Context const* ctx, Batch const& batch, float missing,
-                               size_t rbegin);
+                               bst_row_t rbegin);
 
   void ResizeIndex(const size_t n_index, const bool isDense);
 

@@ -115,9 +115,11 @@ GHistIndexMatrix::GHistIndexMatrix(SparsePage const &batch, common::Span<Feature
 
 template <typename Batch>
 void GHistIndexMatrix::PushAdapterBatchColumns(Context const *ctx, Batch const &batch,
-                                               float missing, size_t rbegin) {
+                                               float missing, bst_row_t rbegin) {
   CHECK(columns_);
-  this->columns_->PushBatch(ctx->Threads(), batch, missing, *this, rbegin);
+  auto it = common::MakeIndexTransformIter([&batch](std::size_t i) { return batch.GetLine(i); });
+  auto batch_iter = common::IterSpan{it, batch.Size()};
+  this->columns_->PushBatch(ctx->Threads(), batch_iter, missing, *this, rbegin);
 }
 
 #define INSTANTIATION_PUSH(BatchT)                                 \

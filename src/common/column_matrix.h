@@ -170,11 +170,16 @@ class ColumnMatrix {
    *        SparsePage.
    */
   void InitFromSparse(SparsePage const& page, const GHistIndexMatrix& gmat, double sparse_threshold,
-                      int32_t n_threads) {
-    auto batch = data::SparsePageAdapterBatch{page.GetView()};
+                      std::int32_t n_threads) {
+    auto batch = page.GetView();
+    auto batch_it = IterSpan{
+        MakeIndexTransformIter([&](std::size_t ridx) {
+          return data::SparsePageAdapterBatch::Line{batch[ridx].data(), batch[ridx].size(), ridx};
+        }),
+        page.Size()};
     this->InitStorage(gmat, sparse_threshold);
     // ignore base row id here as we always has one column matrix for each sparse page.
-    this->PushBatch(n_threads, batch, std::numeric_limits<float>::quiet_NaN(), gmat, 0);
+    this->PushBatch(n_threads, batch_it, std::numeric_limits<float>::quiet_NaN(), gmat, 0);
   }
 
   /**
@@ -209,15 +214,15 @@ class ColumnMatrix {
    * \param base_rowid The beginning row index for current batch.
    */
   template <typename Batch>
-  void PushBatch(int32_t n_threads, Batch const& batch, float missing, GHistIndexMatrix const& gmat,
-                 size_t base_rowid) {
+  void PushBatch(std::int32_t n_threads, IterSpan<Batch> const& batch, float missing,
+                 GHistIndexMatrix const& gmat, std::size_t base_rowid) {
     // pre-fill index_ for dense columns
     if (!any_missing_) {
       // row index is compressed, we need to dispatch it.
 
       // use base_rowid from input parameter as gmat is a single matrix that contains all
       // the histogram index instead of being only a batch.
-      DispatchBinType(gmat.index.GetBinTypeSize(), [&, size = batch.Size(), n_threads = n_threads,
+      DispatchBinType(gmat.index.GetBinTypeSize(), [&, size = batch.size(), n_threads = n_threads,
                                                     n_features = gmat.Features()](auto t) {
         using RowBinIdxT = decltype(t);
         SetIndexNoMissing(base_rowid, gmat.index.data<RowBinIdxT>(), size, n_features, n_threads);
@@ -285,25 +290,29 @@ class ColumnMatrix {
 
   /**
    * \brief Set column index for both dense and sparse columns
+   *
+   * \param base_row_id Base row index for the currnet batch, for external memory support
+   * \param batch A span on the original input data, with size() equals to the number of
+   *              samples.
    */
   template <typename Batch>
-  void SetIndexMixedColumns(size_t base_rowid, Batch const& batch, const GHistIndexMatrix& gmat,
-                            float missing) {
+  void SetIndexMixedColumns(bst_row_t base_rowid, IterSpan<Batch> const& batch,
+                            const GHistIndexMatrix& gmat, float missing) {
     auto n_features = gmat.Features();
     missing_flags_.resize(feature_offsets_[n_features], true);
-    auto const* row_index = gmat.index.data<uint32_t>() + gmat.row_ptr[base_rowid];
+    auto const* row_index = gmat.index.data<std::uint32_t>() + gmat.row_ptr[base_rowid];
     num_nonzeros_.resize(n_features, 0);
     auto is_valid = data::IsValidFunctor{missing};
 
     DispatchBinType(bins_type_size_, [&](auto t) {
       using ColumnBinT = decltype(t);
       ColumnBinT* local_index = reinterpret_cast<ColumnBinT*>(index_.data());
-      size_t const batch_size = batch.Size();
-      size_t k{0};
-      for (size_t rid = 0; rid < batch_size; ++rid) {
-        auto line = batch.GetLine(rid);
+      std::size_t const batch_size = batch.size();
+      std::size_t k{0};
+      for (std::size_t rid = 0; rid < batch_size; ++rid) {
+        auto const& line = batch[rid];
         for (size_t i = 0; i < line.Size(); ++i) {
-          auto coo = line.GetElement(i);
+          auto const& coo = line.GetElement(i);
           if (is_valid(coo)) {
             auto fid = coo.column_idx;
             const uint32_t bin_id = row_index[k];

@@ -211,14 +211,14 @@ struct Index {
   // subtracting it with starting pointer of each feature, we can reduce it to smaller
   // value and store it with smaller types. Usable only with dense data.
   //
-  // For sparse input we have to store an addition feature index (similar to sparse matrix
-  // formats like CSR) for each bin in index field to choose the right offset.
+  // For sparse input we have to store an additional feature index (similar to sparse
+  // matrix formats like CSR) for each bin in index field to choose the right offset.
   template <typename T>
   struct CompressBin {
-    uint32_t const* offsets;
+    std::uint32_t const* offsets;
 
     template <typename Bin, typename Feat>
-    auto operator()(Bin bin_idx, Feat fidx) const {
+    decltype(auto) operator()(Bin bin_idx, Feat fidx) const {
       return static_cast<T>(bin_idx - offsets[fidx]);
     }
   };
@@ -230,11 +230,20 @@ struct Index {
   }
 
   Index() { SetBinTypeSize(binTypeSize_); }
+
   Index(const Index& i) = delete;
-  Index& operator=(Index i) = delete;
   Index(Index&& i) = delete;
-  Index& operator=(Index&& i) = delete;
-  uint32_t operator[](size_t i) const {
+  Index& operator=(Index const& i) = delete;
+
+  Index& operator=(Index&& i) {
+    std::swap(func_, i.func_);
+    std::swap(binTypeSize_, i.binTypeSize_);
+    std::swap(bin_offset_, i.bin_offset_);
+    std::swap(data_, i.data_);
+    return *this;
+  }
+
+  std::uint32_t operator[](size_t i) const {
     if (!bin_offset_.empty()) {
       // dense, compressed
       auto fidx = i % bin_offset_.size();
@@ -280,7 +289,7 @@ struct Index {
     data_.resize(n_bytes);
   }
   // set the offset used in compression, cut_ptrs is the CSC indptr in HistogramCuts
-  void SetBinOffset(std::vector<uint32_t> const& cut_ptrs) {
+  void SetBinOffset(std::vector<std::uint32_t> const& cut_ptrs) {
     bin_offset_.resize(cut_ptrs.size() - 1);  // resize to number of features.
     std::copy_n(cut_ptrs.begin(), bin_offset_.size(), bin_offset_.begin());
   }
@@ -300,12 +309,12 @@ struct Index {
 
  private:
   // Functions to decompress the index.
-  static uint32_t GetValueFromUint8(uint8_t const* t, size_t i) { return t[i]; }
-  static uint32_t GetValueFromUint16(uint8_t const* t, size_t i) {
-    return reinterpret_cast<uint16_t const*>(t)[i];
+  static uint32_t GetValueFromUint8(std::uint8_t const* t, size_t i) { return t[i]; }
+  static uint32_t GetValueFromUint16(std::uint8_t const* t, size_t i) {
+    return reinterpret_cast<std::uint16_t const*>(t)[i];
   }
   static uint32_t GetValueFromUint32(uint8_t const* t, size_t i) {
-    return reinterpret_cast<uint32_t const*>(t)[i];
+    return reinterpret_cast<std::uint32_t const*>(t)[i];
   }
 
   using Func = uint32_t (*)(uint8_t const*, size_t);

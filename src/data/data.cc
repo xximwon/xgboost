@@ -803,6 +803,74 @@ bool MetaInfo::ShouldHaveLabels() const {
   return !IsVerticalFederated() || collective::GetRank() == 0;
 }
 
+namespace cpu_impl {
+template <typename T, std::int32_t D>
+void SortByQID(Context const* ctx,
+               std::vector<bst_row_t> const& sorted_idx, linalg::Tensor<T, D>* p_data) {
+  auto& in = *p_data;
+  auto h_in = in.HostView();
+
+  linalg::Tensor<T, D> out(in.Shape(), ctx->gpu_id);
+  auto h_out = out.HostView();
+  for (std::size_t i = 0; i < in.Shape(0); ++i) {
+    for (std::size_t j = 0; j < in.Shape(1); ++j) {
+      h_out(sorted_idx[i], j) = h_in(i, j);
+    }
+  }
+  in = std::move(out);
+}
+
+template <typename T>
+void SortByQID(Context const* ctx, std::vector<bst_row_t> const& sorted_idx,
+               HostDeviceVector<T>* p_data) {
+  auto& in = *p_data;
+  auto h_in = in.HostVector();
+
+  HostDeviceVector<T> out(in.Size(), T{}, ctx->gpu_id);
+  auto h_out = out.HostVector();
+  for (std::size_t i = 0; i < in.Size(); ++i) {
+    h_out[sorted_idx[i]] = h_in[i];
+  }
+  in = std::move(out);
+}
+}  // namespace cpu_impl
+
+void MetaInfo::SortByQID(Context const* ctx) {
+  if (qid.Empty()) {
+    return;
+  }
+
+  if (ctx->IsCUDA()) {
+    LOG(FATAL) << "Not implemented.";
+  }
+
+  auto const& h_qid = qid.HostView();
+  auto sorted_idx = common::ArgSort<bst_row_t>(ctx, linalg::cbegin(h_qid), linalg::cend(h_qid));
+  if (labels.Empty()) {
+    // We should have valid number of features even if we have an empty partition.
+    CHECK_NE(num_col_, 0);
+  }
+  cpu_impl::SortByQID(ctx, sorted_idx, &labels);
+  if (!weights_.Empty()) {
+    cpu_impl::SortByQID(ctx, sorted_idx, &weights_);
+  }
+  if (!base_margin_.Empty()) {
+    cpu_impl::SortByQID(ctx, sorted_idx, &base_margin_);
+  }
+  // labels_upper_bound and lower_bound are not related to qid
+  StringView msg{"Mixed data for learning to rank and survival training."};
+  CHECK(labels_lower_bound_.Empty()) << msg;
+  CHECK(labels_upper_bound_.Empty()) << msg;
+
+  std::vector<bst_group_t> sorted_qid(h_qid.Size());
+  auto permu = common::IterSpan{common::MakeIndexTransformIter([&](std::size_t i) {
+                                  auto ridx = sorted_idx[i];
+                                  return h_qid(ridx);
+                                }),
+                                h_qid.Size()};
+  std::copy(permu.begin(), permu.end(), sorted_qid.begin());
+}
+
 using DMatrixThreadLocal =
     dmlc::ThreadLocalStore<std::map<DMatrix const *, XGBAPIThreadLocalEntry>>;
 

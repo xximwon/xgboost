@@ -303,6 +303,7 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
     iter.Reset();
   }
   CHECK_EQ(accumulated_rows, Info().num_row_);
+  Info().SortByQID(ctx);
 }
 
 BatchSet<GHistIndexMatrix> IterativeDMatrix::GetGradientIndex(Context const* ctx,

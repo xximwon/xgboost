@@ -208,6 +208,11 @@ class MetaInfo {
    */
   bool ShouldHaveLabels() const;
 
+  /**
+   * \brief Sort query index along with other meta info.
+   */
+  void SortByQID(Context const* ctx);
+
  private:
   void SetInfoFromHost(Context const& ctx, StringView key, Json arr);
   void SetInfoFromCUDA(Context const& ctx, StringView key, Json arr);

@@ -129,7 +129,11 @@ TEST(GradientIndex, PushBatch) {
       SparsePageAdapterBatch batch{page.GetView()};
       gmat.PushAdapterBatch(m->Ctx(), 0, 0, batch, std::numeric_limits<float>::quiet_NaN(), {}, st,
                             m->Info().num_row_);
-      gmat.PushAdapterBatchColumns(m->Ctx(), batch, std::numeric_limits<float>::quiet_NaN(), 0);
+      auto batch_iter = common::IterSpan{
+          common::MakeIndexTransformIter([&](std::size_t i) { return batch.GetLine(i); }),
+          batch.Size()};
+      gmat.Transpose().PushBatch(m->Ctx()->Threads(), batch_iter,
+                                 std::numeric_limits<float>::quiet_NaN(), gmat, 0);
     }
     for (auto const &page : m->GetBatches<GHistIndexMatrix>(&ctx, BatchParam{max_bins, st})) {
       for (size_t i = 0; i < kRows; ++i) {

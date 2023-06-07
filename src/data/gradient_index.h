@@ -200,11 +200,6 @@ class GHistIndexMatrix {
     }
   }
 
-  // Call ColumnMatrix::PushBatch
-  template <typename Batch>
-  void PushAdapterBatchColumns(Context const* ctx, Batch const& batch, float missing,
-                               bst_row_t rbegin);
-
   void ResizeIndex(const size_t n_index, const bool isDense);
 
   void GetFeatureCounts(size_t* counts) const {
@@ -234,6 +229,7 @@ class GHistIndexMatrix {
   size_t WriteColumnPage(dmlc::Stream* fo) const;
 
   [[nodiscard]] common::ColumnMatrix const& Transpose() const;
+  [[nodiscard]] common::ColumnMatrix& Transpose();
 
   [[nodiscard]] bst_bin_t GetGindex(size_t ridx, size_t fidx) const;
   float GetFvalue(size_t ridx, size_t fidx, bool is_cat) const;
@@ -241,7 +237,7 @@ class GHistIndexMatrix {
                   std::vector<float> const& mins, bst_row_t ridx, bst_feature_t fidx,
                   bool is_cat) const;
 
-  void SortSampleByQID(Context const* ctx, MetaInfo const& info);
+  std::vector<bst_row_t> SortSampleByQID(Context const* ctx, MetaInfo const& info);
 
  private:
   std::unique_ptr<common::ColumnMatrix> columns_;

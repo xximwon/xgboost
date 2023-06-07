@@ -113,25 +113,6 @@ GHistIndexMatrix::GHistIndexMatrix(SparsePage const &batch, common::Span<Feature
   }
 }
 
-template <typename Batch>
-void GHistIndexMatrix::PushAdapterBatchColumns(Context const *ctx, Batch const &batch,
-                                               float missing, bst_row_t rbegin) {
-  CHECK(columns_);
-  auto it = common::MakeIndexTransformIter([&batch](std::size_t i) { return batch.GetLine(i); });
-  auto batch_iter = common::IterSpan{it, batch.Size()};
-  this->columns_->PushBatch(ctx->Threads(), batch_iter, missing, *this, rbegin);
-}
-
-#define INSTANTIATION_PUSH(BatchT)                                 \
-  template void GHistIndexMatrix::PushAdapterBatchColumns<BatchT>( \
-      Context const *ctx, BatchT const &batch, float missing, size_t rbegin);
-
-INSTANTIATION_PUSH(data::CSRArrayAdapterBatch)
-INSTANTIATION_PUSH(data::ArrayAdapterBatch)
-INSTANTIATION_PUSH(data::SparsePageAdapterBatch)
-
-#undef INSTANTIATION_PUSH
-
 void GHistIndexMatrix::ResizeIndex(const size_t n_index, const bool isDense) {
   if ((MaxNumBinPerFeat() - 1 <= static_cast<int>(std::numeric_limits<uint8_t>::max())) &&
       isDense) {
@@ -152,6 +133,10 @@ void GHistIndexMatrix::ResizeIndex(const size_t n_index, const bool isDense) {
 
 common::ColumnMatrix const &GHistIndexMatrix::Transpose() const {
   CHECK(columns_);
+  return *columns_;
+}
+
+common::ColumnMatrix &GHistIndexMatrix::Transpose() {
   return *columns_;
 }
 
@@ -219,10 +204,11 @@ float GHistIndexMatrix::GetFvalue(std::vector<std::uint32_t> const &ptrs,
   return std::numeric_limits<float>::quiet_NaN();
 }
 
-void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info) {
+std::vector<bst_row_t> GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info) {
   if (!ctx->IsCPU()) {
     LOG(FATAL) << "Invalid device ordinal";
   }
+  CHECK_EQ(this->base_rowid, 0);
   // fixme: re-gen the columns, may need access to external data.
   CHECK(!columns_) << "Columns should not be initialized.";
   auto const h_qid = info.qid.HostView();
@@ -232,7 +218,9 @@ void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info)
   common::Index out;
   out.SetBinTypeSize(index.GetBinTypeSize());
   out.Resize(index.Size() * index.GetBinTypeSize());
-  out.SetBinOffset(this->cut.Ptrs());
+  if (isDense_) {
+    out.SetBinOffset(this->cut.Ptrs());
+  }
 
   CHECK_EQ(info.num_row_, this->Size());
   std::vector<bst_row_t> out_row_ptr(this->row_ptr.size());
@@ -254,7 +242,7 @@ void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info)
       auto iend = this->row_ptr[in_ridx + 1];
 
       auto obeg = this->row_ptr[out_ridx];
-      auto oend = this->row_ptr[out_ridx + 1];
+      // auto oend = this->row_ptr[out_ridx + 1];
 
       for (std::size_t i = 0; i < iend - ibeg; ++i) {
         out_index_data[i + obeg] = in_index_data[i + ibeg];
@@ -264,6 +252,8 @@ void GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info)
 
   this->index = std::move(out);
   this->row_ptr = std::move(out_row_ptr);
+
+  return sorted_idx;
 }
 
 bool GHistIndexMatrix::ReadColumnPage(dmlc::SeekStream *fi) {

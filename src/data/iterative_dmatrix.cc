@@ -261,19 +261,6 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
   CHECK_EQ(rbegin, Info().num_row_);
   CHECK_EQ(this->ghist_->Features(), Info().num_col_);
 
-  /**
-   * Generate column matrix
-   */
-  accumulated_rows = 0;
-  while (iter.Next()) {
-    HostAdapterDispatch(proxy, [&](auto const& batch) {
-      this->ghist_->PushAdapterBatchColumns(ctx, batch, missing, accumulated_rows);
-    });
-    accumulated_rows += num_rows();
-  }
-  iter.Reset();
-  CHECK_EQ(accumulated_rows, Info().num_row_);
-
   if (n_batches == 1) {
     this->info_ = std::move(proxy->Info());
     this->info_.num_nonzero_ = nnz;
@@ -282,6 +269,40 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
   }
 
   Info().feature_types.HostVector() = h_ft;
+
+  /**
+   * Generate column matrix
+   */
+  accumulated_rows = 0;
+  if (!Info().qid.Empty()) {
+    auto sorted_idx = this->ghist_->SortSampleByQID(ctx, this->Info());
+    while (iter.Next()) {
+      HostAdapterDispatch(proxy, [&](auto const& batch) {
+        auto it = common::MakeIndexTransformIter([&batch, &sorted_idx](std::size_t i) {
+          auto ridx = sorted_idx[i];
+          return batch.GetLine(ridx);
+        });
+        auto batch_iter = common::IterSpan{it, batch.Size()};
+        this->ghist_->Transpose().PushBatch(ctx->Threads(), batch_iter, missing, *this->ghist_,
+                                            accumulated_rows);
+      });
+      accumulated_rows += num_rows();
+    }
+    iter.Reset();
+  } else {
+    while (iter.Next()) {
+      HostAdapterDispatch(proxy, [&](auto const& batch) {
+        auto it =
+            common::MakeIndexTransformIter([&batch](std::size_t i) { return batch.GetLine(i); });
+        auto batch_iter = common::IterSpan{it, batch.Size()};
+        this->ghist_->Transpose().PushBatch(ctx->Threads(), batch_iter, missing, *this->ghist_,
+                                            accumulated_rows);
+      });
+      accumulated_rows += num_rows();
+    }
+    iter.Reset();
+  }
+  CHECK_EQ(accumulated_rows, Info().num_row_);
 }
 
 BatchSet<GHistIndexMatrix> IterativeDMatrix::GetGradientIndex(Context const* ctx,

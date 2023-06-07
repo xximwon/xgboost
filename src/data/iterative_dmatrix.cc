@@ -214,6 +214,7 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
       if (!p_sketch) {
         h_ft = proxy->Info().feature_types.ConstHostVector();
         SyncFeatureType(&h_ft);
+        LOG(FATAL) << "fixme: we need to remove the group ptr here.";
         p_sketch.reset(new common::HostSketchContainer{ctx, p.max_bin, h_ft, column_sizes,
                                                        !proxy->Info().group_ptr_.empty()});
       }
@@ -275,7 +276,7 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
    */
   accumulated_rows = 0;
   if (!Info().qid.Empty()) {
-    auto sorted_idx = this->ghist_->SortSampleByQID(ctx, this->Info());
+    auto sorted_idx = this->ghist_->SortSampleByQID(ctx, p.sparse_thresh, this->Info());
     while (iter.Next()) {
       HostAdapterDispatch(proxy, [&](auto const& batch) {
         auto it = common::MakeIndexTransformIter([&batch, &sorted_idx](std::size_t i) {

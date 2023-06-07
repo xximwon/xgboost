@@ -204,13 +204,13 @@ float GHistIndexMatrix::GetFvalue(std::vector<std::uint32_t> const &ptrs,
   return std::numeric_limits<float>::quiet_NaN();
 }
 
-std::vector<bst_row_t> GHistIndexMatrix::SortSampleByQID(Context const *ctx, MetaInfo const &info) {
+std::vector<bst_row_t> GHistIndexMatrix::SortSampleByQID(Context const *ctx, float sparse_threshold,
+                                                         MetaInfo const &info) {
   if (!ctx->IsCPU()) {
     LOG(FATAL) << "Invalid device ordinal";
   }
   CHECK_EQ(this->base_rowid, 0);
-  // fixme: re-gen the columns, may need access to external data.
-  CHECK(!columns_) << "Columns should not be initialized.";
+
   auto const h_qid = info.qid.HostView();
   auto sorted_idx = common::ArgSort<bst_row_t>(ctx, linalg::cbegin(h_qid), linalg::cend(h_qid));
 
@@ -252,6 +252,8 @@ std::vector<bst_row_t> GHistIndexMatrix::SortSampleByQID(Context const *ctx, Met
 
   this->index = std::move(out);
   this->row_ptr = std::move(out_row_ptr);
+
+  this->columns_ = std::make_unique<common::ColumnMatrix>(*this, sparse_threshold);
 
   return sorted_idx;
 }

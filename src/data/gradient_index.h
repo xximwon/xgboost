@@ -237,7 +237,8 @@ class GHistIndexMatrix {
                   std::vector<float> const& mins, bst_row_t ridx, bst_feature_t fidx,
                   bool is_cat) const;
 
-  std::vector<bst_row_t> SortSampleByQID(Context const* ctx, MetaInfo const& info);
+  std::vector<bst_row_t> SortSampleByQID(Context const* ctx, float sparse_threshold,
+                                         MetaInfo const& info);
 
  private:
   std::unique_ptr<common::ColumnMatrix> columns_;

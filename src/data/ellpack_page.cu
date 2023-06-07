@@ -473,10 +473,10 @@ void EllpackPageImpl::SortRowByQID(Context const* ctx, MetaInfo const& info) {
   dh::ArgSort<true>(dh::ToSpan(qid), dh::ToSpan(idx));
 
   auto d_sorted_idx = dh::ToSpan(idx);
-  common::CompressedIterator<uint32_t> src_iterator_d;
+  common::CompressedIterator<std::uint32_t> src_iterator_d;
   common::CompressedBufferWriter cbw{cuts_.TotalBins() + 1};
   CHECK_EQ(this->base_rowid, 0) << error::NoExtMemory();
-  dh::LaunchN(this->n_rows, cuctx->Stream(), [=]XGBOOST_DEVICE(std::size_t i) mutable {
+  dh::LaunchN(this->n_rows, cuctx->Stream(), [=] __device__(std::size_t i) mutable {
     std::size_t src_row = d_sorted_idx[i];
     std::size_t dst_row = i;
 

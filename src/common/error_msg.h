@@ -33,5 +33,7 @@ constexpr StringView InconsistentMaxBin() {
   return "Inconsistent `max_bin`. `max_bin` should be the same across different QuantileDMatrix, "
          "and consistent with the Booster being trained.";
 }
+
+constexpr StringView NoExtMemory() { return "External memory is not supported."; }
 }  // namespace xgboost::error
 #endif  // XGBOOST_COMMON_ERROR_MSG_H_

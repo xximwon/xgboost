@@ -154,6 +154,10 @@ class PrivateMmapStream : public MemoryFixSizeBuffer {
 
   ~PrivateMmapStream() override;
 };
+
+class GDSStream : public MemoryFixSizeBuffer {
+  std::int32_t fd_;
+};
 }  // namespace common
 }  // namespace xgboost
 #endif  // XGBOOST_COMMON_IO_H_

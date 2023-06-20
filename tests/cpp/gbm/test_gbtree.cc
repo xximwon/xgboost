@@ -42,6 +42,7 @@ TEST(GBTree, SelectTreeMethod) {
 
 #ifdef XGBOOST_USE_CUDA
   ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
+  ASSERT_EQ(ctx.Ordinal(), 0);
   gbtree.Configure({{"tree_method", "gpu_hist"}});
   ASSERT_EQ(tparam.updater_seq, "grow_gpu_hist");
   gbtree.Configure({{"booster", "dart"}, {"tree_method", "gpu_hist"}});

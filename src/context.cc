@@ -96,7 +96,8 @@ void Context::ParseDeviceOrdinal() {
   if (gpu_id == kCpuId) {
     this->device_ = Device{Device::kCPU, kCpuId};
   } else {
-    this->device_ = Device{Device::kCUDA, kCpuId};
+    CHECK_LE(gpu_id, std::numeric_limits<bst_d_ordinal_t>::max()) << "Ordinal value too large.";
+    this->device_ = Device{Device::kCUDA, static_cast<bst_d_ordinal_t>(gpu_id)};
   }
 
   if (this->IsCPU()) {

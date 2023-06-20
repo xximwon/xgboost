@@ -36,8 +36,7 @@ IterativeDMatrix::IterativeDMatrix(DataIterHandle iter_handle, DMatrixHandle pro
   auto d = MakeProxy(proxy_)->Ctx()->DeviceType();
 
   Context ctx;
-  ctx.UpdateAllowUnknown(
-      Args{{"nthread", std::to_string(nthread)}, {"gpu_id", std::to_string(d.ordinal)}});
+  ctx.UpdateAllowUnknown(Args{{"nthread", std::to_string(nthread)}, {"device", d.Name()}});
   // hardcoded parameter.
   BatchParam p{max_bin, tree::TrainParam::DftSparseThreshold()};
 

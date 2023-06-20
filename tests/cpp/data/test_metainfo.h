@@ -14,10 +14,10 @@
 #include "../../../src/data/array_interface.h"
 
 namespace xgboost {
-inline void TestMetaInfoStridedData(bst_d_ordinal_t device) {
+inline void TestMetaInfoStridedData(Device device) {
   MetaInfo info;
   Context ctx;
-  ctx.UpdateAllowUnknown(Args{{"gpu_id", std::to_string(device)}});
+  ctx.UpdateAllowUnknown(Args{{"device", device.Name()}});
   {
     // labels
     linalg::Tensor<float, 3> labels;
@@ -25,7 +25,7 @@ inline void TestMetaInfoStridedData(bst_d_ordinal_t device) {
     auto& h_label = labels.Data()->HostVector();
     std::iota(h_label.begin(), h_label.end(), 0.0);
     auto t_labels =
-        labels.View(Device{Device::kCUDA, device}).Slice(linalg::All(), 0, linalg::All());
+        labels.View(device).Slice(linalg::All(), 0, linalg::All());
     ASSERT_EQ(t_labels.Shape().size(), 2);
 
     info.SetInfo(ctx, "label", StringView{ArrayInterfaceStr(t_labels)});
@@ -47,7 +47,7 @@ inline void TestMetaInfoStridedData(bst_d_ordinal_t device) {
     qid.Reshape(32, 2);
     auto& h_qid = qid.Data()->HostVector();
     std::iota(h_qid.begin(), h_qid.end(), 0);
-    auto s = qid.View(Device{Device::kCUDA, device}).Slice(linalg::All(), 0);
+    auto s = qid.View(device).Slice(linalg::All(), 0);
     auto str = ArrayInterfaceStr(s);
     info.SetInfo(ctx, "qid", StringView{str});
     auto const& h_result = info.group_ptr_;
@@ -59,7 +59,7 @@ inline void TestMetaInfoStridedData(bst_d_ordinal_t device) {
     base_margin.Reshape(4, 2, 3);
     auto& h_margin = base_margin.Data()->HostVector();
     std::iota(h_margin.begin(), h_margin.end(), 0.0);
-    auto t_margin = base_margin.View(Device{Device::kCUDA, device}).Slice(linalg::All(), 0, linalg::All());
+    auto t_margin = base_margin.View(device).Slice(linalg::All(), 0, linalg::All());
     ASSERT_EQ(t_margin.Shape().size(), 2);
 
     info.SetInfo(ctx, "base_margin", StringView{ArrayInterfaceStr(t_margin)});

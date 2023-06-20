@@ -148,12 +148,12 @@ TEST(Plugin, CPUvsOneAPI) {
 
   {
     // CPU
-    ctx.gpu_id = -1;
+    ctx.UpdateAllowUnknown(Args{{"device", "CPU"}});
     obj_cpu->GetGradient(preds, info, 0, &cpu_out_preds);
   }
   {
     // oneapi
-    ctx.gpu_id = 0;
+    ctx.UpdateAllowUnknown(Args{{"device", "SYCL:0"}});
     obj_oneapi->GetGradient(preds, info, 0, &oneapi_out_preds);
   }
 

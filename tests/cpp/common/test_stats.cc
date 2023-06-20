@@ -123,7 +123,7 @@ TEST(Stats, Mean) {
 #if defined(XGBOOST_USE_CUDA)
 TEST(Stats, GPUMean) {
   Context ctx;
-  ctx.UpdateAllowUnknown(Args{{"gpu_id", "0"}});
+  ctx.UpdateAllowUnknown(Args{{"device", "CUDA:0"}});
   TestMean(&ctx);
 }
 #endif  // defined(XGBOOST_USE_CUDA)

@@ -149,7 +149,7 @@ void TestInplacePrediction(Context const *ctx, std::shared_ptr<DMatrix> x, std::
     ASSERT_NEAR(h_pred[i], h_pred_0[i] + h_pred_1[i] - 0.5f, kRtEps);
   }
 
-  learner->SetParam("gpu_id", "-1");
+  learner->SetParam("device", "CPU");
   learner->Configure();
 }
 

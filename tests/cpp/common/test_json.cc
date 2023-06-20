@@ -37,7 +37,7 @@ std::string GetModelStr() {
   },
   "configuration": {
     "booster": "gbtree",
-    "gpu_id": "0",
+    "device": "CUDA:0",
     "num_class": "0",
     "num_feature": "10",
     "objective": "reg:linear",

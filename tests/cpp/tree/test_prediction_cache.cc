@@ -28,7 +28,7 @@ class TestPredictionCache : public ::testing::Test {
                       std::string const& strategy) {
     std::unique_ptr<Learner> learner{Learner::Create({Xy_})};
     if (updater_name == "grow_gpu_hist") {
-      // gpu_id setup
+      // device setup
       learner->SetParam("tree_method", "gpu_hist");
     } else {
       learner->SetParam("updater", updater_name);

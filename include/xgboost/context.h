@@ -40,6 +40,19 @@ struct Device {
     return device == that.device && ordinal == that.ordinal;
   }
   bool operator!=(Device const& that) const { return !(*this == that); }
+
+  [[nodiscard]] std::string Name() const {
+    switch (device) {
+      case Device::kCPU:
+        return "CPU";
+      case Device::kCUDA:
+        return "CUDA:" + std::to_string(ordinal);
+      default: {
+        LOG(FATAL) << "Unknown device.";
+        return "";
+      }
+    }
+  }
 };
 
 static_assert(sizeof(Device) == 4);
@@ -98,18 +111,7 @@ struct Context : public XGBoostParameter<Context> {
   /**
    * \brief Name of the current device.
    */
-  std::string DeviceName() const {
-    switch (device_.device) {
-      case Device::kCPU:
-        return "CPU";
-      case Device::kCUDA:
-        return "CUDA:" + std::to_string(this->Ordinal());
-      default: {
-        LOG(FATAL) << "Unknown device.";
-        return "";
-      }
-    }
-  }
+  std::string DeviceName() const { return this->device_.Name(); }
 
   CUDAContext const* CUDACtx() const;
   // Make a CUDA context based on the current context.

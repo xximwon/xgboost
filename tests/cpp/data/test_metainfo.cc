@@ -311,5 +311,5 @@ TEST(MetaInfo, HostExtend) {
 }
 
 namespace xgboost {
-TEST(MetaInfo, CPUStridedData) { TestMetaInfoStridedData(Context::kCpuId); }
+TEST(MetaInfo, CPUStridedData) { TestMetaInfoStridedData(Device::CPU()); }
 }  // namespace xgboost

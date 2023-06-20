@@ -1,7 +1,6 @@
 /**
  * Copyright 2019-2023, XGBoost Contributors
  */
-
 #include <gtest/gtest.h>
 #include <thrust/device_vector.h>
 #include <xgboost/context.h>
@@ -84,9 +83,7 @@ TEST(MetaInfo, FromInterface) {
   EXPECT_EQ(info.group_ptr_, expected_group_ptr);
 }
 
-TEST(MetaInfo, GPUStridedData) {
-  TestMetaInfoStridedData(0);
-}
+TEST(MetaInfo, GPUStridedData) { TestMetaInfoStridedData(Device::CUDA(0)); }
 
 TEST(MetaInfo, Group) {
   cudaSetDevice(0);

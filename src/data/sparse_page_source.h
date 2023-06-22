@@ -210,6 +210,7 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S> {
         << "Sparse DMatrix assumes forward iteration.";
 
     monitor_.Start("Wait");
+    CHECK((*ring_)[count_].valid());
     page_ = (*ring_)[count_].get();
     CHECK(!(*ring_)[count_].valid());
     monitor_.Stop("Wait");
@@ -380,6 +381,24 @@ class PageSourceIncMixIn : public SparsePageSourceImpl<S> {
   // so we avoid fetching it.
   bool sync_{true};
 
+  /**
+   * @brief Handle various states at the end of a forward iteration.
+   *
+   *  The Reset() method can be called at any point in time, while this one can only be
+   *  called at the end of an iteration.
+   */
+  void ResetAtEnd() {
+    this->cache_info_->Commit();
+    if (this->n_batches_ != 0) {
+      CHECK_EQ(this->count_, this->n_batches_);
+    }
+    CHECK_GE(this->count_, 1);
+    // Drop the source if we don't need to sync with it after the cache is being written.
+    if (!sync_) {
+      this->source_.reset();
+    }
+  }
+
  public:
   PageSourceIncMixIn(float missing, int nthreads, bst_feature_t n_features, uint32_t n_batches,
                      std::shared_ptr<Cache> cache, bool sync)
@@ -395,11 +414,7 @@ class PageSourceIncMixIn : public SparsePageSourceImpl<S> {
     this->at_end_ = this->count_ == this->n_batches_;
 
     if (this->at_end_) {
-      this->cache_info_->Commit();
-      if (this->n_batches_ != 0) {
-        CHECK_EQ(this->count_, this->n_batches_);
-      }
-      CHECK_GE(this->count_, 1);
+      this->ResetAtEnd();
     } else {
       this->Fetch();
     }

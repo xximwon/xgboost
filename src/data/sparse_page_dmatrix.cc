@@ -11,6 +11,7 @@
 #include "./simple_batch_iterator.h"
 #include "batch_utils.h"  // for RegenGHist
 #include "gradient_index.h"
+#include "sparse_page_source.h"
 
 namespace xgboost::data {
 MetaInfo &SparsePageDMatrix::Info() { return info_; }
@@ -58,13 +59,13 @@ SparsePageDMatrix::SparsePageDMatrix(DataIterHandle iter_handle, DMatrixHandle p
       iter_, reset_, next_};
 
   uint32_t n_batches = 0;
-  size_t n_features = 0;
-  size_t n_samples = 0;
+  bst_feature_t n_features = 0;
+  bst_row_t n_samples = 0;
   size_t nnz = 0;
 
   auto num_rows = [&]() {
-    bool type_error {false};
-    size_t n_samples = HostAdapterDispatch(
+    bool type_error{false};
+    bst_row_t n_samples = HostAdapterDispatch(
         proxy, [](auto const &value) { return value.NumRows(); }, &type_error);
     if (type_error) {
       n_samples = detail::NSamplesDevice(proxy);
@@ -72,8 +73,8 @@ SparsePageDMatrix::SparsePageDMatrix(DataIterHandle iter_handle, DMatrixHandle p
     return n_samples;
   };
   auto num_cols = [&]() {
-    bool type_error {false};
-    size_t n_features = HostAdapterDispatch(
+    bool type_error{false};
+    bst_feature_t n_features = HostAdapterDispatch(
         proxy, [](auto const &value) { return value.NumCols(); }, &type_error);
     if (type_error) {
       n_features = detail::NFeaturesDevice(proxy);
@@ -103,7 +104,8 @@ SparsePageDMatrix::SparsePageDMatrix(DataIterHandle iter_handle, DMatrixHandle p
 
   fmat_ctx_ = ctx;
 }
-
+// Fixme:
+// - Test unfinished call with sparse page and external iter.
 void SparsePageDMatrix::InitializeSparsePage(Context const *ctx) {
   auto id = MakeCache(this, ".row.page", cache_prefix_, &cache_info_);
   // Don't use proxy DMatrix once this is already initialized, this allows users to
@@ -167,25 +169,42 @@ BatchSet<GHistIndexMatrix> SparsePageDMatrix::GetGradientIndex(Context const *ct
                                                                const BatchParam &param) {
   CHECK_GE(param.max_bin, 2);
   auto id = MakeCache(this, ".gradient_index.page", cache_prefix_, &cache_info_);
-  this->InitializeSparsePage(ctx);
-  if (!cache_info_.at(id)->written || detail::RegenGHist(batch_param_, param)) {
+  auto need_regen = !cache_info_.at(id)->written || detail::RegenGHist(batch_param_, param);
+  // If we need a new gradient index cache or the gradient index requires the sparse page
+  // source to be in sync, sparse page needs to be initialized.
+  if (need_regen || std::isnan(param.sparse_thresh)) {
+    this->InitializeSparsePage(ctx);
+  }
+
+  if (need_regen) {
+    // The source data is required for creating histogram index.
+    CHECK(sparse_page_source_);
+    // Generate a new gradient index cache.
     cache_info_.erase(id);
-    MakeCache(this, ".gradient_index.page", cache_prefix_, &cache_info_);
+    id = MakeCache(this, ".gradient_index.page", cache_prefix_, &cache_info_);
     LOG(INFO) << "Generating new Gradient Index.";
     // Use sorted sketch for approx.
     auto sorted_sketch = param.regen;
+    // Sketch on DMatrix uses SparsePage.
     auto cuts = common::SketchOnDMatrix(ctx, this, param.max_bin, sorted_sketch, param.hess);
     this->InitializeSparsePage(ctx);  // reset after use.
-
+    // Renew the parameter
     batch_param_ = param;
+    // Release the old source
     ghist_index_source_.reset();
     CHECK_NE(cuts.Values().size(), 0);
     auto ft = this->info_.feature_types.ConstHostSpan();
+    // Create the new histogram index source
     ghist_index_source_.reset(new GradientIndexPageSource(
         this->missing_, ctx->Threads(), this->Info().num_col_, this->n_batches_, cache_info_.at(id),
         param, std::move(cuts), this->IsDense(), ft, sparse_page_source_));
   } else {
+    // Load the gradient index from cache. Reset it before iteration begins.
     CHECK(ghist_index_source_);
+    // Make sure we don't have the giant sparse page source in memory.
+    if (!std::isnan(param.sparse_thresh)) {
+      CHECK(!sparse_page_source_);
+    }
     ghist_index_source_->Reset();
   }
   auto begin_iter = BatchIterator<GHistIndexMatrix>(ghist_index_source_);

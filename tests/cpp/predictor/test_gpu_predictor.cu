@@ -152,12 +152,11 @@ TEST(GPUPredictor, ShapStump) {
   gbm::GBTreeModel model(&mparam, &ctx);
 
   std::vector<std::unique_ptr<RegTree>> trees;
-  trees.push_back(std::unique_ptr<RegTree>());
+  trees.push_back(std::make_unique<RegTree>());
   model.CommitModelGroup(std::move(trees), 0);
 
-  auto gpu_lparam = MakeCUDACtx(0);
-  std::unique_ptr<Predictor> gpu_predictor = std::unique_ptr<Predictor>(
-      Predictor::Create("gpu_predictor", &gpu_lparam));
+  std::unique_ptr<Predictor> gpu_predictor =
+      std::unique_ptr<Predictor>(Predictor::Create("gpu_predictor", &ctx));
   gpu_predictor->Configure({});
   HostDeviceVector<float> predictions;
   auto dmat = RandomDataGenerator(3, 1, 0).GenerateDMatrix();

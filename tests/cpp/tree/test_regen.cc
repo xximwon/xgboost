@@ -59,10 +59,11 @@ class RegenTest : public ::testing::Test {
     RandomDataGenerator{kRows, 1, 0}.GenerateDense(labels);
   }
 
-  auto constexpr Iter() const { return 4; }
+  [[nodiscard]] auto constexpr Iter() const { return 4; }
 
   template <typename Page>
-  size_t TestTreeMethod(std::string tree_method, std::string obj, bool reset = true) const {
+  [[nodiscard]] size_t TestTreeMethod(std::string tree_method, std::string obj,
+                                      bool reset = true) const {
     auto learner = std::unique_ptr<Learner>{Learner::Create({p_fmat_})};
     learner->SetParam("tree_method", tree_method);
     learner->SetParam("objective", obj);

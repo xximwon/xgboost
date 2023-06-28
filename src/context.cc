@@ -5,7 +5,8 @@
  */
 #include "xgboost/context.h"
 
-#include "common/common.h"  // AssertGPUSupport
+#include "common/common.h"     // AssertGPUSupport
+#include "common/error_msg.h"  // InvalidOrdinalError
 #include "common/threading_utils.h"
 #include "xgboost/string_view.h"
 
@@ -18,91 +19,94 @@ std::int64_t constexpr Context::kDefaultSeed;
 
 Context::Context() : cfs_cpu_count_{common::GetCfsCPUCount()} {}
 
-std::int32_t ConfigureGpuId(std::int32_t gpu_id, bool fail_on_invalid) {
+namespace {
+Device ConfigureDeviceOrd(std::int32_t cu_ordinal, bool fail_on_invalid) {
+  CHECK_GE(cu_ordinal, 0);
+
 #if defined(XGBOOST_USE_CUDA)
-  // When booster is loaded from a memory image (Python pickle or R
-  // raw model), number of available GPUs could be different.  Wrap around it.
+  // When booster is loaded from a memory image (Python pickle or R raw model), number of
+  // available GPUs could be different.  Wrap around it.
   std::int32_t n_gpus = common::AllVisibleGPUs();
   if (n_gpus == 0) {
-    if (gpu_id != Context::kCpuId) {
-      LOG(WARNING) << "No visible GPU is found, setting `ordinal` to -1";
-    }
-    gpu_id = Context::kCpuId;
+    LOG(WARNING) << "No visible GPU is found, setting `ordinal` to -1";
+    cu_ordinal = Context::kCpuId;
   } else if (fail_on_invalid) {
-    CHECK(gpu_id == Context::kCpuId || gpu_id < n_gpus)
-        << "Only " << n_gpus << " GPUs are visible, ordinal " << gpu_id << " is invalid.";
-  } else if (gpu_id != Context::kCpuId && gpu_id >= n_gpus) {
-    gpu_id = gpu_id % n_gpus;
-    LOG(WARNING) << "Only " << n_gpus << " GPUs are visible, setting `ordinal` to " << gpu_id;
+    CHECK_LT(cu_ordinal, n_gpus) << "Only " << n_gpus << " GPUs are visible, ordinal " << cu_ordinal
+                                 << " is invalid.";
+  } else if (cu_ordinal >= n_gpus) {
+    cu_ordinal = cu_ordinal % n_gpus;
+    LOG(WARNING) << "Only " << n_gpus << " GPUs are visible, setting `ordinal` to " << cu_ordinal;
   }
 #else
-  // Just set it to CPU, don't think about it.
+  // Just set it to CPU.
   gpu_id = Context::kCpu;
   (void)(fail_on_invalid);
 #endif  // defined(XGBOOST_USE_CUDA)
 
-  if (gpu_id != Context::kCpuId) {
-    common::SetDevice(gpu_id);
+  if (cu_ordinal == Context::kCpuId) {
+    return Device::CPU();
   }
-  return gpu_id;
+
+  common::SetDevice(cu_ordinal);
+  CHECK_LE(cu_ordinal, std::numeric_limits<bst_d_ordinal_t>::max())
+      << "Device ordinal value too large.";
+  return Device::CUDA(static_cast<bst_d_ordinal_t>(cu_ordinal));
 }
 
+void ThrowIf(bool cond, StringView original) {
+  if (XGBOOST_EXPECT(cond, false)) {
+    error::InvalidOrdinal(StringView{original});
+  }
+}
+}  // anonymous namespace
+
 void Context::ParseDeviceOrdinal() {
-  auto const& original = this->device;
-  std::int32_t gpu_id{Context::kCpuId};
-  StringView msg{R"(Invalid argument for `device`. Expected to be one of the following:
-- CPU
-- CUDA
-- CUDA:<device ordinal>  # e.g. CUDA:0
-)"};
+  auto original = StringView{this->device};
   std::string device{original.c_str(), original.size()};
   // being lenient toward case.
   std::transform(device.cbegin(), device.cend(), device.begin(),
                  [](auto c) { return std::toupper(c); });
-  auto split_it = std::find(device.cbegin(), device.cend(), ':');
-  gpu_id = -2;  // mark it invalid for check.
-  if (split_it == device.cend()) {
-    // no ordinal.
+
+  /** Ordinal is not specified: CPU/CUDA */
+  if (std::find(device.cbegin(), device.cend(), ':') == device.cend()) {
     if (device == "CPU") {
-      gpu_id = Context::kCpuId;
+      this->device_ = Device::CPU();
     } else if (device == "CUDA") {
-      gpu_id = 0;  // use 0 as default;
+      auto current_d = common::CurrentDeviceOrd();
+      if (current_d == kCpuId) {
+        LOG(WARNING) << "XGBoost not compiled with CUDA, setting device to CPU instead.";
+        this->device_ = Device::CPU();
+      } else {
+        this->device_ = Device::CUDA(current_d);
+      }
     } else {
-      LOG(FATAL) << msg << "Got: " << original;
+      error::InvalidOrdinal(original);
     }
-  } else {
-    // must be CUDA when ordinal is specifed.
-    auto splited = common::Split(device, ':');
-    CHECK_EQ(splited.size(), 2) << msg;
-    device = splited[0];
-    CHECK_EQ(device, "CUDA") << msg << "Got: " << original;
 
-    // boost::lexical_cast should be used instead, but for now some basic checks will do
-    auto ordinal = splited[1];
-    CHECK_GE(ordinal.size(), 1) << msg << "Got: " << original;
-    bool valid =
-        std::all_of(ordinal.cbegin(), ordinal.cend(), [](auto c) { return std::isdigit(c); });
-    CHECK(valid) << msg << "Got: " << original;
-    try {
-      gpu_id = std::stoi(splited[1]);
-    } catch (std::exception const& e) {
-      LOG(FATAL) << msg << "Got: " << original;
-    }
-  }
-  CHECK_GE(gpu_id, Context::kCpuId) << msg;
-
-  gpu_id = ConfigureGpuId(gpu_id, this->fail_on_invalid_gpu_id);
-
-  if (gpu_id == kCpuId) {
-    this->device_ = Device{Device::kCPU, kCpuId};
-  } else {
-    CHECK_LE(gpu_id, std::numeric_limits<bst_d_ordinal_t>::max()) << "Ordinal value too large.";
-    this->device_ = Device{Device::kCUDA, static_cast<bst_d_ordinal_t>(gpu_id)};
+    return;
   }
 
-  if (this->IsCPU()) {
-    CHECK_EQ(this->device_.ordinal, kCpuId);
+  /** Ordinal is specified: CUDA:<ordinal> */
+  // Use 32bit int to hold larger value for validation.
+  std::int32_t cu_ordinal{-2};
+  auto splited = common::Split(device, ':');
+  ThrowIf(splited.size() != 2, original);
+  device = splited[0];
+  // must be CUDA when ordinal is specifed.
+  ThrowIf(device != "CUDA", original);
+  // boost::lexical_cast should be used instead, but for now some basic checks will do
+  auto ordinal = splited[1];
+  ThrowIf(ordinal.empty(), original);
+  ThrowIf(!std::all_of(ordinal.cbegin(), ordinal.cend(), [](auto c) { return std::isdigit(c); }),
+          original);
+  try {
+    cu_ordinal = std::stoi(splited[1]);
+  } catch (std::exception const& e) {
+    error::InvalidOrdinal(original);
   }
+
+  ThrowIf(cu_ordinal < 0, original);
+  this->device_ = ConfigureDeviceOrd(cu_ordinal, this->fail_on_invalid_gpu_id);
 }
 
 std::int32_t Context::Threads(bool config) const {

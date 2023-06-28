@@ -5,6 +5,7 @@
 #ifndef XGBOOST_CONTEXT_H_
 #define XGBOOST_CONTEXT_H_
 
+#include <xgboost/base.h>  // for bst_d_ordinal_t
 #include <xgboost/logging.h>
 #include <xgboost/parameter.h>
 
@@ -14,8 +15,6 @@
 namespace xgboost {
 
 struct CUDAContext;
-
-using bst_d_ordinal_t = std::int16_t;  // NOLINT
 
 struct Device {
   enum Type : std::int16_t { kCPU = 0, kCUDA = 1 } device{kCPU};

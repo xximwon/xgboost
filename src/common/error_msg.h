@@ -33,5 +33,14 @@ constexpr StringView InconsistentMaxBin() {
   return "Inconsistent `max_bin`. `max_bin` should be the same across different QuantileDMatrix, "
          "and consistent with the Booster being trained.";
 }
+
+inline void InvalidOrdinal(StringView original) {
+  StringView msg{R"(Invalid argument for `device`. Expected to be one of the following:
+- CPU
+- CUDA
+- CUDA:<device ordinal>  # e.g. CUDA:0
+)"};
+  LOG(FATAL) << msg << "\nGot:" << original;
+}
 }  // namespace xgboost::error
 #endif  // XGBOOST_COMMON_ERROR_MSG_H_

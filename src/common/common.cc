@@ -3,11 +3,13 @@
  * \file common.cc
  * \brief Enable all kinds of global variables in common.
  */
+#include "common.h"
+
 #include <dmlc/thread_local.h>
 #include <xgboost/logging.h>
 
-#include "common.h"
 #include "./random.h"
+#include "xgboost/context.h"  // for Context
 
 namespace xgboost {
 namespace common {
@@ -27,7 +29,8 @@ GlobalRandomEngine& GlobalRandom() {
 int AllVisibleGPUs() {
   return 0;
 }
-#endif  // !defined(XGBOOST_USE_CUDA)
 
+bst_d_ordinal_t CurrentDeviceOrd() { return Context::kCpuId; }
+#endif  // !defined(XGBOOST_USE_CUDA)
 }  // namespace common
 }  // namespace xgboost

@@ -1,11 +1,10 @@
-/*!
- * Copyright 2018-2022 XGBoost contributors
+/**
+ * Copyright 2018-2022, XGBoost contributors
  */
 #include "common.h"
+#include "device_helpers.cuh"
 
-namespace xgboost {
-namespace common {
-
+namespace xgboost::common {
 void SetDevice(std::int32_t device) {
   if (device >= 0) {
     dh::safe_cuda(cudaSetDevice(device));
@@ -25,5 +24,5 @@ int AllVisibleGPUs() {
   return n_visgpus;
 }
 
-}  // namespace common
-}  // namespace xgboost
+bst_d_ordinal_t CurrentDeviceOrd() { return static_cast<bst_d_ordinal_t>(dh::CurrentDevice()); }
+}  // namespace xgboost::common

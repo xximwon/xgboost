@@ -126,6 +126,8 @@ using bst_layer_t = std::int32_t;  // NOLINT
  */
 using bst_tree_t = std::int32_t;  // NOLINT
 
+using bst_d_ordinal_t = std::int16_t;  // NOLINT
+
 namespace detail {
 /*! \brief Implementation of gradient statistics pair. Template specialisation
  * may be used to overload different gradients types e.g. low precision, high

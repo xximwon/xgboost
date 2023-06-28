@@ -6,10 +6,6 @@
 #ifndef XGBOOST_COMMON_COMMON_H_
 #define XGBOOST_COMMON_COMMON_H_
 
-#include <xgboost/base.h>
-#include <xgboost/logging.h>
-#include <xgboost/span.h>
-
 #include <algorithm>
 #include <exception>
 #include <functional>
@@ -20,6 +16,10 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "xgboost/base.h"
+#include "xgboost/logging.h"
+#include "xgboost/span.h"
 
 #if defined(__CUDACC__)
 #include <thrust/system/cuda/error.h>
@@ -179,6 +179,8 @@ inline void AssertOneAPISupport() {
 }
 
 void SetDevice(std::int32_t device);
+
+bst_d_ordinal_t CurrentDeviceOrd();
 
 #if !defined(XGBOOST_USE_CUDA)
 inline void SetDevice(std::int32_t device) {

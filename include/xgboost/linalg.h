@@ -652,7 +652,7 @@ auto MakeVec(HostDeviceVector<T> *data) {
 template <typename T>
 auto MakeVec(HostDeviceVector<T> const *data) {
   return MakeVec(data->DeviceIdx() == -1 ? data->ConstHostPointer() : data->ConstDevicePointer(),
-                 data->Size(), data->DeviceType());
+                 data->Size(), data->Device());
 }
 
 /**
@@ -933,7 +933,7 @@ class Tensor {
   void SetDevice(int32_t device) const { data_.SetDevice(device); }
   void SetDevice(DeviceOrd device) const { data_.SetDevice(device); }
   [[nodiscard]] bst_d_ordinal_t DeviceIdx() const { return data_.DeviceIdx(); }
-  [[nodiscard]] DeviceOrd Device() const { return data_.DeviceType(); }
+  [[nodiscard]] DeviceOrd Device() const { return data_.Device(); }
 };
 
 template <typename T>

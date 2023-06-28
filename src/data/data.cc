@@ -724,7 +724,7 @@ void MetaInfo::SynchronizeNumberOfColumns() {
 namespace {
 template <typename T>
 void CheckDevice(DeviceOrd device, HostDeviceVector<T> const& v) {
-  CHECK(v.DeviceIdx() == Context::kCpuId || device.IsCPU() || v.DeviceType() == device)
+  CHECK(v.DeviceIdx() == Context::kCpuId || device.IsCPU() || v.Device() == device)
       << "Data is resided on a different device than `gpu_id`. "
       << "Device that data is on: " << v.DeviceIdx() << ", "
       << "`gpu_id` for XGBoost: " << device.ordinal;

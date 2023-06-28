@@ -102,7 +102,7 @@ class HostDeviceVector {
   [[nodiscard]] bool Empty() const { return Size() == 0; }
   [[nodiscard]] size_t Size() const;
   [[nodiscard]] bst_d_ordinal_t DeviceIdx() const;
-  [[nodiscard]] DeviceOrd DeviceType() const {
+  [[nodiscard]] DeviceOrd Device() const {
     bst_d_ordinal_t idx = DeviceIdx();
     if (idx != Context::kCpuId) {
       DeviceOrd::CUDA(idx);

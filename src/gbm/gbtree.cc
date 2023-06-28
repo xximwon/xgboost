@@ -865,7 +865,7 @@ class Dart : public GBTree {
       size_t n_rows = p_fmat->Info().num_row_;
       if (predts.predictions.DeviceIdx() != Context::kCpuId) {
         p_out_preds->predictions.SetDevice(predts.predictions.DeviceIdx());
-        auto base_score = model_.learner_model_param->BaseScore(predts.predictions.DeviceType());
+        auto base_score = model_.learner_model_param->BaseScore(predts.predictions.Device());
         GPUDartInplacePredictInc(p_out_preds->predictions.DeviceSpan(),
                                  predts.predictions.DeviceSpan(), w, n_rows, base_score, n_groups,
                                  group);

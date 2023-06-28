@@ -308,7 +308,7 @@ void LearnerModelParam::Copy(LearnerModelParam const& that) {
   base_score_.Data()->Copy(*that.base_score_.Data());
   std::as_const(base_score_).HostView();
   if (that.base_score_.DeviceIdx() != Context::kCpuId) {
-    std::as_const(base_score_).View(that.base_score_.DeviceType());
+    std::as_const(base_score_).View(that.base_score_.Device());
   }
   CHECK_EQ(base_score_.Data()->DeviceCanRead(), that.base_score_.Data()->DeviceCanRead());
   CHECK(base_score_.Data()->HostCanRead());

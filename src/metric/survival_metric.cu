@@ -133,10 +133,10 @@ class ElementWiseSurvivalMetricsReduction {
     }
 #if defined(XGBOOST_USE_CUDA)
     else {  // NOLINT
-      preds.SetDevice(ctx->DeviceType());
-      labels_lower_bound.SetDevice(ctx->DeviceType());
-      labels_upper_bound.SetDevice(ctx->DeviceType());
-      weights.SetDevice(ctx->DeviceType());
+      preds.SetDevice(ctx->Device());
+      labels_lower_bound.SetDevice(ctx->Device());
+      labels_upper_bound.SetDevice(ctx->Device());
+      weights.SetDevice(ctx->Device());
 
       dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
       result = DeviceReduceMetrics(weights, labels_lower_bound, labels_upper_bound, preds);

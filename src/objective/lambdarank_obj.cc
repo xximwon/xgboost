@@ -103,18 +103,18 @@ class LambdaRankObj : public FitIntercept {
 
   // Update position biased for unbiased click data
   void UpdatePositionBias() {
-    li_full_.SetDevice(ctx_->DeviceType());
-    lj_full_.SetDevice(ctx_->DeviceType());
-    li_.SetDevice(ctx_->DeviceType());
-    lj_.SetDevice(ctx_->DeviceType());
+    li_full_.SetDevice(ctx_->Device());
+    lj_full_.SetDevice(ctx_->Device());
+    li_.SetDevice(ctx_->Device());
+    lj_.SetDevice(ctx_->Device());
 
     if (ctx_->IsCPU()) {
-      cpu_impl::LambdaRankUpdatePositionBias(ctx_, li_full_.View(ctx_->DeviceType()),
-                                             lj_full_.View(ctx_->DeviceType()), &ti_plus_,
+      cpu_impl::LambdaRankUpdatePositionBias(ctx_, li_full_.View(ctx_->Device()),
+                                             lj_full_.View(ctx_->Device()), &ti_plus_,
                                              &tj_minus_, &li_, &lj_, p_cache_);
     } else {
-      cuda_impl::LambdaRankUpdatePositionBias(ctx_, li_full_.View(ctx_->DeviceType()),
-                                              lj_full_.View(ctx_->DeviceType()), &ti_plus_,
+      cuda_impl::LambdaRankUpdatePositionBias(ctx_, li_full_.View(ctx_->Device()),
+                                              lj_full_.View(ctx_->Device()), &ti_plus_,
                                               &tj_minus_, &li_, &lj_, p_cache_);
     }
 
@@ -354,9 +354,9 @@ class LambdaRankNDCG : public LambdaRankObj<LambdaRankNDCG, ltr::NDCGCache> {
                        const MetaInfo& info, HostDeviceVector<GradientPair>* out_gpair) {
     if (ctx_->IsCUDA()) {
       cuda_impl::LambdaRankGetGradientNDCG(
-          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->DeviceType()),
-          tj_minus_.View(ctx_->DeviceType()), li_full_.View(ctx_->DeviceType()),
-          lj_full_.View(ctx_->DeviceType()), out_gpair);
+          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->Device()),
+          tj_minus_.View(ctx_->Device()), li_full_.View(ctx_->Device()),
+          lj_full_.View(ctx_->Device()), out_gpair);
       return;
     }
 
@@ -474,9 +474,9 @@ class LambdaRankMAP : public LambdaRankObj<LambdaRankMAP, ltr::MAPCache> {
     CHECK(param_.ndcg_exp_gain) << "NDCG gain can not be set for the MAP objective.";
     if (ctx_->IsCUDA()) {
       return cuda_impl::LambdaRankGetGradientMAP(
-          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->DeviceType()),
-          tj_minus_.View(ctx_->DeviceType()), li_full_.View(ctx_->DeviceType()),
-          lj_full_.View(ctx_->DeviceType()), out_gpair);
+          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->Device()),
+          tj_minus_.View(ctx_->Device()), li_full_.View(ctx_->Device()),
+          lj_full_.View(ctx_->Device()), out_gpair);
     }
 
     auto gptr = p_cache_->DataGroupPtr(ctx_).data();
@@ -561,9 +561,9 @@ class LambdaRankPairwise : public LambdaRankObj<LambdaRankPairwise, ltr::Ranking
     CHECK(param_.ndcg_exp_gain) << "NDCG gain can not be set for the pairwise objective.";
     if (ctx_->IsCUDA()) {
       return cuda_impl::LambdaRankGetGradientPairwise(
-          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->DeviceType()),
-          tj_minus_.View(ctx_->DeviceType()), li_full_.View(ctx_->DeviceType()),
-          lj_full_.View(ctx_->DeviceType()), out_gpair);
+          ctx_, iter, predt, info, GetCache(), ti_plus_.View(ctx_->Device()),
+          tj_minus_.View(ctx_->Device()), li_full_.View(ctx_->Device()),
+          lj_full_.View(ctx_->Device()), out_gpair);
     }
 
     auto gptr = p_cache_->DataGroupPtr(ctx_);

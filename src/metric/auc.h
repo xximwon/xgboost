@@ -18,8 +18,7 @@
 #include "xgboost/metric.h"
 #include "xgboost/span.h"
 
-namespace xgboost {
-namespace metric {
+namespace xgboost::metric {
 /***********
  * ROC AUC *
  ***********/
@@ -30,7 +29,7 @@ XGBOOST_DEVICE inline double TrapezoidArea(double x0, double x1, double y0, doub
 struct DeviceAUCCache;
 
 std::tuple<double, double, double> GPUBinaryROCAUC(common::Span<float const> predts,
-                                                   MetaInfo const &info, Device device,
+                                                   MetaInfo const &info, DeviceOrd device,
                                                    std::shared_ptr<DeviceAUCCache> *p_cache);
 
 double GPUMultiClassROCAUC(Context const *ctx, common::Span<float const> predts,
@@ -45,7 +44,7 @@ std::pair<double, std::uint32_t> GPURankingAUC(Context const *ctx, common::Span<
  * PR AUC *
  **********/
 std::tuple<double, double, double> GPUBinaryPRAUC(common::Span<float const> predts,
-                                                  MetaInfo const &info, Device device,
+                                                  MetaInfo const &info, DeviceOrd device,
                                                   std::shared_ptr<DeviceAUCCache> *p_cache);
 
 double GPUMultiClassPRAUC(Context const *ctx, common::Span<float const> predts,
@@ -111,6 +110,5 @@ struct PRAUCLabelInvalid {
 inline void InvalidLabels() {
   LOG(FATAL) << "PR-AUC supports only binary relevance for learning to rank.";
 }
-}      // namespace metric
-}      // namespace xgboost
+}  // namespace xgboost::metric
 #endif  // XGBOOST_METRIC_AUC_H_

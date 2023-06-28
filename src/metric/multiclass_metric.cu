@@ -137,9 +137,9 @@ class MultiClassMetricsReduction {
     }
 #if defined(XGBOOST_USE_CUDA)
     else {  // NOLINT
-      preds.SetDevice(ctx->DeviceType());
-      labels.SetDevice(ctx->DeviceType());
-      weights.SetDevice(ctx->DeviceType());
+      preds.SetDevice(ctx->Device());
+      labels.SetDevice(ctx->Device());
+      weights.SetDevice(ctx->Device());
 
       dh::safe_cuda(cudaSetDevice(ctx->Ordinal()));
       result = DeviceReduceMetrics(weights, labels, preds, n_class);

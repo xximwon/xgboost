@@ -20,7 +20,7 @@ std::int64_t constexpr Context::kDefaultSeed;
 Context::Context() : cfs_cpu_count_{common::GetCfsCPUCount()} {}
 
 namespace {
-Device ConfigureDeviceOrd(std::int32_t cu_ordinal, bool fail_on_invalid) {
+DeviceOrd ConfigureDeviceOrd(std::int32_t cu_ordinal, bool fail_on_invalid) {
   CHECK_GE(cu_ordinal, 0);
 
 #if defined(XGBOOST_USE_CUDA)
@@ -44,13 +44,13 @@ Device ConfigureDeviceOrd(std::int32_t cu_ordinal, bool fail_on_invalid) {
 #endif  // defined(XGBOOST_USE_CUDA)
 
   if (cu_ordinal == Context::kCpuId) {
-    return Device::CPU();
+    return DeviceOrd::CPU();
   }
 
   common::SetDevice(cu_ordinal);
   CHECK_LE(cu_ordinal, std::numeric_limits<bst_d_ordinal_t>::max())
       << "Device ordinal value too large.";
-  return Device::CUDA(static_cast<bst_d_ordinal_t>(cu_ordinal));
+  return DeviceOrd::CUDA(static_cast<bst_d_ordinal_t>(cu_ordinal));
 }
 
 void ThrowIf(bool cond, StringView original) {
@@ -70,14 +70,14 @@ void Context::ParseDeviceOrdinal() {
   /** Ordinal is not specified: CPU/CUDA */
   if (std::find(device.cbegin(), device.cend(), ':') == device.cend()) {
     if (device == "CPU") {
-      this->device_ = Device::CPU();
+      this->device_ = DeviceOrd::CPU();
     } else if (device == "CUDA") {
       auto current_d = common::CurrentDeviceOrd();
       if (current_d == kCpuId) {
         LOG(WARNING) << "XGBoost not compiled with CUDA, setting device to CPU instead.";
-        this->device_ = Device::CPU();
+        this->device_ = DeviceOrd::CPU();
       } else {
-        this->device_ = Device::CUDA(current_d);
+        this->device_ = DeviceOrd::CUDA(current_d);
       }
     } else {
       error::InvalidOrdinal(original);

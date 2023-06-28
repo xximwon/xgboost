@@ -42,8 +42,8 @@ void TestCalcQueriesInvIDCG() {
   p.UpdateAllowUnknown(Args{{"ndcg_exp_gain", "false"}});
 
   cuda_impl::CalcQueriesInvIDCG(&ctx,
-                                linalg::MakeTensorView(ctx.DeviceType(), d_scores, d_scores.size()),
-                                dh::ToSpan(group_ptr), inv_IDCG.View(ctx.DeviceType()), p);
+                                linalg::MakeTensorView(ctx.Device(), d_scores, d_scores.size()),
+                                dh::ToSpan(group_ptr), inv_IDCG.View(ctx.Device()), p);
   for (std::size_t i = 0; i < n_groups; ++i) {
     double inv_idcg = inv_IDCG(i);
     ASSERT_NEAR(inv_idcg, 0.00551782, kRtEps);
@@ -72,7 +72,7 @@ void TestRankingCache(Context const* ctx) {
   HostDeviceVector<float> predt(info.num_row_, 0);
   auto& h_predt = predt.HostVector();
   std::iota(h_predt.begin(), h_predt.end(), 0.0f);
-  predt.SetDevice(ctx->DeviceType());
+  predt.SetDevice(ctx->Device());
 
   auto rank_idx =
       cache.SortedIdx(ctx, ctx->IsCPU() ? predt.ConstHostSpan() : predt.ConstDeviceSpan());

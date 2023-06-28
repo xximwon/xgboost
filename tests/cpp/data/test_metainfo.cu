@@ -66,7 +66,7 @@ TEST(MetaInfo, FromInterface) {
   }
 
   info.SetInfo(ctx, "base_margin", str.c_str());
-  auto const h_base_margin = info.base_margin_.View(ctx.DeviceType());
+  auto const h_base_margin = info.base_margin_.View(ctx.Device());
   ASSERT_EQ(h_base_margin.Size(), d_data.size());
   for (size_t i = 0; i < d_data.size(); ++i) {
     ASSERT_EQ(h_base_margin(i), d_data[i]);
@@ -83,7 +83,7 @@ TEST(MetaInfo, FromInterface) {
   EXPECT_EQ(info.group_ptr_, expected_group_ptr);
 }
 
-TEST(MetaInfo, GPUStridedData) { TestMetaInfoStridedData(Device::CUDA(0)); }
+TEST(MetaInfo, GPUStridedData) { TestMetaInfoStridedData(DeviceOrd::CUDA(0)); }
 
 TEST(MetaInfo, Group) {
   cudaSetDevice(0);

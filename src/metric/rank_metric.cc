@@ -74,7 +74,7 @@ struct EvalAMS : public MetricNoCache {
     const double br = 10.0;
     unsigned thresindex = 0;
     double s_tp = 0.0, b_fp = 0.0, tams = 0.0;
-    const auto& labels = info.labels.View(Device::CPU());
+    const auto& labels = info.labels.View(DeviceOrd::CPU());
     for (unsigned i = 0; i < static_cast<unsigned>(ndata-1) && i < ntop; ++i) {
       const unsigned ridx = rec[i].second;
       const bst_float wt = info.GetWeight(ridx);
@@ -100,7 +100,7 @@ struct EvalAMS : public MetricNoCache {
     }
   }
 
-  const char* Name() const override {
+  [[nodiscard]] const char* Name() const override {
     return name_.c_str();
   }
 
@@ -161,7 +161,7 @@ struct EvalRank : public MetricNoCache, public EvalRankConfig {
     return collective::GlobalRatio(info, sum_metric, static_cast<double>(ngroups));
   }
 
-  const char* Name() const override {
+  [[nodiscard]] const char* Name() const override {
     return name.c_str();
   }
 
@@ -327,7 +327,7 @@ class EvalPrecision : public EvalRankWithCache<ltr::PreCache> {
 
     auto gptr = p_cache->DataGroupPtr(ctx_);
     auto h_label = info.labels.HostView().Slice(linalg::All(), 0);
-    auto h_predt = linalg::MakeTensorView(ctx_->DeviceType(), &predt, predt.Size());
+    auto h_predt = linalg::MakeTensorView(ctx_->Device(), &predt, predt.Size());
     auto rank_idx = p_cache->SortedIdx(ctx_, predt.ConstHostSpan());
 
     auto weight = common::MakeOptionalWeights(ctx_, info.weights_);
@@ -381,7 +381,7 @@ class EvalNDCG : public EvalRankWithCache<ltr::NDCGCache> {
     auto p_discount = p_cache->Discount(ctx_).data();
 
     auto h_label = info.labels.HostView();
-    auto h_predt = linalg::MakeTensorView(ctx_->DeviceType(), &preds, preds.Size());
+    auto h_predt = linalg::MakeTensorView(ctx_->Device(), &preds, preds.Size());
     auto weights = common::MakeOptionalWeights(ctx_, info.weights_);
 
     common::ParallelFor(n_groups, ctx_->Threads(), [&](auto g) {
@@ -431,7 +431,7 @@ class EvalMAPScore : public EvalRankWithCache<ltr::MAPCache> {
 
     auto gptr = p_cache->DataGroupPtr(ctx_);
     auto h_label = info.labels.HostView().Slice(linalg::All(), 0);
-    auto h_predt = linalg::MakeTensorView(ctx_->DeviceType(), &predt, predt.Size());
+    auto h_predt = linalg::MakeTensorView(ctx_->Device(), &predt, predt.Size());
 
     auto map_gloc = p_cache->Map(ctx_);
     std::fill_n(map_gloc.data(), map_gloc.size(), 0.0);

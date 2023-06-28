@@ -1,5 +1,5 @@
-/*!
- * Copyright 2014-2022 by XGBoost Contributors
+/**
+ * Copyright 2014-2023, XGBoost Contributors
  * \file gblinear.cc
  * \brief Implementation of Linear booster, with L1/L2 regularization: Elastic Net
  *        the update rule is parallel coordinate descent (shotgun)
@@ -175,7 +175,7 @@ class GBLinear : public GradientBooster {
                            unsigned) override {
     model_.LazyInitModel();
     LinearCheckLayer(layer_begin);
-    auto base_margin = p_fmat->Info().base_margin_.View(Device::CPU());
+    auto base_margin = p_fmat->Info().base_margin_.View(DeviceOrd::CPU());
     const int ngroup = model_.learner_model_param->num_output_group;
     const size_t ncolumns = model_.learner_model_param->num_feature + 1;
     // allocate space for (#features + bias) times #groups times #rows
@@ -243,7 +243,7 @@ class GBLinear : public GradientBooster {
     out_scores->resize(model_.weight.size() - learner_model_param_->num_output_group, 0);
     auto n_groups = learner_model_param_->num_output_group;
     linalg::TensorView<float, 2> scores{
-        *out_scores, {learner_model_param_->num_feature, n_groups}, Device::CPU()};
+        *out_scores, {learner_model_param_->num_feature, n_groups}, DeviceOrd::CPU()};
     for (size_t i = 0; i < learner_model_param_->num_feature; ++i) {
       for (bst_group_t g = 0; g < n_groups; ++g) {
         scores(i, g) = model_[i][g];
@@ -265,12 +265,12 @@ class GBLinear : public GradientBooster {
     monitor_.Start("PredictBatchInternal");
     model_.LazyInitModel();
     std::vector<bst_float> &preds = *out_preds;
-    auto base_margin = p_fmat->Info().base_margin_.View(Device::CPU());
+    auto base_margin = p_fmat->Info().base_margin_.View(DeviceOrd::CPU());
     // start collecting the prediction
     const int ngroup = model_.learner_model_param->num_output_group;
     preds.resize(p_fmat->Info().num_row_ * ngroup);
 
-    auto base_score = learner_model_param_->BaseScore(Device::CPU());
+    auto base_score = learner_model_param_->BaseScore(DeviceOrd::CPU());
     for (const auto &page : p_fmat->GetBatches<SparsePage>()) {
       auto const& batch = page.GetView();
       // output convention: nrow * k, where nrow is number of rows

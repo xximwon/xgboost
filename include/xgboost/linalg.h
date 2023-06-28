@@ -302,7 +302,7 @@ class TensorView {
   T *ptr_{nullptr};  // pointer of data_ to avoid bound check.
 
   size_t size_{0};
-  Device device_{};
+  DeviceOrd device_{};
 
   // Unlike `Tensor`, the data_ can have arbitrary size since this is just a view.
   LINALG_HD void CalcSize() {
@@ -401,11 +401,11 @@ class TensorView {
    * \param device Device ordinal
    */
   template <typename I, int32_t D>
-  LINALG_HD TensorView(common::Span<T> data, I const (&shape)[D], Device device)
+  LINALG_HD TensorView(common::Span<T> data, I const (&shape)[D], DeviceOrd device)
       : TensorView{data, shape, device, Order::kC} {}
 
   template <typename I, int32_t D>
-  LINALG_HD TensorView(common::Span<T> data, I const (&shape)[D], Device device, Order order)
+  LINALG_HD TensorView(common::Span<T> data, I const (&shape)[D], DeviceOrd device, Order order)
       : data_{data}, ptr_{data_.data()}, device_{device} {
     static_assert(D > 0 && D <= kDim, "Invalid shape.");
     // shape
@@ -437,7 +437,7 @@ class TensorView {
    */
   template <typename I, std::int32_t D>
   LINALG_HD TensorView(common::Span<T> data, I const (&shape)[D], I const (&stride)[D],
-                       Device device)
+                       DeviceOrd device)
       : data_{data}, ptr_{data_.data()}, device_{device} {
     static_assert(D == kDim, "Invalid shape & stride.");
     detail::UnrollLoop<D>([&](auto i) {
@@ -573,7 +573,7 @@ class TensorView {
 template <typename Container, typename... S,
           std::enable_if_t<!common::detail::IsSpan<Container>::value &&
                            !std::is_pointer_v<Container>> * = nullptr>
-auto MakeTensorView(Device device, Container &data, S &&...shape) {  // NOLINT
+auto MakeTensorView(DeviceOrd device, Container &data, S &&...shape) {  // NOLINT
   using T = typename Container::value_type;
   std::size_t in_shape[sizeof...(S)];
   detail::IndexToArr(in_shape, std::forward<S>(shape)...);
@@ -581,20 +581,20 @@ auto MakeTensorView(Device device, Container &data, S &&...shape) {  // NOLINT
 }
 
 template <typename T, typename... S>
-auto MakeTensorView(Device device, common::Span<T> data, S &&...shape) {
+auto MakeTensorView(DeviceOrd device, common::Span<T> data, S &&...shape) {
   std::size_t in_shape[sizeof...(S)];
   detail::IndexToArr(in_shape, std::forward<S>(shape)...);
   return TensorView<T, sizeof...(S)>{data, in_shape, device};
 }
 
 template <typename T, typename... S>
-auto MakeTensorView(Device device, HostDeviceVector<T> *data, S &&...shape) {
+auto MakeTensorView(DeviceOrd device, HostDeviceVector<T> *data, S &&...shape) {
   auto span = device.IsCPU() ? data->HostSpan() : data->DeviceSpan();
   return MakeTensorView(device, span, std::forward<S>(shape)...);
 }
 
 template <typename T, typename... S>
-auto MakeTensorView(Device device, HostDeviceVector<T> const *data, S &&...shape) {
+auto MakeTensorView(DeviceOrd device, HostDeviceVector<T> const *data, S &&...shape) {
   auto span = device.IsCPU() ? data->ConstHostSpan() : data->ConstDeviceSpan();
   return MakeTensorView(device, span, std::forward<S>(shape)...);
 }
@@ -639,7 +639,7 @@ using VectorView = TensorView<T, 1>;
  * \param device (optional) Device ordinal, default to be host.
  */
 template <typename T>
-auto MakeVec(T *ptr, size_t s, Device device = Device::CPU()) {
+auto MakeVec(T *ptr, size_t s, DeviceOrd device = DeviceOrd::CPU()) {
   return linalg::TensorView<T, 1>{{ptr, s}, {s}, device};
 }
 
@@ -743,7 +743,7 @@ class Tensor {
   Order order_{Order::kC};
 
   template <typename I, std::int32_t D>
-  void Initialize(I const (&shape)[D], Device device) {
+  void Initialize(I const (&shape)[D], DeviceOrd device) {
     static_assert(D <= kDim, "Invalid shape.");
     std::copy(shape, shape + D, shape_);
     for (auto i = D; i < kDim; ++i) {
@@ -795,7 +795,7 @@ class Tensor {
     auto &h_vec = data_.HostVector();
     h_vec.insert(h_vec.begin(), begin, end);
     // shape
-    this->Initialize(shape, ctx->DeviceType());
+    this->Initialize(shape, ctx->Device());
   }
 
   template <typename I, int32_t D>
@@ -805,7 +805,7 @@ class Tensor {
     auto &h_vec = data_.HostVector();
     h_vec = data;
     // shape
-    this->Initialize(shape, ctx->DeviceType());
+    this->Initialize(shape, ctx->Device());
   }
   /**
    * \brief Index operator. Not thread safe, should not be used in performance critical
@@ -827,7 +827,7 @@ class Tensor {
   /**
    * \brief Get a \ref TensorView for this tensor.
    */
-  TensorView<T, kDim> View(Device device) {
+  TensorView<T, kDim> View(DeviceOrd device) {
     if (device.IsCUDA()) {
       data_.SetDevice(device.ordinal);
       auto span = data_.DeviceSpan();
@@ -837,7 +837,7 @@ class Tensor {
       return {span, shape_, device, order_};
     }
   }
-  TensorView<T const, kDim> View(Device device) const {
+  TensorView<T const, kDim> View(DeviceOrd device) const {
     if (device.IsCUDA()) {
       data_.SetDevice(device.ordinal);
       auto span = data_.ConstDeviceSpan();
@@ -848,15 +848,15 @@ class Tensor {
     }
   }
   TensorView<T const, kDim> View() const {
-    ::xgboost::Device device;
+    DeviceOrd device;
     if (data_.DeviceIdx() != Context::kCpuId) {
-      device = ::xgboost::Device{Device::kCUDA, data_.DeviceIdx()};
+      device = DeviceOrd::CUDA(data_.DeviceIdx());
     }
     return this->View(device);
   }
 
-  auto HostView() const { return this->View(Device::CPU()); }
-  auto HostView() { return this->View(Device::CPU()); }
+  auto HostView() const { return this->View(DeviceOrd::CPU()); }
+  auto HostView() { return this->View(DeviceOrd::CPU()); }
 
   [[nodiscard]] size_t Size() const { return data_.Size(); }
   auto Shape() const { return common::Span<size_t const, kDim>{shape_}; }
@@ -931,14 +931,9 @@ class Tensor {
    * \brief Set device ordinal for this tensor.
    */
   void SetDevice(int32_t device) const { data_.SetDevice(device); }
-  void SetDevice(Device device) const { data_.SetDevice(device); }
-  [[nodiscard]] int32_t DeviceIdx() const { return data_.DeviceIdx(); }
-  [[nodiscard]] Device DeviceType() const {
-    if (data_.DeviceIdx() != Context::kCpuId) {
-      return ::xgboost::Device{::xgboost::Device::kCUDA, data_.DeviceIdx()};
-    }
-    return Device::CPU();
-  }
+  void SetDevice(DeviceOrd device) const { data_.SetDevice(device); }
+  [[nodiscard]] bst_d_ordinal_t DeviceIdx() const { return data_.DeviceIdx(); }
+  [[nodiscard]] DeviceOrd DeviceType() const { return data_.DeviceType(); }
 };
 
 template <typename T>

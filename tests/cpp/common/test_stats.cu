@@ -50,7 +50,7 @@ class StatsGPU : public ::testing::Test {
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
     linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, &ctx_};
-    auto d_arr = arr.View(ctx_.DeviceType());
+    auto d_arr = arr.View(ctx_.Device());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -74,8 +74,8 @@ class StatsGPU : public ::testing::Test {
   }
 
   void Weighted() {
-    auto d_arr = arr_.View(ctx_.DeviceType());
-    auto d_key = indptr_.View(ctx_.DeviceType());
+    auto d_arr = arr_.View(ctx_.Device());
+    auto d_key = indptr_.View(ctx_.Device());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -84,7 +84,7 @@ class StatsGPU : public ::testing::Test {
         dh::MakeTransformIterator<float>(thrust::make_counting_iterator(0ul),
                                          [=] XGBOOST_DEVICE(std::size_t i) { return d_arr(i); });
     linalg::Tensor<float, 1> weights{{10}, &ctx_};
-    linalg::ElementWiseTransformDevice(weights.View(ctx_.DeviceType()),
+    linalg::ElementWiseTransformDevice(weights.View(ctx_.Device()),
                                        [=] XGBOOST_DEVICE(std::size_t, float) { return 1.0; });
     auto w_it = weights.Data()->ConstDevicePointer();
     for (auto const& pair : TestSet{{0.0f, 1.0f}, {0.5f, 3.0f}, {1.0f, 5.0f}}) {
@@ -105,7 +105,7 @@ class StatsGPU : public ::testing::Test {
     data.insert(data.cend(), seg.begin(), seg.end());
     data.insert(data.cend(), seg.begin(), seg.end());
     linalg::Tensor<float, 1> arr{data.cbegin(), data.cend(), {data.size()}, &ctx_};
-    auto d_arr = arr.View(ctx_.DeviceType());
+    auto d_arr = arr.View(ctx_.Device());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul),
@@ -128,8 +128,8 @@ class StatsGPU : public ::testing::Test {
   }
 
   void NonWeighted() {
-    auto d_arr = arr_.View(ctx_.DeviceType());
-    auto d_key = indptr_.View(ctx_.DeviceType());
+    auto d_arr = arr_.View(ctx_.Device());
+    auto d_key = indptr_.View(ctx_.Device());
 
     auto key_it = dh::MakeTransformIterator<std::size_t>(
         thrust::make_counting_iterator(0ul), [=] __device__(std::size_t i) { return d_key(i); });

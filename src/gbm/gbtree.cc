@@ -197,7 +197,7 @@ void GBTree::DoBoost(DMatrix* p_fmat, HostDeviceVector<GradientPair>* in_gpair,
   // Weird case that tree method is cpu-based but gpu_id is set.  Ideally we should let
   // `gpu_id` be the single source of determining what algorithms to run, but that will
   // break a lots of existing code.
-  auto device = tparam_.tree_method != TreeMethod::kGPUHist ? Device::CPU() : ctx_->DeviceType();
+  auto device = tparam_.tree_method != TreeMethod::kGPUHist ? DeviceOrd::CPU() : ctx_->Device();
   auto out = linalg::MakeTensorView(
       device, device.IsCPU() ? predt->predictions.HostSpan() : predt->predictions.DeviceSpan(),
       p_fmat->Info().num_row_, model_.learner_model_param->OutputLength());
@@ -870,7 +870,7 @@ class Dart : public GBTree {
                                  predts.predictions.DeviceSpan(), w, n_rows, base_score, n_groups,
                                  group);
       } else {
-        auto base_score = model_.learner_model_param->BaseScore(Device::CPU());
+        auto base_score = model_.learner_model_param->BaseScore(DeviceOrd::CPU());
         auto& h_predts = predts.predictions.HostVector();
         auto& h_out_predts = p_out_preds->predictions.HostVector();
         common::ParallelFor(n_rows, ctx_->Threads(), [&](auto ridx) {

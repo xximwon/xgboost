@@ -588,7 +588,7 @@ class ArrayInterface {
 };
 
 template <std::int32_t D, typename Fn>
-void DispatchDType(ArrayInterface<D> const array, Device device, Fn fn) {
+void DispatchDType(ArrayInterface<D> const array, DeviceOrd device, Fn fn) {
   // Only used for cuDF at the moment.
   CHECK_EQ(array.valid.Capacity(), 0);
   auto dispatch = [&](auto t) {

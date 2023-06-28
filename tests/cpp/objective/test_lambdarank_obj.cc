@@ -146,7 +146,7 @@ TEST(LambdaRank, UnbiasedNDCG) {
 }
 
 void InitMakePairTest(Context const* ctx, MetaInfo* out_info, HostDeviceVector<float>* out_predt) {
-  out_predt->SetDevice(ctx->DeviceType());
+  out_predt->SetDevice(ctx->Device());
   MetaInfo& info = *out_info;
   info.num_row_ = 128;
   info.labels.ModifyInplace([&](HostDeviceVector<float>* data, common::Span<std::size_t> shape) {
@@ -243,7 +243,7 @@ void TestMAPStat(Context const* ctx) {
 
     auto p_cache = std::make_shared<ltr::MAPCache>(ctx, info, param);
 
-    predt.SetDevice(ctx->DeviceType());
+    predt.SetDevice(ctx->Device());
     auto rank_idx =
         p_cache->SortedIdx(ctx, ctx->IsCPU() ? predt.ConstHostSpan() : predt.ConstDeviceSpan());
 
@@ -280,7 +280,7 @@ void TestMAPStat(Context const* ctx) {
 
     auto p_cache = std::make_shared<ltr::MAPCache>(ctx, info, param);
 
-    predt.SetDevice(ctx->DeviceType());
+    predt.SetDevice(ctx->Device());
     auto rank_idx =
         p_cache->SortedIdx(ctx, ctx->IsCPU() ? predt.ConstHostSpan() : predt.ConstDeviceSpan());
 

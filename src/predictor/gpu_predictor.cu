@@ -629,8 +629,8 @@ class GPUPredictor : public xgboost::Predictor {
                        size_t num_features,
                        HostDeviceVector<bst_float>* predictions,
                        size_t batch_offset, bool is_dense) const {
-    batch.offset.SetDevice(ctx_->DeviceType());
-    batch.data.SetDevice(ctx_->DeviceType());
+    batch.offset.SetDevice(ctx_->Device());
+    batch.data.SetDevice(ctx_->Device());
     const uint32_t BLOCK_THREADS = 128;
     size_t num_rows = batch.Size();
     auto GRID_SIZE = static_cast<uint32_t>(common::DivRoundUp(num_rows, BLOCK_THREADS));
@@ -690,7 +690,7 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_end - tree_begin == 0) {
       return;
     }
-    out_preds->SetDevice(ctx_->DeviceType());
+    out_preds->SetDevice(ctx_->Device());
     auto const& info = dmat->Info();
     DeviceModel d_model;
     d_model.Init(model, tree_begin, tree_end, ctx_->Ordinal());
@@ -705,7 +705,7 @@ class GPUPredictor : public xgboost::Predictor {
     } else {
       size_t batch_offset = 0;
       for (auto const& page : dmat->GetBatches<EllpackPage>(ctx_, BatchParam{})) {
-        dmat->Info().feature_types.SetDevice(ctx_->DeviceType());
+        dmat->Info().feature_types.SetDevice(ctx_->Device());
         auto feature_types = dmat->Info().feature_types.ConstDeviceSpan();
         this->PredictInternal(page.Impl()->GetDeviceAccessor(ctx_->Ordinal(), feature_types),
                               d_model, out_preds, batch_offset);
@@ -814,7 +814,7 @@ class GPUPredictor : public xgboost::Predictor {
       LOG(FATAL) << "Dart booster feature " << not_implemented;
     }
     dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
-    out_contribs->SetDevice(ctx_->DeviceType());
+    out_contribs->SetDevice(ctx_->Device());
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
@@ -836,8 +836,8 @@ class GPUPredictor : public xgboost::Predictor {
     dh::device_vector<uint32_t> categories;
     ExtractPaths(&device_paths, &d_model, &categories, ctx_->Ordinal());
     for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
-      batch.data.SetDevice(ctx_->DeviceType());
-      batch.offset.SetDevice(ctx_->DeviceType());
+      batch.data.SetDevice(ctx_->Device());
+      batch.offset.SetDevice(ctx_->Device());
       SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                        model.learner_model_param->num_feature);
       auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
@@ -846,7 +846,7 @@ class GPUPredictor : public xgboost::Predictor {
           dh::tend(phis));
     }
     // Add the base margin term to last column
-    p_fmat->Info().base_margin_.SetDevice(ctx_->DeviceType());
+    p_fmat->Info().base_margin_.SetDevice(ctx_->Device());
     const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
 
     auto base_score = model.learner_model_param->BaseScore(ctx_);
@@ -872,7 +872,7 @@ class GPUPredictor : public xgboost::Predictor {
       LOG(FATAL) << "Dart booster feature " << not_implemented;
     }
     dh::safe_cuda(cudaSetDevice(ctx_->Ordinal()));
-    out_contribs->SetDevice(ctx_->DeviceType());
+    out_contribs->SetDevice(ctx_->Device());
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
@@ -895,8 +895,8 @@ class GPUPredictor : public xgboost::Predictor {
     dh::device_vector<uint32_t> categories;
     ExtractPaths(&device_paths, &d_model, &categories, ctx_->Ordinal());
     for (auto& batch : p_fmat->GetBatches<SparsePage>()) {
-      batch.data.SetDevice(ctx_->DeviceType());
-      batch.offset.SetDevice(ctx_->DeviceType());
+      batch.data.SetDevice(ctx_->Device());
+      batch.offset.SetDevice(ctx_->Device());
       SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                        model.learner_model_param->num_feature);
       auto begin = dh::tbegin(phis) + batch.base_rowid * contributions_columns;
@@ -905,7 +905,7 @@ class GPUPredictor : public xgboost::Predictor {
           dh::tend(phis));
     }
     // Add the base margin term to last column
-    p_fmat->Info().base_margin_.SetDevice(ctx_->DeviceType());
+    p_fmat->Info().base_margin_.SetDevice(ctx_->Device());
     const auto margin = p_fmat->Info().base_margin_.Data()->ConstDeviceSpan();
 
     auto base_score = model.learner_model_param->BaseScore(ctx_);
@@ -945,15 +945,15 @@ class GPUPredictor : public xgboost::Predictor {
     if (tree_end == 0 || tree_end > model.trees.size()) {
       tree_end = static_cast<uint32_t>(model.trees.size());
     }
-    predictions->SetDevice(ctx_->DeviceType());
+    predictions->SetDevice(ctx_->Device());
     predictions->Resize(num_rows * tree_end);
     DeviceModel d_model;
     d_model.Init(model, 0, tree_end, this->ctx_->Ordinal());
 
     if (p_fmat->PageExists<SparsePage>()) {
       for (auto const& batch : p_fmat->GetBatches<SparsePage>()) {
-        batch.data.SetDevice(ctx_->DeviceType());
-        batch.offset.SetDevice(ctx_->DeviceType());
+        batch.data.SetDevice(ctx_->Device());
+        batch.offset.SetDevice(ctx_->Device());
         bst_row_t batch_offset = 0;
         SparsePageView data{batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                             model.learner_model_param->num_feature};

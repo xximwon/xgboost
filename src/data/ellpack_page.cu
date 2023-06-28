@@ -123,7 +123,7 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, DMatrix* dmat, const BatchP
   this->InitCompressedData(ctx->Ordinal());
   monitor_.Stop("InitCompressedData");
 
-  dmat->Info().feature_types.SetDevice(ctx->DeviceType());
+  dmat->Info().feature_types.SetDevice(ctx->Device());
   auto ft = dmat->Info().feature_types.ConstDeviceSpan();
   monitor_.Start("BinningCompression");
   CHECK(dmat->SingleColBlock());

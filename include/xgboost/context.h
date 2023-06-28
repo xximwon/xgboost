@@ -16,7 +16,7 @@ namespace xgboost {
 
 struct CUDAContext;
 
-struct Device {
+struct DeviceOrd {
   enum Type : std::int16_t { kCPU = 0, kCUDA = 1 } device{kCPU};
   // CUDA device ordinal.
   bst_d_ordinal_t ordinal{-1};
@@ -24,27 +24,27 @@ struct Device {
   [[nodiscard]] bool IsCUDA() const { return device == kCUDA; }
   [[nodiscard]] bool IsCPU() const { return device == kCPU; }
 
-  Device() = default;
-  constexpr Device(Type type, bst_d_ordinal_t ord) : device{type}, ordinal{ord} {}
+  DeviceOrd() = default;
+  constexpr DeviceOrd(Type type, bst_d_ordinal_t ord) : device{type}, ordinal{ord} {}
 
-  Device(Device const& that) = default;
-  Device& operator=(Device const& that) = default;
-  Device(Device&& that) = default;
-  Device& operator=(Device&& that) = default;
+  DeviceOrd(DeviceOrd const& that) = default;
+  DeviceOrd& operator=(DeviceOrd const& that) = default;
+  DeviceOrd(DeviceOrd&& that) = default;
+  DeviceOrd& operator=(DeviceOrd&& that) = default;
 
-  constexpr static auto CPU() { return Device{kCPU, -1}; }
-  static auto CUDA(bst_d_ordinal_t ordinal) { return Device{kCPU, ordinal}; }
+  constexpr static auto CPU() { return DeviceOrd{kCPU, -1}; }
+  static auto CUDA(bst_d_ordinal_t ordinal) { return DeviceOrd{kCPU, ordinal}; }
 
-  bool operator==(Device const& that) const {
+  bool operator==(DeviceOrd const& that) const {
     return device == that.device && ordinal == that.ordinal;
   }
-  bool operator!=(Device const& that) const { return !(*this == that); }
+  bool operator!=(DeviceOrd const& that) const { return !(*this == that); }
 
   [[nodiscard]] std::string Name() const {
     switch (device) {
-      case Device::kCPU:
+      case DeviceOrd::kCPU:
         return "CPU";
-      case Device::kCUDA:
+      case DeviceOrd::kCUDA:
         return "CUDA:" + std::to_string(ordinal);
       default: {
         LOG(FATAL) << "Unknown device.";
@@ -54,7 +54,7 @@ struct Device {
   }
 };
 
-static_assert(sizeof(Device) == 4);
+static_assert(sizeof(DeviceOrd) == 4);
 
 struct Context : public XGBoostParameter<Context> {
  private:
@@ -62,7 +62,7 @@ struct Context : public XGBoostParameter<Context> {
   // number of threads to use if OpenMP is enabled
   // if equals 0, use system default
   std::int32_t nthread{0};  // NOLINT
-  Device device_{Device::CPU()};
+  DeviceOrd device_{DeviceOrd::CPU()};
 
  public:
   // Constant representing the device ID of CPU.
@@ -100,9 +100,9 @@ struct Context : public XGBoostParameter<Context> {
    */
   std::int32_t Threads(bool config = true) const;
 
-  bool IsCPU() const { return device_.device == Device::kCPU; }
+  bool IsCPU() const { return device_.device == DeviceOrd::kCPU; }
   bool IsCUDA() const { return !IsCPU(); }
-  Device DeviceType() const { return device_; }
+  DeviceOrd Device() const { return device_; }
   /**
    * \brief Returns CUDA device ordinal.
    */
@@ -116,12 +116,12 @@ struct Context : public XGBoostParameter<Context> {
   // Make a CUDA context based on the current context.
   Context MakeCUDA(bst_d_ordinal_t device = 0) const {
     Context ctx = *this;
-    ctx.device_ = Device{Device::kCUDA, device};
+    ctx.device_ = DeviceOrd{DeviceOrd::kCUDA, device};
     return ctx;
   }
   Context MakeCPU() const {
     Context ctx = *this;
-    ctx.device_ = Device{Device::kCPU, kCpuId};
+    ctx.device_ = DeviceOrd{DeviceOrd::kCPU, kCpuId};
     return ctx;
   }
 

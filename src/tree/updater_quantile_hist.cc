@@ -575,7 +575,7 @@ class QuantileHistMaker : public TreeUpdater {
     }
 
     bst_target_t n_targets = trees.front()->NumTargets();
-    auto h_gpair = linalg::MakeTensorView(ctx_->DeviceType(), gpair->HostSpan(),
+    auto h_gpair = linalg::MakeTensorView(ctx_->Device(), gpair->HostSpan(),
                                           p_fmat->Info().num_row_, n_targets);
 
     linalg::Matrix<GradientPair> sample_out;

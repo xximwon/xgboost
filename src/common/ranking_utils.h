@@ -269,7 +269,7 @@ class RankingCache {
       roundings_.SetDevice(ctx->Ordinal());
       roundings_.Reshape(Groups());
     }
-    return roundings_.View(ctx->DeviceType());
+    return roundings_.View(ctx->Device());
   }
   common::Span<double> CUDACostRounding(Context const* ctx) {
     if (cost_rounding_.Size() == 0) {
@@ -315,7 +315,7 @@ class NDCGCache : public RankingCache {
   }
 
   linalg::VectorView<double const> InvIDCG(Context const* ctx) const {
-    return inv_idcg_.View(ctx->DeviceType());
+    return inv_idcg_.View(ctx->Device());
   }
   common::Span<double const> Discount(Context const* ctx) const {
     return ctx->IsCPU() ? discounts_.ConstHostSpan() : discounts_.ConstDeviceSpan();
@@ -325,7 +325,7 @@ class NDCGCache : public RankingCache {
       dcg_.SetDevice(ctx->Ordinal());
       dcg_.Reshape(this->Groups());
     }
-    return dcg_.View(ctx->DeviceType());
+    return dcg_.View(ctx->Device());
   }
 };
 
@@ -396,7 +396,7 @@ class PreCache : public RankingCache {
 
   common::Span<double> Pre(Context const* ctx) {
     if (pre_.Empty()) {
-      pre_.SetDevice(ctx->DeviceType());
+      pre_.SetDevice(ctx->Device());
       pre_.Resize(this->Groups());
     }
     return ctx->IsCPU() ? pre_.HostSpan() : pre_.DeviceSpan();

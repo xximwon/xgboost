@@ -223,16 +223,16 @@ class PseudoHuberRegression : public FitIntercept {
     CheckRegInputs(info, preds);
     auto slope = param_.huber_slope;
     CHECK_NE(slope, 0.0) << "slope for pseudo huber cannot be 0.";
-    auto labels = info.labels.View(ctx_->DeviceType());
+    auto labels = info.labels.View(ctx_->Device());
 
-    out_gpair->SetDevice(ctx_->DeviceType());
+    out_gpair->SetDevice(ctx_->Device());
     out_gpair->Resize(info.labels.Size());
     auto gpair = linalg::MakeVec(out_gpair);
 
-    preds.SetDevice(ctx_->DeviceType());
+    preds.SetDevice(ctx_->Device());
     auto predt = linalg::MakeVec(&preds);
 
-    info.weights_.SetDevice(ctx_->DeviceType());
+    info.weights_.SetDevice(ctx_->Device());
     common::OptionalWeights weight{ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                  : info.weights_.ConstDeviceSpan()};
 
@@ -299,7 +299,7 @@ class PoissonRegression : public FitIntercept {
     CHECK_EQ(preds.Size(), info.labels.Size()) << "labels are not correctly provided";
     size_t const ndata = preds.Size();
     out_gpair->Resize(ndata);
-    auto device = ctx_->DeviceType();
+    auto device = ctx_->Device();
     label_correct_.Resize(1);
     label_correct_.Fill(1);
 
@@ -486,7 +486,7 @@ class GammaRegression : public FitIntercept {
     CHECK_NE(info.labels.Size(), 0U) << "label set cannot be empty";
     CHECK_EQ(preds.Size(), info.labels.Size()) << "labels are not correctly provided";
     const size_t ndata = preds.Size();
-    auto device = ctx_->DeviceType();
+    auto device = ctx_->Device();
     out_gpair->Resize(ndata);
     label_correct_.Resize(1);
     label_correct_.Fill(1);
@@ -584,7 +584,7 @@ class TweedieRegression : public FitIntercept {
     const size_t ndata = preds.Size();
     out_gpair->Resize(ndata);
 
-    auto device = ctx_->DeviceType();
+    auto device = ctx_->Device();
     label_correct_.Resize(1);
     label_correct_.Fill(1);
 
@@ -676,15 +676,15 @@ class MeanAbsoluteError : public ObjFunction {
   void GetGradient(HostDeviceVector<bst_float> const& preds, const MetaInfo& info, int /*iter*/,
                    HostDeviceVector<GradientPair>* out_gpair) override {
     CheckRegInputs(info, preds);
-    auto labels = info.labels.View(ctx_->DeviceType());
+    auto labels = info.labels.View(ctx_->Device());
 
-    out_gpair->SetDevice(ctx_->DeviceType());
+    out_gpair->SetDevice(ctx_->Device());
     out_gpair->Resize(info.labels.Size());
     auto gpair = linalg::MakeVec(out_gpair);
 
-    preds.SetDevice(ctx_->DeviceType());
+    preds.SetDevice(ctx_->Device());
     auto predt = linalg::MakeVec(&preds);
-    info.weights_.SetDevice(ctx_->DeviceType());
+    info.weights_.SetDevice(ctx_->Device());
     common::OptionalWeights weight{ctx_->IsCPU() ? info.weights_.ConstHostSpan()
                                                  : info.weights_.ConstDeviceSpan()};
 

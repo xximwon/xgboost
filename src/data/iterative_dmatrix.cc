@@ -33,7 +33,7 @@ IterativeDMatrix::IterativeDMatrix(DataIterHandle iter_handle, DMatrixHandle pro
   bool valid = iter.Next();
   CHECK(valid) << "Iterative DMatrix must have at least 1 batch.";
 
-  auto d = MakeProxy(proxy_)->Ctx()->DeviceType();
+  auto d = MakeProxy(proxy_)->Ctx()->Device();
 
   Context ctx;
   ctx.UpdateAllowUnknown(Args{{"nthread", std::to_string(nthread)}, {"device", d.Name()}});

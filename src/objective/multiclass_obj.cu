@@ -66,7 +66,7 @@ class SoftmaxMultiClassObj : public ObjFunction {
     const int nclass = param_.num_class;
     const auto ndata = static_cast<int64_t>(preds.Size() / nclass);
 
-    auto device = ctx_->DeviceType();
+    auto device = ctx_->Device();
     out_gpair->SetDevice(device);
     info.labels.SetDevice(device);
     info.weights_.SetDevice(device);

@@ -159,7 +159,7 @@ void SegmentedQuantile(Context const* ctx, AlphaIt alpha_it, SegIt seg_begin, Se
   auto d_sorted_idx = dh::ToSpan(sorted_idx);
   auto val = thrust::make_permutation_iterator(val_begin, dh::tcbegin(d_sorted_idx));
 
-  quantiles->SetDevice(ctx->DeviceType());
+  quantiles->SetDevice(ctx->Device());
   quantiles->Resize(n_segments);
   auto d_results = quantiles->DeviceSpan();
 
@@ -219,7 +219,7 @@ void SegmentedWeightedQuantile(Context const* ctx, AlphaIt alpha_it, SegIt seg_b
                                 scan_val, weights_cdf.begin());
 
   auto n_segments = std::distance(seg_beg, seg_end) - 1;
-  quantiles->SetDevice(ctx->DeviceType());
+  quantiles->SetDevice(ctx->Device());
   quantiles->Resize(n_segments);
   auto d_results = quantiles->DeviceSpan();
   auto d_weight_cdf = dh::ToSpan(weights_cdf);

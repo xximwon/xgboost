@@ -250,7 +250,7 @@ void UpdateTree(Context const* ctx, HostDeviceVector<GradientPair>* gpair, DMatr
   std::vector<HostDeviceVector<bst_node_t>> position(1);
   hist_maker.Update(&param, gpair, dmat, common::Span<HostDeviceVector<bst_node_t>>{position},
                     {tree});
-  auto cache = linalg::MakeTensorView(ctx->DeviceType(), preds->DeviceSpan(), preds->Size(), 1);
+  auto cache = linalg::MakeTensorView(ctx->Device(), preds->DeviceSpan(), preds->Size(), 1);
   hist_maker.UpdatePredictionCache(dmat, cache);
 }
 

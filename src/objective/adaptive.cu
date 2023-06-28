@@ -84,11 +84,11 @@ void EncodeTreeLeafDevice(Context const* ctx, common::Span<bst_node_t const> pos
    */
   auto& nidx = *p_nidx;
   auto& nptr = *p_nptr;
-  nidx.SetDevice(ctx->DeviceType());
+  nidx.SetDevice(ctx->Device());
   nidx.Resize(n_leaf);
   auto d_node_idx = nidx.DeviceSpan();
 
-  nptr.SetDevice(ctx->DeviceType());
+  nptr.SetDevice(ctx->Device());
   nptr.Resize(n_leaf + 1, 0);
   auto d_node_ptr = nptr.DeviceSpan();
 
@@ -153,13 +153,13 @@ void UpdateTreeLeafDevice(Context const* ctx, common::Span<bst_node_t const> pos
   }
 
   HostDeviceVector<float> quantiles;
-  predt.SetDevice(ctx->DeviceType());
+  predt.SetDevice(ctx->Device());
 
-  auto d_predt = linalg::MakeTensorView(ctx->DeviceType(), predt.ConstDeviceSpan(), info.num_row_,
+  auto d_predt = linalg::MakeTensorView(ctx->Device(), predt.ConstDeviceSpan(), info.num_row_,
                                         predt.Size() / info.num_row_);
   CHECK_LT(group_idx, d_predt.Shape(1));
   auto t_predt = d_predt.Slice(linalg::All(), group_idx);
-  auto d_labels = info.labels.View(ctx->DeviceType()).Slice(linalg::All(), IdxY(info, group_idx));
+  auto d_labels = info.labels.View(ctx->Device()).Slice(linalg::All(), IdxY(info, group_idx));
 
   auto d_row_index = dh::ToSpan(ridx);
   auto seg_beg = nptr.DevicePointer();
@@ -176,7 +176,7 @@ void UpdateTreeLeafDevice(Context const* ctx, common::Span<bst_node_t const> pos
   if (info.weights_.Empty()) {
     common::SegmentedQuantile(ctx, alpha, seg_beg, seg_end, val_beg, val_end, &quantiles);
   } else {
-    info.weights_.SetDevice(ctx->DeviceType());
+    info.weights_.SetDevice(ctx->Device());
     auto d_weights = info.weights_.ConstDeviceSpan();
     CHECK_EQ(d_weights.size(), d_row_index.size());
     auto w_it = thrust::make_permutation_iterator(dh::tcbegin(d_weights), dh::tcbegin(d_row_index));

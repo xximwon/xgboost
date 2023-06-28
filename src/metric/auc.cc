@@ -88,14 +88,14 @@ double MultiClassOVR(Context const *ctx, common::Span<float const> predts, MetaI
 
   std::vector<double> results_storage(n_classes * 3, 0);
   linalg::TensorView<double, 2> results(results_storage, {n_classes, static_cast<size_t>(3)},
-                                        ctx->DeviceType());
+                                        ctx->Device());
   auto local_area = results.Slice(linalg::All(), 0);
   auto tp = results.Slice(linalg::All(), 1);
   auto auc = results.Slice(linalg::All(), 2);
 
   auto weights = common::OptionalWeights{info.weights_.ConstHostSpan()};
   auto predts_t = linalg::TensorView<float const, 2>(
-      predts, {static_cast<size_t>(info.num_row_), n_classes}, ctx->DeviceType());
+      predts, {static_cast<size_t>(info.num_row_), n_classes}, ctx->Device());
 
   if (info.labels.Size() != 0) {
     common::ParallelFor(n_classes, n_threads, [&](auto c) {
@@ -107,7 +107,7 @@ double MultiClassOVR(Context const *ctx, common::Span<float const> predts, MetaI
       }
       double fp;
       std::tie(fp, tp(c), auc(c)) = binary_auc(
-          ctx, proba, linalg::MakeVec(response.data(), response.size(), Device::CPU()), weights);
+          ctx, proba, linalg::MakeVec(response.data(), response.size(), DeviceOrd::CPU()), weights);
       local_area(c) = fp * tp(c);
     });
   }
@@ -218,7 +218,7 @@ std::pair<double, uint32_t> RankingAUC(Context const *ctx, std::vector<float> co
   CHECK_GE(info.group_ptr_.size(), 2);
   uint32_t n_groups = info.group_ptr_.size() - 1;
   auto s_predts = common::Span<float const>{predts};
-  auto labels = info.labels.View(Device::CPU());
+  auto labels = info.labels.View(DeviceOrd::CPU());
   auto s_weights = info.weights_.ConstHostSpan();
 
   std::atomic<uint32_t> invalid_groups{0};
@@ -362,7 +362,7 @@ class EvalROCAUC : public EvalAUC<EvalROCAUC> {
                                            common::OptionalWeights{info.weights_.ConstHostSpan()});
     } else {
       std::tie(fp, tp, auc) =
-          GPUBinaryROCAUC(predts.ConstDeviceSpan(), info, ctx_->DeviceType(), &this->d_cache_);
+          GPUBinaryROCAUC(predts.ConstDeviceSpan(), info, ctx_->Device(), &this->d_cache_);
     }
     return std::make_tuple(fp, tp, auc);
   }
@@ -413,7 +413,7 @@ class EvalPRAUC : public EvalAUC<EvalPRAUC> {
                       common::OptionalWeights{info.weights_.ConstHostSpan()});
     } else {
       std::tie(pr, re, auc) =
-          GPUBinaryPRAUC(predts.ConstDeviceSpan(), info, ctx_->DeviceType(), &this->d_cache_);
+          GPUBinaryPRAUC(predts.ConstDeviceSpan(), info, ctx_->Device(), &this->d_cache_);
     }
     return std::make_tuple(pr, re, auc);
   }

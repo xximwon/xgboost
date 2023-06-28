@@ -14,7 +14,7 @@
 #include "../../../src/data/array_interface.h"
 
 namespace xgboost {
-inline void TestMetaInfoStridedData(Device device) {
+inline void TestMetaInfoStridedData(DeviceOrd device) {
   MetaInfo info;
   Context ctx;
   ctx.UpdateAllowUnknown(Args{{"device", device.Name()}});
@@ -29,9 +29,9 @@ inline void TestMetaInfoStridedData(Device device) {
     ASSERT_EQ(t_labels.Shape().size(), 2);
 
     info.SetInfo(ctx, "label", StringView{ArrayInterfaceStr(t_labels)});
-    auto const& h_result = info.labels.View(Device::CPU());
+    auto const& h_result = info.labels.View(DeviceOrd::CPU());
     ASSERT_EQ(h_result.Shape().size(), 2);
-    auto in_labels = labels.View(Device::CPU());
+    auto in_labels = labels.View(DeviceOrd::CPU());
     linalg::ElementWiseKernelHost(h_result, omp_get_max_threads(), [&](size_t i, float& v_0) {
       auto tup = linalg::UnravelIndex(i, h_result.Shape());
       auto i0 = std::get<0>(tup);
@@ -63,9 +63,9 @@ inline void TestMetaInfoStridedData(Device device) {
     ASSERT_EQ(t_margin.Shape().size(), 2);
 
     info.SetInfo(ctx, "base_margin", StringView{ArrayInterfaceStr(t_margin)});
-    auto const& h_result = info.base_margin_.View(Device::CPU());
+    auto const& h_result = info.base_margin_.View(DeviceOrd::CPU());
     ASSERT_EQ(h_result.Shape().size(), 2);
-    auto in_margin = base_margin.View(Device::CPU());
+    auto in_margin = base_margin.View(DeviceOrd::CPU());
     linalg::ElementWiseKernelHost(h_result, omp_get_max_threads(), [&](size_t i, float v_0) {
       auto tup = linalg::UnravelIndex(i, h_result.Shape());
       auto i0 = std::get<0>(tup);

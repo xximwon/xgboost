@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2032, XGBoost contributors
+ * Copyright 2017-2023, XGBoost contributors
  */
 
 /**
@@ -102,12 +102,12 @@ class HostDeviceVector {
   [[nodiscard]] bool Empty() const { return Size() == 0; }
   [[nodiscard]] size_t Size() const;
   [[nodiscard]] bst_d_ordinal_t DeviceIdx() const;
-  [[nodiscard]] Device DeviceType() const {
+  [[nodiscard]] DeviceOrd DeviceType() const {
     bst_d_ordinal_t idx = DeviceIdx();
     if (idx != Context::kCpuId) {
-      return ::xgboost::Device{::xgboost::Device::kCUDA, idx};
+      DeviceOrd::CUDA(idx);
     }
-    return ::xgboost::Device::CPU();
+    return DeviceOrd::CPU();
   }
   common::Span<T> DeviceSpan();
   common::Span<const T> ConstDeviceSpan() const;
@@ -141,7 +141,7 @@ class HostDeviceVector {
   [[nodiscard]] GPUAccess DeviceAccess() const;
 
   void SetDevice(int device) const;
-  void SetDevice(Device device) const {
+  void SetDevice(DeviceOrd device) const {
     if (device.IsCUDA()) {
       this->SetDevice(device.ordinal);
     }
@@ -154,7 +154,6 @@ class HostDeviceVector {
  private:
   HostDeviceVectorImpl<T>* impl_;
 };
-
 }  // namespace xgboost
 
 #endif  // XGBOOST_HOST_DEVICE_VECTOR_H_

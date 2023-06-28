@@ -19,11 +19,9 @@
 #include <vector>
 
 // Forward declarations
-namespace xgboost {
-namespace gbm {
+namespace xgboost::gbm {
 struct GBTreeModel;
-}  // namespace gbm
-}  // namespace xgboost
+}  // namespace xgboost::gbm
 
 namespace xgboost {
 /**
@@ -55,7 +53,7 @@ class PredictionContainer : public DMatrixCache<PredictionCacheEntry> {
 
  public:
   PredictionContainer() : DMatrixCache<PredictionCacheEntry>{DefaultSize()} {}
-  PredictionCacheEntry& Cache(std::shared_ptr<DMatrix> m, Device device) {
+  PredictionCacheEntry& Cache(std::shared_ptr<DMatrix> m, DeviceOrd device) {
     auto p_cache = this->CacheItem(m);
     if (device.IsCUDA()) {
       p_cache->predictions.SetDevice(device.ordinal);

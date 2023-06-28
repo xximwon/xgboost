@@ -853,7 +853,7 @@ class GPUHistMaker : public TreeUpdater {
     this->InitData(param, p_fmat, p_tree);
     monitor_.Stop("InitData");
 
-    gpair->SetDevice(ctx_->DeviceType());
+    gpair->SetDevice(ctx_->Device());
     maker->UpdateTree(gpair, p_fmat, task_, p_tree, p_out_position);
   }
 

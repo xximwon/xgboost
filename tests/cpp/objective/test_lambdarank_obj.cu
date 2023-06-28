@@ -39,9 +39,9 @@ void TestGPUMakePair() {
   auto make_args = [&](std::shared_ptr<ltr::RankingCache> p_cache, auto rank_idx,
                        common::Span<std::size_t const> y_sorted_idx) {
     linalg::Vector<double> dummy;
-    auto d = dummy.View(ctx.DeviceType());
+    auto d = dummy.View(ctx.Device());
     linalg::Vector<GradientPair> dgpair;
-    auto dg = dgpair.View(ctx.DeviceType());
+    auto dg = dgpair.View(ctx.Device());
     cuda_impl::KernelInputs args{d,
                                  d,
                                  d,
@@ -49,7 +49,7 @@ void TestGPUMakePair() {
                                  p_cache->DataGroupPtr(&ctx),
                                  p_cache->CUDAThreadsGroupPtr(),
                                  rank_idx,
-                                 info.labels.View(ctx.DeviceType()),
+                                 info.labels.View(ctx.Device()),
                                  predt.ConstDeviceSpan(),
                                  {},
                                  dg,

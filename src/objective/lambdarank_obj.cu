@@ -306,7 +306,7 @@ void Launch(Context const* ctx, std::int32_t iter, HostDeviceVector<float> const
 
   CHECK_NE(d_rounding.Size(), 0);
 
-  auto label = info.labels.View(ctx->DeviceType());
+  auto label = info.labels.View(ctx->Device());
   auto predts = preds.ConstDeviceSpan();
   auto gpairs = out_gpair->DeviceSpan();
   thrust::fill_n(ctx->CUDACtx()->CTP(), gpairs.data(), gpairs.size(), GradientPair{0.0f, 0.0f});
@@ -347,7 +347,7 @@ common::Span<std::size_t const> SortY(Context const* ctx, MetaInfo const& info,
                                       common::Span<std::size_t const> d_rank,
                                       std::shared_ptr<ltr::RankingCache> p_cache) {
   auto const d_group_ptr = p_cache->DataGroupPtr(ctx);
-  auto label = info.labels.View(ctx->DeviceType());
+  auto label = info.labels.View(ctx->Device());
   // The buffer for ranked y is necessary as cub segmented sort accepts only pointer.
   auto d_y_ranked = p_cache->RankedY(ctx, info.num_row_);
   thrust::for_each_n(ctx->CUDACtx()->CTP(), thrust::make_counting_iterator(0ul), d_y_ranked.size(),
@@ -402,7 +402,7 @@ void MAPStat(Context const* ctx, MetaInfo const& info, common::Span<std::size_t 
   auto key_it = dh::MakeTransformIterator<std::size_t>(
       thrust::make_counting_iterator(0ul),
       [=] XGBOOST_DEVICE(std::size_t i) -> std::size_t { return dh::SegmentId(group_ptr, i); });
-  auto label = info.labels.View(ctx->DeviceType()).Slice(linalg::All(), 0);
+  auto label = info.labels.View(ctx->Device()).Slice(linalg::All(), 0);
   auto const* cuctx = ctx->CUDACtx();
 
   {
@@ -516,11 +516,11 @@ void LambdaRankUpdatePositionBias(Context const* ctx, linalg::VectorView<double 
   auto const d_group_ptr = p_cache->DataGroupPtr(ctx);
   auto n_groups = d_group_ptr.size() - 1;
 
-  auto ti_plus = p_ti_plus->View(ctx->DeviceType());
-  auto tj_minus = p_tj_minus->View(ctx->DeviceType());
+  auto ti_plus = p_ti_plus->View(ctx->Device());
+  auto tj_minus = p_tj_minus->View(ctx->Device());
 
-  auto li = p_li->View(ctx->DeviceType());
-  auto lj = p_lj->View(ctx->DeviceType());
+  auto li = p_li->View(ctx->Device());
+  auto lj = p_lj->View(ctx->Device());
   CHECK_EQ(li.Size(), ti_plus.Size());
 
   auto const& param = p_cache->Param();

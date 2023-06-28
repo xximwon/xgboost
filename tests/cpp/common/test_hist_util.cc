@@ -145,7 +145,7 @@ TEST(CutsBuilder, SearchGroupInd) {
 
   EXPECT_ANY_THROW(HostSketchContainer::SearchGroupIndFromRow(p_mat->Info().group_ptr_, 17));
 
-  p_mat->Info().Validate(Device::CPU());
+  p_mat->Info().Validate(DeviceOrd::CPU());
   EXPECT_THROW(HostSketchContainer::SearchGroupIndFromRow(p_mat->Info().group_ptr_, 17),
                dmlc::Error);
 

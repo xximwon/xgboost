@@ -433,7 +433,7 @@ TEST(Objective, DeclareUnifiedTest(AbsoluteErrorLeaf)) {
     auto h_labels = info.labels.HostView().Slice(linalg::All(), t);
     std::iota(linalg::begin(h_labels), linalg::end(h_labels), 0);
 
-    auto h_predt = linalg::MakeTensorView(ctx.DeviceType(), predt.HostSpan(), kRows, kTargets)
+    auto h_predt = linalg::MakeTensorView(ctx.Device(), predt.HostSpan(), kRows, kTargets)
                        .Slice(linalg::All(), t);
     for (size_t i = 0; i < h_predt.Size(); ++i) {
       h_predt(i) = h_labels(i) + i;

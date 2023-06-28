@@ -433,7 +433,7 @@ void CopyTensorInfoImpl(Context const& ctx, Json arr_interface, linalg::Tensor<T
   auto t_out = p_out->HostView();
   CHECK(t_out.CContiguous());
   auto const shape = t_out.Shape();
-  DispatchDType(array, Device::CPU(), [&](auto&& in) {
+  DispatchDType(array, DeviceOrd::CPU(), [&](auto&& in) {
     linalg::ElementWiseTransformHost(t_out, ctx.Threads(), [&](auto i, auto) {
       return std::apply(in, linalg::UnravelIndex<D>(i, shape));
     });
@@ -549,7 +549,7 @@ void MetaInfo::SetInfo(Context const& ctx, const char* key, const void* dptr, Da
   CHECK(key);
   auto proc = [&](auto cast_d_ptr) {
     using T = std::remove_pointer_t<decltype(cast_d_ptr)>;
-    auto t = linalg::TensorView<T, 1>(common::Span<T>{cast_d_ptr, num}, {num}, Device::CPU());
+    auto t = linalg::TensorView<T, 1>(common::Span<T>{cast_d_ptr, num}, {num}, DeviceOrd::CPU());
     CHECK(t.CContiguous());
     Json interface {
       linalg::ArrayInterface(t)
@@ -723,19 +723,19 @@ void MetaInfo::SynchronizeNumberOfColumns() {
 
 namespace {
 template <typename T>
-void CheckDevice(Device device, HostDeviceVector<T> const& v) {
+void CheckDevice(DeviceOrd device, HostDeviceVector<T> const& v) {
   CHECK(v.DeviceIdx() == Context::kCpuId || device.IsCPU() || v.DeviceType() == device)
       << "Data is resided on a different device than `gpu_id`. "
       << "Device that data is on: " << v.DeviceIdx() << ", "
       << "`gpu_id` for XGBoost: " << device.ordinal;
 }
 template <typename T, std::int32_t D>
-void CheckDevice(Device device, linalg::Tensor<T, D> const& v) {
+void CheckDevice(DeviceOrd device, linalg::Tensor<T, D> const& v) {
   CheckDevice(device, *v.Data());
 }
 }  // anonymous namespace
 
-void MetaInfo::Validate(Device device) const {
+void MetaInfo::Validate(DeviceOrd device) const {
   if (group_ptr_.size() != 0 && weights_.Size() != 0) {
     CHECK_EQ(group_ptr_.size(), weights_.Size() + 1) << error::GroupWeight();
     return;

@@ -131,8 +131,8 @@ TEST(MetaInfo, SaveLoadBinary) {
     EXPECT_EQ(inforead.group_ptr_, info.group_ptr_);
     EXPECT_EQ(inforead.weights_.HostVector(), info.weights_.HostVector());
 
-    auto orig_margin = info.base_margin_.View(ctx.DeviceType());
-    auto read_margin = inforead.base_margin_.View(ctx.DeviceType());
+    auto orig_margin = info.base_margin_.View(ctx.Device());
+    auto read_margin = inforead.base_margin_.View(ctx.Device());
     EXPECT_TRUE(std::equal(orig_margin.Values().cbegin(), orig_margin.Values().cend(),
                            read_margin.Values().cbegin()));
 
@@ -241,7 +241,7 @@ TEST(MetaInfo, Validate) {
   std::vector<xgboost::bst_group_t> groups (11);
   xgboost::Context ctx;
   info.SetInfo(ctx, "group", groups.data(), xgboost::DataType::kUInt32, 11);
-  EXPECT_THROW(info.Validate(Device::CUDA(0)), dmlc::Error);
+  EXPECT_THROW(info.Validate(DeviceOrd::CUDA(0)), dmlc::Error);
 
   std::vector<float> labels(info.num_row_ + 1);
   EXPECT_THROW(
@@ -265,13 +265,13 @@ TEST(MetaInfo, Validate) {
   labels.resize(info.num_row_);
   info.SetInfo(ctx, "label", labels.data(), DataType::kFloat32, info.num_row_);
   info.labels.SetDevice(0);
-  EXPECT_THROW(info.Validate(Device::CUDA(1)), dmlc::Error);
+  EXPECT_THROW(info.Validate(DeviceOrd::CUDA(1)), dmlc::Error);
 
   HostDeviceVector<bst_group_t> d_groups{groups};
   d_groups.SetDevice(0);
   d_groups.DevicePointer();  // pull to device
   std::string arr_interface_str{ArrayInterfaceStr(
-      linalg::MakeVec(d_groups.ConstDevicePointer(), d_groups.Size(), Device::CUDA(0)))};
+      linalg::MakeVec(d_groups.ConstDevicePointer(), d_groups.Size(), DeviceOrd::CUDA(0)))};
   EXPECT_THROW(info.SetInfo(ctx, "group", xgboost::StringView{arr_interface_str}), dmlc::Error);
 #endif  // defined(XGBOOST_USE_CUDA)
 }
@@ -311,5 +311,5 @@ TEST(MetaInfo, HostExtend) {
 }
 
 namespace xgboost {
-TEST(MetaInfo, CPUStridedData) { TestMetaInfoStridedData(Device::CPU()); }
+TEST(MetaInfo, CPUStridedData) { TestMetaInfoStridedData(DeviceOrd::CPU()); }
 }  // namespace xgboost

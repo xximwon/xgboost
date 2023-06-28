@@ -299,8 +299,8 @@ TEST(SimpleDMatrix, Slice) {
         ASSERT_EQ(p_m->Info().weights_.HostVector().at(ridx),
                   out->Info().weights_.HostVector().at(i));
 
-        auto out_margin = out->Info().base_margin_.View(ctx.DeviceType());
-        auto in_margin = margin.View(ctx.DeviceType());
+        auto out_margin = out->Info().base_margin_.View(ctx.Device());
+        auto in_margin = margin.View(ctx.Device());
         for (size_t j = 0; j < kClasses; ++j) {
           ASSERT_EQ(out_margin(i, j), in_margin(ridx, j));
         }
@@ -374,8 +374,8 @@ TEST(SimpleDMatrix, SliceCol) {
                     out->Info().labels_upper_bound_.HostVector().at(i));
           ASSERT_EQ(p_m->Info().weights_.HostVector().at(i), out->Info().weights_.HostVector().at(i));
 
-          auto out_margin = out->Info().base_margin_.View(ctx.DeviceType());
-          auto in_margin = margin.View(ctx.DeviceType());
+          auto out_margin = out->Info().base_margin_.View(ctx.Device());
+          auto in_margin = margin.View(ctx.Device());
           for (size_t j = 0; j < kClasses; ++j) {
             ASSERT_EQ(out_margin(i, j), in_margin(i, j));
           }

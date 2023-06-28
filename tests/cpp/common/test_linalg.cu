@@ -18,11 +18,11 @@ void TestElementWiseKernel() {
      * Non-contiguous
      */
     // GPU view
-    auto t = l.View(ctx.DeviceType()).Slice(linalg::All(), 1, linalg::All());
+    auto t = l.View(ctx.Device()).Slice(linalg::All(), 1, linalg::All());
     ASSERT_FALSE(t.CContiguous());
     ElementWiseTransformDevice(t, [] __device__(size_t i, float) { return i; });
     // CPU view
-    t = l.View(Device::CPU()).Slice(linalg::All(), 1, linalg::All());
+    t = l.View(DeviceOrd::CPU()).Slice(linalg::All(), 1, linalg::All());
     size_t k = 0;
     for (size_t i = 0; i < l.Shape(0); ++i) {
       for (size_t j = 0; j < l.Shape(2); ++j) {
@@ -30,7 +30,7 @@ void TestElementWiseKernel() {
       }
     }
 
-    t = l.View(ctx.DeviceType()).Slice(linalg::All(), 1, linalg::All());
+    t = l.View(ctx.Device()).Slice(linalg::All(), 1, linalg::All());
     ElementWiseKernelDevice(t, [] XGBOOST_DEVICE(size_t i, float v) { SPAN_CHECK(v == i); });
   }
 
@@ -38,11 +38,11 @@ void TestElementWiseKernel() {
     /**
      * Contiguous
      */
-    auto t = l.View(ctx.DeviceType());
+    auto t = l.View(ctx.Device());
     ElementWiseTransformDevice(t, [] XGBOOST_DEVICE(size_t i, float) { return i; });
     ASSERT_TRUE(t.CContiguous());
     // CPU view
-    t = l.View(Device::CPU());
+    t = l.View(DeviceOrd::CPU());
 
     size_t ind = 0;
     for (size_t i = 0; i < l.Shape(0); ++i) {
@@ -58,7 +58,7 @@ void TestElementWiseKernel() {
 void TestSlice() {
   Context ctx = MakeCUDACtx(1);
   thrust::device_vector<double> data(2 * 3 * 4);
-  auto t = MakeTensorView(ctx.DeviceType(), dh::ToSpan(data), 2, 3, 4);
+  auto t = MakeTensorView(ctx.Device(), dh::ToSpan(data), 2, 3, 4);
   dh::LaunchN(1, [=] __device__(size_t) {
     auto s = t.Slice(linalg::All(), linalg::Range(0, 3), linalg::Range(0, 4));
     auto all = t.Slice(linalg::All(), linalg::All(), linalg::All());

@@ -451,7 +451,7 @@ class TensorView {
       typename U,
       std::enable_if_t<common::detail::IsAllowedElementTypeConversion<U, T>::value> * = nullptr>
   LINALG_HD TensorView(TensorView<U, kDim> const &that)  // NOLINT
-      : data_{that.Values()}, ptr_{data_.data()}, size_{that.Size()}, device_{that.DeviceType()} {
+      : data_{that.Values()}, ptr_{data_.data()}, size_{that.Size()}, device_{that.Device()} {
     detail::UnrollLoop<kDim>([&](auto i) {
       stride_[i] = that.Stride(i);
       shape_[i] = that.Shape(i);
@@ -564,7 +564,7 @@ class TensorView {
   /**
    * \brief Obtain the device.
    */
-  LINALG_HD auto DeviceType() const { return device_; }
+  LINALG_HD auto Device() const { return device_; }
 };
 
 /**
@@ -645,8 +645,8 @@ auto MakeVec(T *ptr, size_t s, DeviceOrd device = DeviceOrd::CPU()) {
 
 template <typename T>
 auto MakeVec(HostDeviceVector<T> *data) {
-  return MakeVec(data->DeviceType().IsCPU() ? data->HostPointer() : data->DevicePointer(),
-                 data->Size(), data->DeviceType());
+  return MakeVec(data->Device().IsCPU() ? data->HostPointer() : data->DevicePointer(), data->Size(),
+                 data->Device());
 }
 
 template <typename T>
@@ -675,7 +675,7 @@ Json ArrayInterface(TensorView<T const, D> const &t) {
   array_interface["data"] = std::vector<Json>(2);
   array_interface["data"][0] = Integer{reinterpret_cast<int64_t>(t.Values().data())};
   array_interface["data"][1] = Boolean{true};
-  if (t.DeviceType().IsCUDA()) {
+  if (t.Device().IsCUDA()) {
     // Change this once we have different CUDA stream.
     array_interface["stream"] = Null{};
   }

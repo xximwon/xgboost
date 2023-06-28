@@ -30,7 +30,7 @@ TEST(Linalg, MatrixView) {
   HostDeviceVector<float> storage;
   Context ctx;
   auto m = MakeMatrixFromTest(&ctx, &storage, kRows, kCols);
-  ASSERT_EQ(m.DeviceType(), DeviceOrd::CPU());
+  ASSERT_EQ(m.Device(), DeviceOrd::CPU());
   ASSERT_EQ(m(0, 0), 0);
   ASSERT_EQ(m(kRows - 1, kCols - 1), storage.Size() - 1);
 }
@@ -111,7 +111,7 @@ TEST(Linalg, TensorView) {
     ASSERT_EQ(s.Shape().size(), 1);
     s = t.Slice(All(), 1);
     auto cuda = DeviceOrd::CUDA(0);
-    ASSERT_EQ(s.DeviceType(), cuda);
+    ASSERT_EQ(s.Device(), cuda);
   }
 
   {

@@ -773,7 +773,7 @@ void UpdatePredictionCacheImpl(Context const *ctx, RegTree const *p_last_tree,
                                std::vector<Partitioner> const &partitioner,
                                linalg::VectorView<float> out_preds) {
   auto const &tree = *p_last_tree;
-  CHECK(out_preds.DeviceType().IsCPU());
+  CHECK(out_preds.Device().IsCPU());
   size_t n_nodes = p_last_tree->GetNodes().size();
   for (auto &part : partitioner) {
     CHECK_EQ(part.Size(), n_nodes);
@@ -808,7 +808,7 @@ void UpdatePredictionCacheImpl(Context const *ctx, RegTree const *p_last_tree,
   auto n_nodes = mttree->Size();
   auto n_targets = tree.NumTargets();
   CHECK_EQ(out_preds.Shape(1), n_targets);
-  CHECK(out_preds.DeviceType().IsCPU());
+  CHECK(out_preds.Device().IsCPU());
 
   for (auto &part : partitioner) {
     CHECK_EQ(part.Size(), n_nodes);

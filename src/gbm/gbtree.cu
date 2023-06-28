@@ -12,7 +12,7 @@ void GPUCopyGradient(HostDeviceVector<GradientPair> const *in_gpair,
                      HostDeviceVector<GradientPair> *out_gpair) {
   auto mat = linalg::TensorView<GradientPair const, 2>(
       in_gpair->ConstDeviceSpan(), {in_gpair->Size() / n_groups, static_cast<size_t>(n_groups)},
-      in_gpair->DeviceType());
+      in_gpair->Device());
   auto v_in = mat.Slice(linalg::All(), group_id);
   out_gpair->Resize(v_in.Size());
   auto d_out = out_gpair->DeviceSpan();

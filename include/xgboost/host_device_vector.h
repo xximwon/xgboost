@@ -141,7 +141,6 @@ class HostDeviceVector {
  private:
   HostDeviceVectorImpl<T>* impl_;
 };
-
 }  // namespace xgboost
 
 #endif  // XGBOOST_HOST_DEVICE_VECTOR_H_

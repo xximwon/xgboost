@@ -94,8 +94,8 @@ void CompareJSON(Json l, Json r) {
 
 void TestLearnerSerialization(Args args, FeatureMap const& fmap, std::shared_ptr<DMatrix> p_dmat) {
   for (auto& batch : p_dmat->GetBatches<SparsePage>()) {
-    batch.data.HostVector();
-    batch.offset.HostVector();
+    batch.data.HostPointer();
+    batch.offset.HostPointer();
   }
 
   int32_t constexpr kIters = 2;

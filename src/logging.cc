@@ -1,26 +1,26 @@
-/*!
- * Copyright 2015-2018 by Contributors
+/**
+ * Copyright 2015-2023 by Contributors
  * \file logging.cc
  * \brief Implementation of loggers.
  * \author Tianqi Chen
  */
-#include <iostream>
-
-#include "xgboost/parameter.h"
 #include "xgboost/logging.h"
 
+#include <iostream>
+
 #include "collective/communicator-inl.h"
+#include "xgboost/global_config.h"
+#include "xgboost/parameter.h"
 
 #if !defined(XGBOOST_STRICT_R_MODE) || XGBOOST_STRICT_R_MODE == 0
 // Override logging mechanism for non-R interfaces
 void dmlc::CustomLogMessage::Log(const std::string& msg) {
-  const xgboost::LogCallbackRegistry *registry =
-      xgboost::LogCallbackRegistryStore::Get();
-  auto callback = registry->Get();
+  auto& callback = xgboost::LogCallbackRegistry::Singleton();
   callback(msg.c_str());
 }
 
 namespace xgboost {
+BaseLogger::BaseLogger() { log_stream_ << "[" << dmlc::DateLogger().HumanDate() << "] "; }
 
 ConsoleLogger::~ConsoleLogger() {
   if (ShouldLog(cur_verbosity_)) {
@@ -33,15 +33,15 @@ TrackerLogger::~TrackerLogger() {
   collective::Print(log_stream_.str());
 }
 
+LogCallbackRegistry::LogCallbackRegistry()
+    : log_callback_([](char const* msg) { std::cerr << msg << std::endl; }) {}
 }  // namespace xgboost
 
 #endif  // !defined(XGBOOST_STRICT_R_MODE) || XGBOOST_STRICT_R_MODE == 0
 
 namespace xgboost {
-
 bool ConsoleLogger::ShouldLog(LogVerbosity verbosity) {
-  return static_cast<int>(verbosity) <=
-             (GlobalConfigThreadLocalStore::Get()->verbosity) ||
+  return static_cast<int>(verbosity) <= (GlobalConfigThreadLocalStore::Get()->verbosity) ||
          verbosity == LV::kIgnore;
 }
 
@@ -76,31 +76,25 @@ ConsoleLogger::LogVerbosity ConsoleLogger::GlobalVerbosity() {
   return global_verbosity;
 }
 
-ConsoleLogger::ConsoleLogger(LogVerbosity cur_verb) :
-    cur_verbosity_{cur_verb} {}
+ConsoleLogger::ConsoleLogger(LogVerbosity cur_verb) : cur_verbosity_{cur_verb} {}
 
-ConsoleLogger::ConsoleLogger(
-    const std::string& file, int line, LogVerbosity cur_verb) {
+ConsoleLogger::ConsoleLogger(const std::string& file, int line, LogVerbosity cur_verb) {
   cur_verbosity_ = cur_verb;
   switch (cur_verbosity_) {
-    case LogVerbosity::kWarning:
-      BaseLogger::log_stream_ << "WARNING: "
-                              << file << ":" << line << ": ";
-      break;
-    case LogVerbosity::kDebug:
-      BaseLogger::log_stream_ << "DEBUG: "
-                              << file << ":" << line << ": ";
-      break;
-    case LogVerbosity::kInfo:
-      BaseLogger::log_stream_ << "INFO: "
-                              << file << ":" << line << ": ";
-      break;
-    case LogVerbosity::kIgnore:
-      BaseLogger::log_stream_ << file << ":" << line << ": ";
-      break;
-    case LogVerbosity::kSilent:
-      break;
+  case LogVerbosity::kWarning:
+    BaseLogger::log_stream_ << "WARNING: " << file << ":" << line << ": ";
+    break;
+  case LogVerbosity::kDebug:
+    BaseLogger::log_stream_ << "DEBUG: " << file << ":" << line << ": ";
+    break;
+  case LogVerbosity::kInfo:
+    BaseLogger::log_stream_ << "INFO: " << file << ":" << line << ": ";
+    break;
+  case LogVerbosity::kIgnore:
+    BaseLogger::log_stream_ << file << ":" << line << ": ";
+    break;
+  case LogVerbosity::kSilent:
+    break;
   }
 }
-
 }  // namespace xgboost

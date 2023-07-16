@@ -13,6 +13,7 @@
 #include <xgboost/base.h>
 #include <xgboost/host_device_vector.h>
 #include <xgboost/linalg.h>
+#include <xgboost/logging.h>
 #include <xgboost/span.h>
 #include <xgboost/string_view.h>
 

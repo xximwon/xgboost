@@ -24,16 +24,6 @@
 #endif  // XGBOOST_STRICT_R_MODE
 
 /*!
- * \brief Whether always log console message with time.
- *  It will display like, with timestamp appended to head of the message.
- *  "[21:47:50] 6513x126 matrix with 143286 entries loaded from
- * ../data/agaricus.txt.train"
- */
-#ifndef XGBOOST_LOG_WITH_TIME
-#define XGBOOST_LOG_WITH_TIME 1
-#endif  // XGBOOST_LOG_WITH_TIME
-
-/*!
  * \brief Whether to customize global PRNG.
  */
 #ifndef XGBOOST_CUSTOMIZE_GLOBAL_PRNG

@@ -2,11 +2,12 @@
 
 #include <gtest/gtest.h>
 #include <xgboost/logging.h>
+#include <thread>
 
 namespace xgboost {
 
 TEST(Logging, Basic) {
-  std::map<std::string, std::string> args {};
+  std::map<std::string, std::string> args{};
   std::string output;
 
   args["verbosity"] = "0";  // silent
@@ -50,4 +51,39 @@ TEST(Logging, Basic) {
   ConsoleLogger::Configure({args.cbegin(), args.cend()});
 }
 
+class TestClass {
+  std::string str_;
+
+ public:
+  TestClass() {
+    std::cout << "default ctor" << std::endl;
+  }
+  TestClass(TestClass const& c) {
+    std::cout << "cpy ctor"<< std::endl;
+  }
+  void Set(std::string str) {
+    str_ = str;
+  }
+  TestClass(TestClass&& c) {
+    std::cout << "move ctor"<< std::endl;
+  }
+  ~TestClass() {
+    std::cout << "dtor" << std::endl;
+  }
+  std::string Get() const {
+    return str_;
+  }
+};
+
+void Foo() {
+  TestClass static thread_local c;
+  std::cout << c.Get() << std::endl;
+  c.Set("bar");
+  std::cout << c.Get() << std::endl;
+}
+
+TEST(Logging, TLC) {
+  Foo();
+  std::thread{[] { Foo(); }}.join();
+}
 }  // namespace xgboost

@@ -143,10 +143,9 @@ XGB_DLL int XGBuildInfo(char const **out) {
   API_END();
 }
 
-XGB_DLL int XGBRegisterLogCallback(void (*callback)(const char*)) {
+XGB_DLL int XGBRegisterLogCallback(void (*callback)(const char *)) {
   API_BEGIN_UNGUARD();
-  LogCallbackRegistry* registry = LogCallbackRegistryStore::Get();
-  registry->Register(callback);
+  LogCallbackRegistry::Singleleton().Register(callback);
   API_END();
 }
 

@@ -18,8 +18,7 @@
 
 #include "xgboost/logging.h"
 
-namespace xgboost {
-namespace common {
+namespace xgboost::common {
 /*!
  * \brief Implementation of config reader
  */
@@ -45,9 +44,8 @@ class ConfigParser {
       std::string content{std::istreambuf_iterator<char>(fin),
                           std::istreambuf_iterator<char>()};
       return content;
-    } catch (std::ios_base::failure const &e) {
-      LOG(FATAL) << "Failed to read config file: \"" << path << "\"\n"
-                 << e.what();
+    } catch (std::ios_base::failure const& e) {
+      LOG(FATAL) << "Failed to read config file: \"" << path << "\"\n" << e.what();
     }
     return "";
   }
@@ -168,7 +166,5 @@ class ConfigParser {
     return true;
   }
 };
-
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common
 #endif  // XGBOOST_COMMON_CONFIG_H_

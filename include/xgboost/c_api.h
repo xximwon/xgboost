@@ -83,14 +83,15 @@ XGB_DLL int XGBuildInfo(char const **out);
  */
 XGB_DLL const char *XGBGetLastError();
 
-/*!
- * \brief register callback function for LOG(INFO) messages -- helpful messages
- *        that are not errors.
- * Note: this function can be called by multiple threads. The callback function
- *       will run on the thread that registered it
- * \return 0 for success, -1 for failure
+/**
+ * @brief register global callback function for logging.
+ *
+ * @note This function can be called by multiple threads, please make sure the registered
+ *       function is thread-safe.
+ *
+ * @return 0 for success, -1 for failure
  */
-XGB_DLL int XGBRegisterLogCallback(void (*callback)(const char*));
+XGB_DLL int XGBRegisterLogCallback(void (*callback)(const char *));
 
 /*!
  * \brief Set global configuration (collection of parameters that apply globally). This function

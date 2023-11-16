@@ -8,6 +8,7 @@
 #include <utility>    // for move
 #include <vector>     // for vector
 
+#include "../common/algorithm.cuh"  // for ArgSort
 #include "../common/categorical.h"
 #include "../common/cuda_context.cuh"
 #include "../common/hist_util.cuh"
@@ -32,6 +33,10 @@ EllpackPage::EllpackPage(EllpackPage&& that) { std::swap(impl_, that.impl_); }
 [[nodiscard]] bst_idx_t EllpackPage::Size() const { return impl_->Size(); }
 
 void EllpackPage::SetBaseRowId(std::size_t row_id) { impl_->SetBaseRowId(row_id); }
+
+void EllpackPage::SortRowByQid(Context const* ctx, MetaInfo const& info) {
+  this->impl_->SortRowByQid(ctx, info);
+}
 
 [[nodiscard]] common::HistogramCuts const& EllpackPage::Cuts() const {
   CHECK(impl_);
@@ -471,6 +476,36 @@ void EllpackPageImpl::Compact(Context const* ctx, EllpackPageImpl const* page,
   page->gidx_buffer.SetDevice(ctx->Device());
   auto cuctx = ctx->CUDACtx();
   dh::LaunchN(page->n_rows, cuctx->Stream(), CompactPage(this, page, row_indexes));
+  monitor_.Stop(__func__);
+}
+
+void EllpackPageImpl::SortRowByQid(Context const* ctx, MetaInfo const& info) {
+  monitor_.Start(__func__);
+  auto stride = this->row_stride;
+
+  auto cuctx = ctx->CUDACtx();
+  EllpackPageImpl sorted_page{ctx->Device(), this->cuts_, this->is_dense, this->row_stride,
+                              this->Size()};
+  auto dst = sorted_page.gidx_buffer.DeviceSpan();
+
+  dh::device_vector<std::size_t> idx(info.num_row_);
+  common::ArgSort<true>(ctx, info.qid.View(ctx->Device()).Values(), dh::ToSpan(idx));
+
+  auto d_sorted_idx = dh::ToSpan(idx);
+  common::CompressedIterator<std::uint32_t> src_iterator_d;
+  common::CompressedBufferWriter cbw{static_cast<std::size_t>(cuts_.TotalBins() + 1)};
+  CHECK_EQ(this->base_rowid, 0) << error::NoExtMemory();
+  dh::LaunchN(this->n_rows, cuctx->Stream(), [=] __device__(std::size_t i) mutable {
+    std::size_t src_row = d_sorted_idx[i];
+    std::size_t dst_row = i;
+
+    std::size_t dst_offset = src_row * stride;
+    std::size_t src_offset = dst_row * stride;
+
+    for (std::size_t j = 0; j < stride; ++j) {
+      cbw.AtomicWriteSymbol(dst.data(), src_iterator_d[src_offset + j], dst_offset + j);
+    }
+  });
   monitor_.Stop(__func__);
 }
 

@@ -1,16 +1,15 @@
-/*!
- * Copyright 2021 by XGBoost Contributors
+/**
+ * Copyright 2021-2023, XGBoost Contributors
  */
 #ifndef XGBOOST_DATA_VALIDATION_H_
 #define XGBOOST_DATA_VALIDATION_H_
 #include <cmath>
-#include <vector>
+#include <vector>  // for vector
 
-#include "xgboost/base.h"
+#include "xgboost/base.h"  // for bst_group_t
 #include "xgboost/logging.h"
 
-namespace xgboost {
-namespace data {
+namespace xgboost::data {
 struct LabelsCheck {
   XGBOOST_DEVICE bool operator()(float y) {
 #if defined(__CUDA_ARCH__)
@@ -35,6 +34,5 @@ inline void ValidateQueryGroup(std::vector<bst_group_t> const &group_ptr_) {
   }
   CHECK(valid_query_group) << "Invalid group structure.";
 }
-}  // namespace data
-}  // namespace xgboost
+}  // namespace xgboost::data
 #endif  // XGBOOST_DATA_VALIDATION_H_

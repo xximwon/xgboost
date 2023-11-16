@@ -75,6 +75,16 @@ struct IterOp {
 // naming: thrust begin
 // returns a thrust iterator for a tensor view.
 template <typename T, std::int32_t kDim>
+auto tbegin(TensorView<T, kDim> v) {  // NOLINT
+  return dh::MakeTransformIterator<T>(thrust::make_counting_iterator(0ul), detail::IterOp{v});
+}
+
+template <typename T, std::int32_t kDim>
+auto tend(TensorView<T, kDim> v) {  // NOLINT
+  return tbegin(v) + v.Size();
+}
+
+template <typename T, std::int32_t kDim>
 auto tcbegin(TensorView<T, kDim> v) {  // NOLINT
   return dh::MakeTransformIterator<T>(
       thrust::make_counting_iterator(0ul),

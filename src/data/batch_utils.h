@@ -29,5 +29,24 @@ inline bool RegenGHist(BatchParam old, BatchParam p) {
   }
   return p.regen || old.ParamNotEqual(p);
 }
+
+/**
+ * @brief Re-order the row pointer according to a sorted index array.
+ */
+template <typename InRowPtr, typename OutRowPtr>
+void ReorderOffset(InRowPtr const& in, std::vector<std::size_t> const& sorted_idx,
+                   OutRowPtr* p_out) {
+  auto& out = *p_out;
+  CHECK_EQ(in.size(), out.size());
+  auto p_idx = sorted_idx.data();
+
+  out[0] = 0;
+  for (std::size_t i = 0; i < out.size() - 1; ++i) {
+    auto ridx = p_idx[i];
+    auto length = in[ridx + 1] - in[ridx];
+    out[i + 1] = length;
+  }
+  std::partial_sum(out.cbegin(), out.cend(), out.begin());
+}
 }  // namespace xgboost::data::detail
 #endif  // XGBOOST_DATA_BATCH_UTILS_H_

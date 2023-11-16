@@ -167,6 +167,7 @@ void IterativeDMatrix::InitFromCUDA(Context const* ctx, BatchParam const& p,
   iter.Reset();
   // Synchronise worker columns
   info_.SynchronizeNumberOfColumns(ctx);
+  this->SortQidIfNeeded();
 }
 
 BatchSet<EllpackPage> IterativeDMatrix::GetEllpackBatches(Context const* ctx,

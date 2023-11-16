@@ -9,9 +9,10 @@
 
 #include <memory>  // for shared_ptr
 
+#include "../common/common.h"
+
 // dummy implementation of EllpackPage in case CUDA is not used
 namespace xgboost {
-
 class EllpackPageImpl {
   std::shared_ptr<common::HistogramCuts> cuts_;
 
@@ -36,7 +37,10 @@ void EllpackPage::SetBaseRowId(std::size_t) {
   LOG(FATAL) << "Internal Error: XGBoost is not compiled with CUDA but "
                 "EllpackPage is required";
 }
-bst_idx_t EllpackPage::Size() const {
+
+void EllpackPage::SortRowByQid(Context const*, MetaInfo const&) { common::AssertGPUSupport(); }
+
+size_t EllpackPage::Size() const {
   LOG(FATAL) << "Internal Error: XGBoost is not compiled with CUDA but "
                 "EllpackPage is required";
   return 0;

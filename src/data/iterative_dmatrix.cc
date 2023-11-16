@@ -15,6 +15,7 @@
 #include "../common/column_matrix.h"
 #include "../tree/param.h"  // FIXME(jiamingy): Find a better way to share this parameter.
 #include "batch_utils.h"    // for RegenGHist
+#include "ellpack_page.h"
 #include "gradient_index.h"
 #include "proxy_dmatrix.h"
 #include "simple_batch_iterator.h"
@@ -284,6 +285,8 @@ void IterativeDMatrix::InitFromCPU(Context const* ctx, BatchParam const& p,
   }
 
   Info().feature_types.HostVector() = h_ft;
+
+  this->SortQidIfNeeded();
 }
 
 BatchSet<GHistIndexMatrix> IterativeDMatrix::GetGradientIndex(Context const* ctx,
@@ -356,6 +359,18 @@ BatchSet<ExtSparsePage> IterativeDMatrix::GetExtBatches(Context const* ctx,
   auto begin_iter =
       BatchIterator<ExtSparsePage>(new SimpleBatchIteratorImpl<ExtSparsePage>(nullptr));
   return BatchSet<ExtSparsePage>(begin_iter);
+}
+
+void IterativeDMatrix::SortQidIfNeeded() {
+  if (this->Info().NeedSortQid()) {
+    if (this->ghist_) {
+      this->ghist_->SortSampleByQID(&fmat_ctx_, this->batch_.sparse_thresh, this->Info());
+    }
+    if (this->ellpack_) {
+      this->ellpack_->SortRowByQid(&fmat_ctx_, this->Info());
+    }
+    this->Info().SortByQid(&fmat_ctx_);
+  }
 }
 
 #if !defined(XGBOOST_USE_CUDA)

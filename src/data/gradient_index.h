@@ -53,7 +53,7 @@ class GHistIndexMatrix {
   }
 
   /**
-   * \brief Push a page into index matrix, the function is only necessary because hist has
+   * @brief Push a page into index matrix, the function is only necessary because hist has
    *        partial support for external memory.
    */
   void PushBatch(SparsePage const& batch, common::Span<FeatureType const> ft, int32_t n_threads);
@@ -137,7 +137,7 @@ class GHistIndexMatrix {
 
  public:
   /** @brief row pointer to rows by element position */
-  common::RefResourceView<std::size_t> row_ptr;
+  common::RefResourceView<bst_row_t> row_ptr;
   /** @brief data storage for index. */
   common::RefResourceView<std::uint8_t> data;
   /** @brief The histogram index. */
@@ -157,24 +157,24 @@ class GHistIndexMatrix {
 
   ~GHistIndexMatrix();
   /**
-   * \brief Constrcutor for SimpleDMatrix.
+   * @brief Constrcutor for SimpleDMatrix.
    */
   GHistIndexMatrix(Context const* ctx, DMatrix* x, bst_bin_t max_bins_per_feat,
                    double sparse_thresh, bool sorted_sketch, common::Span<float const> hess = {});
   /**
-   * \brief Constructor for Iterative DMatrix. Initialize basic information and prepare
+   * @brief Constructor for Iterative DMatrix. Initialize basic information and prepare
    *        for push batch.
    */
   GHistIndexMatrix(MetaInfo const& info, common::HistogramCuts&& cuts, bst_bin_t max_bin_per_feat);
   /**
-   * \brief Constructor fro Iterative DMatrix where we might copy an existing ellpack page
+   * @brief Constructor fro Iterative DMatrix where we might copy an existing ellpack page
    *        to host gradient index.
    */
   GHistIndexMatrix(Context const* ctx, MetaInfo const& info, EllpackPage const& page,
                    BatchParam const& p);
 
   /**
-   * \brief Constructor for external memory.
+   * @brief Constructor for external memory.
    */
   GHistIndexMatrix(SparsePage const& page, common::Span<FeatureType const> ft,
                    common::HistogramCuts cuts, int32_t max_bins_per_feat, bool is_dense,
@@ -244,6 +244,9 @@ class GHistIndexMatrix {
   [[nodiscard]] float GetFvalue(std::vector<std::uint32_t> const& ptrs,
                                 std::vector<float> const& values, std::vector<float> const& mins,
                                 bst_idx_t ridx, bst_feature_t fidx, bool is_cat) const;
+
+  std::vector<bst_row_t> SortSampleByQID(Context const* ctx, float sparse_threshold,
+                                         MetaInfo const& info);
 
   [[nodiscard]] common::HistogramCuts& Cuts() { return cut; }
   [[nodiscard]] common::HistogramCuts const& Cuts() const { return cut; }

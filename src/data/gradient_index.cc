@@ -10,8 +10,10 @@
 
 #include "../common/column_matrix.h"
 #include "../common/hist_util.h"
+#include "../common/linalg_op.h"  // for cbegin, cend
 #include "../common/numeric.h"
 #include "../common/transform_iterator.h"  // for MakeIndexTransformIter
+#include "batch_utils.h"                   // for ReorderOffset
 
 namespace xgboost {
 
@@ -133,9 +135,10 @@ void GHistIndexMatrix::ResizeIndex(const size_t n_index, const bool isDense) {
 
     auto resource = this->data.Resource();
     decltype(this->data) new_vec;
+    using RawT = typename decltype(this->data)::value_type;
     if (!resource) {
       CHECK(this->data.empty());
-      new_vec = common::MakeFixedVecWithMalloc(n_bytes, std::uint8_t{0});
+      new_vec = common::MakeFixedVecWithMalloc(n_bytes, RawT{0});
     } else {
       CHECK(resource->Type() == common::ResourceHandler::kMalloc);
       auto malloc_resource = std::dynamic_pointer_cast<common::MallocResource>(resource);
@@ -143,8 +146,8 @@ void GHistIndexMatrix::ResizeIndex(const size_t n_index, const bool isDense) {
       malloc_resource->Resize(n_bytes);
 
       // gcc-11.3 doesn't work if DataAs is used.
-      std::uint8_t *new_ptr = reinterpret_cast<std::uint8_t *>(malloc_resource->Data());
-      new_vec = {new_ptr, n_bytes / sizeof(std::uint8_t), malloc_resource};
+      RawT *new_ptr = reinterpret_cast<RawT *>(malloc_resource->Data());
+      new_vec = common::RefResourceView{new_ptr, n_bytes / sizeof(RawT), malloc_resource};
     }
     this->data = std::move(new_vec);
     this->index = common::Index{common::Span{data.data(), static_cast<size_t>(data.size())},
@@ -233,6 +236,56 @@ float GHistIndexMatrix::GetFvalue(std::vector<std::uint32_t> const &ptrs,
 
   SPAN_CHECK(false);
   return std::numeric_limits<float>::quiet_NaN();
+}
+
+std::vector<bst_row_t> GHistIndexMatrix::SortSampleByQID(Context const *ctx, float sparse_threshold,
+                                                         MetaInfo const &info) {
+  if (!ctx->IsCPU()) {
+    LOG(FATAL) << "Invalid device ordinal";
+  }
+  CHECK_EQ(this->base_rowid, 0) << error::NoExtMemory();
+  CHECK_EQ(info.num_row_, this->row_ptr.size() - 1) << error::NoExtMemory();
+
+  auto const h_qid = info.qid.HostView();
+  auto sorted_idx = common::ArgSort<bst_row_t>(ctx, linalg::cbegin(h_qid), linalg::cend(h_qid));
+
+  auto new_vec = common::MakeFixedVecWithMalloc(data.size(), decltype(this->data)::value_type{0});
+  auto out = common::Index{common::Span{new_vec.data(), new_vec.size()}, index.GetBinTypeSize()};
+
+  CHECK_EQ(info.num_row_, this->Size());
+  auto out_row_ptr = common::MakeFixedVecWithMalloc(this->row_ptr.size(), std::size_t{0});
+
+  data::detail::ReorderOffset(this->row_ptr, sorted_idx, &out_row_ptr);
+
+  common::DispatchBinType(index.GetBinTypeSize(), [&](auto t) {
+    using T = decltype(t);
+    auto in_index_data = index.data<T>();
+    auto out_index_data = out.data<T>();
+    common::ParallelFor(info.num_row_, ctx->Threads(), [&](auto out_ridx) {
+      auto in_ridx = sorted_idx[out_ridx];
+
+      auto ibeg = this->row_ptr[in_ridx];
+      auto iend = this->row_ptr[in_ridx + 1];
+
+      auto obeg = out_row_ptr[out_ridx];
+
+      for (std::size_t i = 0; i < iend - ibeg; ++i) {
+        out_index_data[i + obeg] = in_index_data[i + ibeg];
+      }
+    });
+  });
+  if (this->IsDense()) {
+    out.SetBinOffset(this->cut.Ptrs());
+  }
+
+  this->data = std::move(new_vec);
+  this->index = std::move(out);
+
+  this->row_ptr = std::move(out_row_ptr);
+
+  this->columns_ = std::make_unique<common::ColumnMatrix>(*this, sparse_threshold);
+
+  return sorted_idx;
 }
 
 bool GHistIndexMatrix::ReadColumnPage(common::AlignedResourceReadStream *fi) {

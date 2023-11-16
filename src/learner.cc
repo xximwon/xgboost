@@ -1467,6 +1467,8 @@ class LearnerImpl : public LearnerIO {
     if (p_fmat->Info().num_row_ == 0) {
       error::WarnEmptyDataset();
     }
+
+    // p_fmat->SortQidIfNeeded();
   }
 
  private:

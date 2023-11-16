@@ -34,6 +34,7 @@
 #include "../data/iterative_dmatrix.h"       // for IterativeDMatrix
 #include "./sparse_page_dmatrix.h"           // for SparsePageDMatrix
 #include "array_interface.h"                 // for ArrayInterfaceHandler, ArrayInterface, Dispa...
+#include "batch_utils.h"                     // for ReorderOffset
 #include "dmlc/base.h"                       // for BeginPtr
 #include "dmlc/common.h"                     // for OMPException
 #include "dmlc/data.h"                       // for Parser
@@ -526,19 +527,21 @@ void MetaInfo::SetInfoFromHost(Context const& ctx, StringView key, Json arr) {
     data::ValidateQueryGroup(group_ptr_);
     return;
   } else if (key == "qid") {
-    linalg::Tensor<bst_group_t, 1> t;
-    CopyTensorInfoImpl(ctx, arr, &t);
+    CopyTensorInfoImpl(ctx, arr, &this->qid);
     bool non_dec = true;
-    auto const& query_ids = t.Data()->HostVector();
+    auto const& query_ids = this->qid.Data()->HostVector();
     for (size_t i = 1; i < query_ids.size(); ++i) {
       if (query_ids[i] < query_ids[i - 1]) {
         non_dec = false;
         break;
       }
     }
-    CHECK(non_dec) << "`qid` must be sorted in non-decreasing order along with data.";
-    common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
-    data::ValidateQueryGroup(group_ptr_);
+    if (non_dec) {
+      common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
+      data::ValidateQueryGroup(group_ptr_);
+      // We don't need to sort it ourselves.
+      this->qid = decltype(this->qid){};
+    }
     return;
   }
 
@@ -811,6 +814,118 @@ bool MetaInfo::ShouldHaveLabels() const {
   return !IsVerticalFederated() || collective::GetRank() == 0;
 }
 
+namespace cpu_impl {
+template <typename T, std::int32_t D>
+void SortByQID(Context const* ctx, std::vector<bst_row_t> const& sorted_idx,
+               linalg::Tensor<T, D>* p_data) {
+  auto& in = *p_data;
+  auto h_in = in.HostView();
+
+  linalg::Tensor<T, D> out(in.Shape(), ctx->Device());
+  auto h_out = out.HostView();
+  for (std::size_t i = 0; i < in.Shape(0); ++i) {
+    for (std::size_t j = 0; j < in.Shape(1); ++j) {
+      h_out(i, j) = h_in(sorted_idx[i], j);
+    }
+  }
+  in = std::move(out);
+}
+
+template <typename T>
+void SortByQID(Context const* ctx, std::vector<bst_row_t> const& sorted_idx,
+               HostDeviceVector<T>* p_data) {
+  auto& in = *p_data;
+  auto h_in = in.HostVector();
+
+  HostDeviceVector<T> out(in.Size(), T{}, ctx->Device());
+  auto h_out = out.HostVector();
+  for (std::size_t i = 0; i < in.Size(); ++i) {
+    h_out[i] = h_in[sorted_idx[i]];
+  }
+  in = std::move(out);
+}
+}  // namespace cpu_impl
+
+namespace cuda_impl {
+void SortByQid(Context const* ctx, MetaInfo* p_info);
+}  // namespace cuda_impl
+
+void MetaInfo::SortByQid(Context const* ctx) {
+  if (labels.Empty()) {
+    // We should have valid number of features even if we have an empty partition.
+    CHECK_NE(num_col_, 0);
+  }
+
+  if (!this->NeedSortQid()) {
+    // might skip due to empty worker.
+    return;
+  }
+  // labels_upper_bound and lower_bound are not related to qid
+  StringView msg{"Mixed data for learning to rank and survival training."};
+  CHECK(labels_lower_bound_.Empty()) << msg;
+  CHECK(labels_upper_bound_.Empty()) << msg;
+
+  if (ctx->IsCUDA()) {
+    cuda_impl::SortByQid(ctx, this);
+    this->qid = decltype(this->qid){};
+    return;
+  }
+
+  auto h_qid = qid.HostView();
+  auto sorted_idx = common::ArgSort<bst_row_t>(ctx, linalg::cbegin(h_qid), linalg::cend(h_qid));
+
+  {
+    // base_margin
+    cpu_impl::SortByQID(ctx, sorted_idx, &base_margin_);
+  }
+  {
+    // label
+    cpu_impl::SortByQID(ctx, sorted_idx, &labels);
+  }
+  {
+    // qid itself
+    std::vector<bst_group_t> sorted_qid(h_qid.Size());
+    auto permu = common::IterSpan{common::MakeIndexTransformIter([&](std::size_t i) {
+                                    auto ridx = sorted_idx[i];
+                                    return h_qid(ridx);
+                                  }),
+                                  h_qid.Size()};
+    std::copy(permu.begin(), permu.end(), sorted_qid.begin());
+    std::copy(sorted_qid.begin(), sorted_qid.end(), linalg::begin(h_qid));
+  }
+  {
+    // rebuild group_ptr
+    common::RunLengthEncode(linalg::cbegin(h_qid), linalg::cend(h_qid), &group_ptr_);
+    data::ValidateQueryGroup(group_ptr_);
+  }
+  // weight, we have 2 cases, one for group-based, another one for
+  // sample-based. sample-based is easier for users to handle in distributed environment.
+  if (weights_.Size() == qid.Size()) {
+    // sample-based weight
+    cpu_impl::SortByQID(ctx, sorted_idx, &weights_);
+    auto& h_weight = weights_.HostVector();
+    std::vector<float> new_weight(group_ptr_.size() - 1, 0);
+    common::ParallelFor(new_weight.size(), ctx->Threads(), [&](auto i) {
+      auto beg = group_ptr_[i];
+      auto end = group_ptr_[i + 1];
+      float n = end - beg;
+      for (auto j = beg; j < end; ++j) {
+        new_weight[i] += h_weight[j] / n;
+      }
+    });
+    h_weight = new_weight;
+  } else {
+    // group-based weight
+    auto min_qid =
+        std::accumulate(linalg::cbegin(h_qid), linalg::cend(h_qid), *linalg::cbegin(h_qid),
+                        [](auto a, auto b) { return std::min(a, b); });
+    CHECK_EQ(min_qid, 0) << error::QidWeight();
+    // Nothing to do, we will simply index the weight by QID starting from zero.
+  }
+
+  this->qid = decltype(this->qid){};
+}
+
 using DMatrixThreadLocal =
     dmlc::ThreadLocalStore<std::map<DMatrix const *, XGBAPIThreadLocalEntry>>;
 
@@ -1017,6 +1132,45 @@ void SparsePage::Reindex(uint64_t feature_offset, int32_t n_threads) {
   common::ParallelFor(h_data.size(), n_threads, [&](auto i) {
     h_data[i].index += feature_offset;
   });
+}
+
+namespace cuda_impl {
+void SortSparsePageByQid(Context const* ctx, MetaInfo const& info,
+                         HostDeviceVector<bst_row_t>* io_offset, HostDeviceVector<Entry>* io_data);
+}
+
+void SparsePage::SortRowByQid(Context const* ctx, MetaInfo const& info) {
+  if (ctx->IsCUDA()) {
+    cuda_impl::SortSparsePageByQid(ctx, info, &offset, &data);
+  }
+  auto h_qid = info.qid.HostView().Values();
+  auto sorted_idx = common::ArgSort<std::size_t>(ctx, h_qid.data(), h_qid.data() + h_qid.size());
+
+  auto& h_offset = this->offset.HostVector();
+  auto& h_data = this->data.HostVector();
+
+  std::vector<std::size_t> indptr(this->Size() + 1);
+  std::vector<Entry> sorted(h_data.size());
+  CHECK_EQ(info.num_row_, indptr.size() - 1) << error::NoExtMemory();
+
+  data::detail::ReorderOffset(h_offset, sorted_idx, &indptr);
+  auto p_idx = sorted_idx.data();
+
+  common::ParallelFor(sorted_idx.size(), ctx->Threads(), [&](std::size_t out_ridx) {
+    auto in_ridx = p_idx[out_ridx];
+
+    auto src_beg = h_offset[in_ridx];
+    auto src_end = h_offset[in_ridx + 1];
+
+    auto dst_beg = indptr[out_ridx];
+
+    for (std::size_t k = 0; k < (src_end - src_beg); ++k) {
+      sorted[dst_beg + k] = h_data[src_beg + k];
+    }
+  });
+
+  h_data = sorted;
+  h_offset = indptr;
 }
 
 void SparsePage::SortRows(int32_t n_threads) {

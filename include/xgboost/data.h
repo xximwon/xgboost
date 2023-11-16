@@ -80,7 +80,10 @@ class MetaInfo {
    * \brief upper bound of the label, to be used for survival analysis (censored regression)
    */
   HostDeviceVector<bst_float> labels_upper_bound_;  // NOLINT
-
+  /**
+   * @brief Query index. used for learning to rank.
+   */
+  linalg::Vector<bst_group_t> qid;
   /*!
    * \brief Name of type for each feature provided by users. Eg. "int"/"float"/"i"/"q"
    */
@@ -183,6 +186,12 @@ class MetaInfo {
   bool IsColumnSplit() const { return data_split_mode == DataSplitMode::kCol; }
   /** @brief Whether this is a learning to rank data. */
   bool IsRanking() const { return !group_ptr_.empty(); }
+  /**
+   * @brief Wether we need to sort the data according to qid.
+   *
+   *    Use SortByQid() along with methods in @ref DMatrix to sort the data if this returns true.
+   */
+  bool NeedSortQid() const { return !qid.Empty(); }
 
   /*!
    * \brief A convenient method to check if we are doing vertical federated learning, which requires
@@ -202,10 +211,17 @@ class MetaInfo {
    */
   bool HasCategorical() const { return has_categorical_; }
 
+  /**
+   * @brief Sort query index along with other meta info.
+   *
+   *    This method turns NeedSortQid() info false. As a result, it should only be called
+   *    after all other data is sorted.
+   */
+  void SortByQid(Context const* ctx);
+
  private:
   void SetInfoFromHost(Context const& ctx, StringView key, Json arr);
   void SetInfoFromCUDA(Context const& ctx, StringView key, Json arr);
-
   /*! \brief argsort of labels */
   mutable std::vector<size_t> label_order_cache_;
   bool has_categorical_{false};
@@ -381,6 +397,8 @@ class SparsePage {
    * \brief Sort the column index.
    */
   void SortIndices(int32_t n_threads);
+
+  void SortRowByQid(Context const* ctx, MetaInfo const& info);
   /**
    * \brief Check wether the column index is sorted.
    */
@@ -635,6 +653,7 @@ class DMatrix {
    * @return DMatrix containing the slice of columns
    */
   virtual DMatrix *SliceCol(int num_slices, int slice_id) = 0;
+  virtual void SortQidIfNeeded() = 0;
 
  protected:
   virtual BatchSet<SparsePage> GetRowBatches() = 0;

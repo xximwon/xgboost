@@ -206,6 +206,63 @@ def test_unbiased() -> None:
 def test_normalization() -> None:
     run_normalization("cpu")
 
+def test_qdm():
+    X, y, qid, w = tm.make_ltr(
+        n_samples=256, n_features=3, n_query_groups=8, max_rel=4
+    )
+    Xorg = X.copy()
+
+    # unique qid for each sample for stable sorting
+    qid = np.arange(0, X.shape[0])
+    Xy0 = xgboost.QuantileDMatrix(X, y, qid=qid)
+
+    rng = np.random.default_rng(1994)
+    index = rng.permutation(qid.shape[0])
+    X = X[index, :]
+    y = y[index]
+    qid = qid[index]
+
+    sorted_idx = np.argsort(qid)
+    np.testing.assert_allclose(Xorg, X[sorted_idx, :])
+
+    # see if it's sorted internally
+    Xy1 = xgboost.QuantileDMatrix(X, y, qid=qid)
+    assert tm.predictor_equal(Xy0, Xy1)
+
+
+@pytest.mark.parametrize("tree_method", ["hist"])
+def test_sort_by_qid(tree_method: str) -> None:
+    X, y, qid, w = tm.make_ltr(
+        n_samples=256, n_features=3, n_query_groups=3, max_rel=4
+    )
+    # w = None
+
+    ltr_sorted = xgboost.XGBRanker(
+        tree_method=tree_method, n_estimators=2, base_score=0.5, max_depth=1, max_bin=16,
+    )
+    ltr_sorted.fit(
+        X, y, qid=qid, eval_set=[(X, y)], eval_qid=[qid], verbose=True
+    )
+
+    # randomly permute the arrays to see if XGBoost can handle it correctly
+    rng = np.random.default_rng(1994)
+    index = rng.permutation(qid.shape[0])
+    X = X[index, :]
+    y = y[index]
+    qid = qid[index]
+    # w = w[index]
+
+    ltr = xgboost.XGBRanker(
+        tree_method=tree_method, n_estimators=2, base_score=0.5, max_depth=1, max_bin=16,
+    )
+    ltr.fit(
+        X, y, qid=qid, eval_set=[(X, y)], eval_qid=[qid], verbose=True
+    )
+
+    print(ltr.get_booster().save_config())
+
+    np.testing.assert_allclose(ltr_sorted.predict(X), ltr.predict(X))
+
 
 class TestRanking:
     @classmethod

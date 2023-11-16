@@ -2061,15 +2061,22 @@ class XGBRanker(XGBModel, XGBRankerMixIn):
         X, _ = _get_qid(X, None)
         return super().apply(X, iteration_range)
 
-    def score(self, X: ArrayLike, y: ArrayLike) -> float:
+    def score(
+        self,
+        X: ArrayLike,
+        y: ArrayLike,
+        qid: Optional[ArrayLike],
+        sample_weight: Optional[ArrayLike] = None,
+        base_margin: Optional[ArrayLike] = None,
+    ) -> float:
         """Evaluate score for data using the last evaluation metric. If the model is
         trained with early stopping, then :py:attr:`best_iteration` is used
         automatically.
 
         Parameters
         ----------
-        X : Union[pd.DataFrame, cudf.DataFrame]
-          Feature matrix. A DataFrame with a special `qid` column.
+        X :
+          Feature matrix.
 
         y :
           Labels
@@ -2080,18 +2087,33 @@ class XGBRanker(XGBModel, XGBRankerMixIn):
           The result of the first evaluation metric for the ranker.
 
         """
-        X, qid = _get_qid(X, None)
-        # fixme(jiamingy): base margin and group weight is not yet supported. We might
-        # need to make extra special fields in the dataframe.
-        Xyq = DMatrix(
-            X,
-            y,
-            qid=qid,
+        X, qid_1 = _get_qid(X, None)
+        if qid and qid_1:
+            raise ValueError(
+                "qid is supplied twice, first through score parameter, "
+                "second through special column."
+            )
+        qid = qid if qid is not None else qid_1
+        # Evaluation metric requires the query group structure.
+        Xyq, evals = _wrap_evaluation_matrices(
             missing=self.missing,
+            X=X,
+            y=y,
+            group=None,
+            qid=qid,
+            sample_weight=sample_weight,
+            base_margin=base_margin,
+            feature_weights=None,
+            eval_set=None,
+            sample_weight_eval_set=None,
+            base_margin_eval_set=None,
+            eval_group=None,
+            eval_qid=None,
+            create_dmatrix=self._create_dmatrix,
             enable_categorical=self.enable_categorical,
-            nthread=self.n_jobs,
             feature_types=self.feature_types,
         )
+        assert not evals
         if callable(self.eval_metric):
             metric = ltr_metric_decorator(self.eval_metric, self.n_jobs)
             result_str = self.get_booster().eval_set([(Xyq, "eval")], feval=metric)

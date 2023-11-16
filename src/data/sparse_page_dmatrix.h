@@ -81,6 +81,13 @@ class SparsePageDMatrix : public DMatrix {
   // Non-virtual version that can be used in constructor
   BatchSet<SparsePage> GetRowBatchesImpl(Context const *ctx);
 
+ protected:
+  void SortQidIfNeeded() override {
+    if (this->Info().NeedSortQid()) {
+      LOG(FATAL) << "Sorting data with external memory is not supported.";
+    }
+  }
+
  public:
   explicit SparsePageDMatrix(DataIterHandle iter, DMatrixHandle proxy, DataIterResetCallback *reset,
                              XGDMatrixCallbackNext *next, float missing, int32_t nthreads,

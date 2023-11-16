@@ -109,5 +109,9 @@ inline void NoOnHost(bool on_host) {
     LOG(FATAL) << "Caching on host memory is only available for GPU.";
   }
 }
+
+constexpr StringView NoExtMemory() { return "External memory is not supported."; }
+
+std::string QidWeight();
 }  // namespace xgboost::error
 #endif  // XGBOOST_COMMON_ERROR_MSG_H_

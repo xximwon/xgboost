@@ -33,7 +33,9 @@ void WarnManualUpdater() {
     LOG(WARNING)
         << "You have manually specified the `updater` parameter. The `tree_method` parameter "
            "will be ignored. Incorrect sequence of updaters will produce undefined "
-           "behavior. For common uses, we recommend using `tree_method` parameter instead.";
+           "behavior. For common uses, we recommend using `tree_method` parameter instead."
+           "\n"
+           "The warning will only be shown once";
   });
 }
 
@@ -66,5 +68,22 @@ void MismatchedDevices(Context const* booster, Context const* data) {
 This warning will only be shown once.
 )";
   });
+}
+
+std::string QidWeight() {
+  // FIXME: Remove this constraint.
+  std::stringstream ss;
+  ss << "Starting from 2.1.0, when QID is used along with group-based weight, QID should start"
+        " from zero. Possible solutions:";
+  ss << R"(
+- Change the query index to be zero-based.
+- Use sample weight instead (one weight per sample).
+
+)";
+  if (collective::IsDistributed()) {
+    ss << "Since you are using distributed system, using sample weight might be easier since we"
+          " don't need to change the query index for each worker.";
+  }
+  return ss.str();
 }
 }  // namespace xgboost::error

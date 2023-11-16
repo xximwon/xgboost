@@ -46,6 +46,8 @@ class EllpackPage {
   /*! \brief Set the base row id for this page. */
   void SetBaseRowId(std::size_t row_id);
 
+  void SortRowByQid(Context const* ctx, MetaInfo const& info);
+
   [[nodiscard]] const EllpackPageImpl* Impl() const { return impl_.get(); }
   EllpackPageImpl* Impl() { return impl_.get(); }
 

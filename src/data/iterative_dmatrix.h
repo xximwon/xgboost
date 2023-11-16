@@ -72,6 +72,8 @@ class IterativeDMatrix : public DMatrix {
                     float missing, std::shared_ptr<DMatrix> ref);
   void InitFromCPU(Context const *ctx, BatchParam const &p, DataIterHandle iter_handle,
                    float missing, std::shared_ptr<DMatrix> ref);
+ protected:
+  void SortQidIfNeeded() override;
 
  public:
   explicit IterativeDMatrix(DataIterHandle iter_handle, DMatrixHandle proxy,

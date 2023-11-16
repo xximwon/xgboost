@@ -187,6 +187,11 @@ class EllpackPageImpl {
    */
   void Compact(Context const* ctx, EllpackPageImpl const* page, common::Span<size_t> row_indexes);
 
+  /**
+   * @brief Sort the data according to query ID.
+   */
+  void SortRowByQid(Context const* ctx, MetaInfo const& info);
+
   /*! \return Number of instances in the page. */
   [[nodiscard]] bst_idx_t Size() const;
 

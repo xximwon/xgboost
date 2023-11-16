@@ -70,6 +70,7 @@ class SimpleDMatrix : public DMatrix {
    * global view.
    */
   void ReindexFeatures(Context const* ctx);
+  void SortQidIfNeeded() override;
 
  private:
   // Context used only for DMatrix initialization.

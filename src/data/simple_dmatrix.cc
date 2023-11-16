@@ -89,7 +89,16 @@ void SimpleDMatrix::ReindexFeatures(Context const* ctx) {
   }
 }
 
+void SimpleDMatrix::SortQidIfNeeded() {
+  if (this->Info().NeedSortQid()) {
+    this->sparse_page_->SortRowByQid(&fmat_ctx_, this->Info());
+    this->Info().SortByQid(&fmat_ctx_);
+  }
+  CHECK(!this->Info().NeedSortQid());
+}
+
 BatchSet<SparsePage> SimpleDMatrix::GetRowBatches() {
+  this->SortQidIfNeeded();
   // since csr is the default data structure so `source_` is always available.
   auto begin_iter =
       BatchIterator<SparsePage>(new SimpleBatchIteratorImpl<SparsePage>(sparse_page_));
@@ -97,6 +106,7 @@ BatchSet<SparsePage> SimpleDMatrix::GetRowBatches() {
 }
 
 BatchSet<CSCPage> SimpleDMatrix::GetColumnBatches(Context const* ctx) {
+  this->SortQidIfNeeded();
   // column page doesn't exist, generate it
   if (!column_page_) {
     auto n = std::numeric_limits<decltype(Entry::index)>::max();
@@ -110,6 +120,7 @@ BatchSet<CSCPage> SimpleDMatrix::GetColumnBatches(Context const* ctx) {
 }
 
 BatchSet<SortedCSCPage> SimpleDMatrix::GetSortedColumnBatches(Context const* ctx) {
+  this->SortQidIfNeeded();
   // Sorted column page doesn't exist, generate it
   if (!sorted_column_page_) {
     auto n = std::numeric_limits<decltype(Entry::index)>::max();
@@ -127,6 +138,7 @@ BatchSet<SortedCSCPage> SimpleDMatrix::GetSortedColumnBatches(Context const* ctx
 
 BatchSet<EllpackPage> SimpleDMatrix::GetEllpackBatches(Context const* ctx,
                                                        const BatchParam& param) {
+  this->SortQidIfNeeded();
   detail::CheckEmpty(batch_param_, param);
   if (ellpack_page_ && param.Initialized() && param.forbid_regen) {
     if (detail::RegenGHist(batch_param_, param)) {

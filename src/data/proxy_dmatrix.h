@@ -44,6 +44,8 @@ class DMatrixProxy : public DMatrix {
   void FromCudaColumnar(StringView interface_str);
   void FromCudaArray(StringView interface_str);
 #endif  // defined(XGBOOST_USE_CUDA)
+ protected:
+  void SortQidIfNeeded() override { LOG(FATAL) << "Proxy DMatrix cannot sort data."; }
 
  public:
   DeviceOrd Device() const { return ctx_.Device(); }

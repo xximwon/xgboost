@@ -7,7 +7,6 @@
 
 #include "../../collective/communicator-inl.cuh"
 #include "../../common/categorical.h"
-#include "../../data/ellpack_page.cuh"
 #include "evaluate_splits.cuh"
 #include "expand_entry.cuh"
 
@@ -19,17 +18,17 @@ XGBOOST_DEVICE float LossChangeMissing(const GradientPairInt64 &scan,
                                        const GPUTrainingParam &param, bst_node_t nidx,
                                        bst_feature_t fidx,
                                        TreeEvaluator::SplitEvaluator<GPUTrainingParam> evaluator,
-                                       bool &missing_left_out, const GradientQuantiser& quantiser) {  // NOLINT
+                                       bool *missing_left_out, const GradientQuantiser &quantiser) {
   const auto left_sum = scan + missing;
-  float missing_left_gain = evaluator.CalcSplitGain(
-      param, nidx, fidx, quantiser.ToFloatingPoint(left_sum),
-      quantiser.ToFloatingPoint(parent_sum - left_sum));
-  float missing_right_gain = evaluator.CalcSplitGain(
-      param, nidx, fidx, quantiser.ToFloatingPoint(scan),
-      quantiser.ToFloatingPoint(parent_sum - scan));
+  float missing_left_gain =
+      evaluator.CalcSplitGain(param, nidx, fidx, quantiser.ToFloatingPoint(left_sum),
+                              quantiser.ToFloatingPoint(parent_sum - left_sum));
+  float missing_right_gain =
+      evaluator.CalcSplitGain(param, nidx, fidx, quantiser.ToFloatingPoint(scan),
+                              quantiser.ToFloatingPoint(parent_sum - scan));
 
-  missing_left_out = missing_left_gain > missing_right_gain;
-  return missing_left_out?missing_left_gain:missing_right_gain;
+  *missing_left_out = missing_left_gain > missing_right_gain;
+  return (*missing_left_out) ? missing_left_gain : missing_right_gain;
 }
 
 // This kernel uses block_size == warp_size. This is an unusually small block size for a cuda kernel
@@ -119,7 +118,7 @@ class EvaluateSplitAgent {
       // Whether the gradient of missing values is put to the left side.
       bool missing_left = true;
       float gain = thread_active ? LossChangeMissing(bin, missing, parent_sum, param, nidx, fidx,
-                                                     evaluator, missing_left, rounding)
+                                                     evaluator, &missing_left, rounding)
                                  : kNullGain;
       // Find thread with best gain
       auto best = MaxReduceT(temp_storage->max_reduce).Reduce({threadIdx.x, gain}, cub::ArgMax());
@@ -151,7 +150,7 @@ class EvaluateSplitAgent {
       // Whether the gradient of missing values is put to the left side.
       bool missing_left = true;
       float gain = thread_active ? LossChangeMissing(bin, missing, parent_sum, param, nidx, fidx,
-                                                     evaluator, missing_left, rounding)
+                                                     evaluator, &missing_left, rounding)
                                  : kNullGain;
 
       // Find thread with best gain

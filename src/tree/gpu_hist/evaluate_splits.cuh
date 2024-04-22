@@ -1,5 +1,5 @@
-/*!
- * Copyright 2020 by XGBoost Contributors
+/**
+ * Copyright 2020-2024, XGBoost Contributors
  */
 #ifndef EVALUATE_SPLITS_CUH_
 #define EVALUATE_SPLITS_CUH_

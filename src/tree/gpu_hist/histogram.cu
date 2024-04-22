@@ -160,7 +160,8 @@ class HistogramAgent {
         rounding_(rounding),
         d_gpair_(d_gpair),
         n_targets_{n_targets} {}
-  __device__ void ProcessPartialTileShared(std::size_t offset) {
+
+  __device__ void ProcessPartialTileShared(std::size_t offset, GradientPair const* d_gpair) {
     for (std::size_t idx = offset + threadIdx.x;
          idx < std::min(offset + kBlockThreads * kItemsPerTile, n_elements_);
          idx += kBlockThreads) {
@@ -170,15 +171,16 @@ class HistogramAgent {
               .gidx_iter[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_] -
           group_.start_bin;
       if (matrix_.is_dense || gidx != matrix_.NumBins()) {
-        auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
+        auto adjusted = rounding_.ToFixedPoint(d_gpair[ridx]);
         AtomicAddGpairShared(smem_arr_ + gidx, adjusted);
       }
     }
   }
+
   // Instruction level parallelism by loop unrolling
   // Allows the kernel to pipeline many operations while waiting for global memory
   // Increases the throughput of this kernel significantly
-  __device__ void ProcessFullTileShared(std::size_t offset) {
+  __device__ void ProcessFullTileShared(std::size_t offset, GradientPair const* d_gpair) {
     std::size_t idx[kItemsPerThread];
     int ridx[kItemsPerThread];
     int gidx[kItemsPerThread];
@@ -193,9 +195,9 @@ class HistogramAgent {
     }
 #pragma unroll
     for (int i = 0; i < kItemsPerThread; i++) {
-      gpair[i] = d_gpair_[ridx[i]];
+      gpair[i] = d_gpair[ridx[i]];
       gidx[i] = matrix_.gidx_iter[ridx[i] * matrix_.row_stride + group_.start_feature +
-                                 idx[i] % feature_stride_];
+                                  idx[i] % feature_stride_];
     }
 #pragma unroll
     for (int i = 0; i < kItemsPerThread; i++) {
@@ -205,34 +207,41 @@ class HistogramAgent {
       }
     }
   }
+
   __device__ void BuildHistogramWithShared() {
-    dh::BlockFill(smem_arr_, group_.num_bins, GradientPairInt64());
-    __syncthreads();
+    for (bst_target_t t = 0; t < n_targets_; ++t) {
+      auto d_node_hist = d_node_hist_ + (t * n_total_bins_);
+      auto gpair = d_gpair_ + (t * matrix_.n_rows);  // fixme: external memory
 
-    std::size_t offset = blockIdx.x * kItemsPerTile;
-    while (offset + kItemsPerTile <= n_elements_) {
-      ProcessFullTileShared(offset);
-      offset += kItemsPerTile * gridDim.x;
-    }
-    ProcessPartialTileShared(offset);
+      dh::BlockFill(smem_arr_, group_.num_bins, GradientPairInt64());
+      __syncthreads();
 
-    // Write shared memory back to global memory
-    __syncthreads();
-    for (auto i : dh::BlockStrideRange(0, group_.num_bins)) {
-      AtomicAddGpairGlobal(d_node_hist_ + group_.start_bin + i, smem_arr_[i]);
+      std::size_t offset = blockIdx.x * kItemsPerTile;
+      while (offset + kItemsPerTile <= n_elements_) {
+        ProcessFullTileShared(offset, gpair);
+        offset += kItemsPerTile * gridDim.x;
+      }
+      ProcessPartialTileShared(offset, gpair);
+
+      // Write shared memory back to global memory
+      __syncthreads();
+      for (auto i : dh::BlockStrideRange(0, group_.num_bins)) {
+        AtomicAddGpairGlobal(d_node_hist + group_.start_bin + i, smem_arr_[i]);
+      }
     }
   }
 
   __device__ void BuildHistogramWithGlobal() {
     for (bst_target_t t = 0; t < n_targets_; ++t) {
       auto d_node_hist = d_node_hist_ + (t * n_total_bins_);
+      auto gpair = d_gpair_ + (t * matrix_.n_rows);  // fixme: external memory
       for (auto idx : dh::GridStrideRange(static_cast<std::size_t>(0), n_elements_)) {
-        int ridx = d_ridx_[idx / feature_stride_];
+        auto ridx = d_ridx_[idx / feature_stride_];
         int gidx = matrix_.gidx_iter[ridx * matrix_.row_stride + group_.start_feature +
                                      idx % feature_stride_];
         if (matrix_.is_dense || gidx != matrix_.NumBins()) {
-          auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
-
+          // fixme: assuming f-order is enfored here.
+          auto adjusted = rounding_.ToFixedPoint(gpair[ridx]);
           AtomicAddGpairGlobal(d_node_hist + gidx, adjusted);
         }
       }
@@ -262,7 +271,7 @@ __global__ void __launch_bounds__(kBlockThreads)
 
 void BuildGradientHistogram(CUDAContext const* ctx, EllpackDeviceAccessor const& matrix,
                             FeatureGroupsAccessor const& feature_groups,
-                            common::Span<GradientPair const> gpair,
+                            linalg::MatrixView<GradientPair const> gpair,
                             common::Span<const uint32_t> d_ridx,
                             common::Span<GradientPairInt64> histogram, GradientQuantiser rounding,
                             bool force_global_memory) {
@@ -311,9 +320,10 @@ void BuildGradientHistogram(CUDAContext const* ctx, EllpackDeviceAccessor const&
                                         common::DivRoundUp(items_per_group, kMinItemsPerBlock)));
 
     bst_bin_t n_total_bins = histogram.size();
+    bst_target_t n_targets = gpair.Shape(1);
     dh::LaunchKernel{dim3(grid_size, num_groups), static_cast<uint32_t>(kBlockThreads), smem_size,
                      ctx->Stream()}(kernel, matrix, feature_groups, d_ridx, histogram.data(),
-                                    n_total_bins, gpair.data(), rounding);
+                                    n_total_bins, gpair.Values().data(), n_targets, rounding);
   };
 
   if (shared) {

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstdint>  // uint32_t
-#include <limits>
 
 #include "../../collective/aggregator.h"
 #include "../../common/deterministic.cuh"
@@ -128,33 +127,39 @@ XGBOOST_DEV_INLINE void AtomicAddGpairGlobal(xgboost::GradientPairInt64* dest,
 }
 
 template <int kBlockThreads, int kItemsPerThread,
-          int kItemsPerTile = kBlockThreads* kItemsPerThread>
+          int kItemsPerTile = kBlockThreads * kItemsPerThread>
 class HistogramAgent {
   GradientPairInt64* smem_arr_;
   GradientPairInt64* d_node_hist_;
+  bst_bin_t const n_total_bins_;
   dh::LDGIterator<const RowPartitioner::RowIndexT> d_ridx_;
   const GradientPair* d_gpair_;
   const FeatureGroup group_;
   const EllpackDeviceAccessor& matrix_;
   const int feature_stride_;
   const std::size_t n_elements_;
+  bst_target_t n_targets_{0};
   const GradientQuantiser& rounding_;
 
  public:
   __device__ HistogramAgent(GradientPairInt64* smem_arr,
-                            GradientPairInt64* __restrict__ d_node_hist, const FeatureGroup& group,
+                            GradientPairInt64* __restrict__ d_node_hist,
+                            bst_bin_t const n_total_bins, const FeatureGroup& group,
                             const EllpackDeviceAccessor& matrix,
                             common::Span<const RowPartitioner::RowIndexT> d_ridx,
-                            const GradientQuantiser& rounding, const GradientPair* d_gpair)
+                            const GradientQuantiser& rounding, const GradientPair* d_gpair,
+                            const bst_target_t n_targets)
       : smem_arr_(smem_arr),
         d_node_hist_(d_node_hist),
+        n_total_bins_{n_total_bins},
         d_ridx_(d_ridx.data()),
         group_(group),
         matrix_(matrix),
         feature_stride_(matrix.is_dense ? group.num_features : matrix.row_stride),
         n_elements_(feature_stride_ * d_ridx.size()),
         rounding_(rounding),
-        d_gpair_(d_gpair) {}
+        d_gpair_(d_gpair),
+        n_targets_{n_targets} {}
   __device__ void ProcessPartialTileShared(std::size_t offset) {
     for (std::size_t idx = offset + threadIdx.x;
          idx < std::min(offset + kBlockThreads * kItemsPerTile, n_elements_);
@@ -219,33 +224,35 @@ class HistogramAgent {
   }
 
   __device__ void BuildHistogramWithGlobal() {
-    for (auto idx : dh::GridStrideRange(static_cast<std::size_t>(0), n_elements_)) {
-      int ridx = d_ridx_[idx / feature_stride_];
-      int gidx =
-          matrix_
-              .gidx_iter[ridx * matrix_.row_stride + group_.start_feature + idx % feature_stride_];
-      if (matrix_.is_dense || gidx != matrix_.NumBins()) {
-        auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
-        AtomicAddGpairGlobal(d_node_hist_ + gidx, adjusted);
+    for (bst_target_t t = 0; t < n_targets_; ++t) {
+      auto d_node_hist = d_node_hist_ + (t * n_total_bins_);
+      for (auto idx : dh::GridStrideRange(static_cast<std::size_t>(0), n_elements_)) {
+        int ridx = d_ridx_[idx / feature_stride_];
+        int gidx = matrix_.gidx_iter[ridx * matrix_.row_stride + group_.start_feature +
+                                     idx % feature_stride_];
+        if (matrix_.is_dense || gidx != matrix_.NumBins()) {
+          auto adjusted = rounding_.ToFixedPoint(d_gpair_[ridx]);
+
+          AtomicAddGpairGlobal(d_node_hist + gidx, adjusted);
+        }
       }
     }
   }
 };
 
-template <bool use_shared_memory_histograms, int kBlockThreads,
-          int kItemsPerThread>
+template <bool use_shared_memory_histograms, int kBlockThreads, int kItemsPerThread>
 __global__ void __launch_bounds__(kBlockThreads)
     SharedMemHistKernel(const EllpackDeviceAccessor matrix,
                         const FeatureGroupsAccessor feature_groups,
                         common::Span<const RowPartitioner::RowIndexT> d_ridx,
-                        GradientPairInt64* __restrict__ d_node_hist,
-                        const GradientPair* __restrict__ d_gpair,
+                        GradientPairInt64* __restrict__ d_node_hist, bst_bin_t n_total_bins,
+                        const GradientPair* __restrict__ d_gpair, bst_target_t const n_targets,
                         GradientQuantiser const rounding) {
   extern __shared__ char smem[];
   const FeatureGroup group = feature_groups[blockIdx.y];
   auto smem_arr = reinterpret_cast<GradientPairInt64*>(smem);
   auto agent = HistogramAgent<kBlockThreads, kItemsPerThread>(
-      smem_arr, d_node_hist, group, matrix, d_ridx, rounding, d_gpair);
+      smem_arr, d_node_hist, n_total_bins, group, matrix, d_ridx, rounding, d_gpair, n_targets);
   if (use_shared_memory_histograms) {
     agent.BuildHistogramWithShared();
   } else {
@@ -303,9 +310,10 @@ void BuildGradientHistogram(CUDAContext const* ctx, EllpackDeviceAccessor const&
     grid_size = std::min(grid_size, static_cast<std::uint32_t>(
                                         common::DivRoundUp(items_per_group, kMinItemsPerBlock)));
 
-    dh::LaunchKernel {dim3(grid_size, num_groups), static_cast<uint32_t>(kBlockThreads), smem_size,
-                     ctx->Stream()} (kernel, matrix, feature_groups, d_ridx, histogram.data(),
-                                     gpair.data(), rounding);
+    bst_bin_t n_total_bins = histogram.size();
+    dh::LaunchKernel{dim3(grid_size, num_groups), static_cast<uint32_t>(kBlockThreads), smem_size,
+                     ctx->Stream()}(kernel, matrix, feature_groups, d_ridx, histogram.data(),
+                                    n_total_bins, gpair.data(), rounding);
   };
 
   if (shared) {

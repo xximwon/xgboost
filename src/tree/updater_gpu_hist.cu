@@ -337,7 +337,7 @@ struct GPUHistMakerDevice {
     dh::DefaultStream().Sync();
   }
 
-  void BuildHist(int nidx) {
+  void BuildHist(bst_node_t nidx) {
     auto d_node_hist = hist.GetNodeHistogram(nidx);
     auto d_ridx = row_partitioner->GetRows(nidx);
     BuildGradientHistogram(ctx_->CUDACtx(), page->GetDeviceAccessor(ctx_->Device()),

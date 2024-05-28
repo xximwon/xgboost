@@ -1,5 +1,5 @@
 /**
- * Copyright 2020-2023, XGBoost Contributors
+ * Copyright 2020-2024, XGBoost Contributors
  */
 #include <gtest/gtest.h>
 
@@ -7,7 +7,7 @@
 #include "../../../../src/tree/gpu_hist/gradient_based_sampler.cuh"
 #include "../../../../src/tree/param.h"
 #include "../../../../src/tree/param.h"  // TrainParam
-#include "../../filesystem.h"            // dmlc::TemporaryDirectory
+#include "../../filesystem.h"            // for TemporaryDirectory
 #include "../../helpers.h"
 
 namespace xgboost {
@@ -22,7 +22,7 @@ void VerifySampling(size_t page_size,
   constexpr size_t kCols = 1;
   size_t sample_rows = kRows * subsample;
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix> dmat(CreateSparsePageDMatrix(
       kRows, kCols, kRows / (page_size == 0 ? kRows : page_size), tmpdir.path + "/cache"));
   auto gpair = GenerateRandomGradients(kRows);
@@ -83,7 +83,7 @@ TEST(GradientBasedSampler, NoSamplingExternalMemory) {
   constexpr size_t kPageSize = 1024;
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix> dmat(
       CreateSparsePageDMatrix(kRows, kCols, kRows / kPageSize, tmpdir.path + "/cache"));
   auto gpair = GenerateRandomGradients(kRows);

@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2024 by XGBoost contributors
+ * Copyright 2016-2024, XGBoost contributors
  */
 #include "helpers.h"
 
@@ -20,7 +20,7 @@
 #include "../../src/data/simple_dmatrix.h"
 #include "../../src/data/sparse_page_dmatrix.h"
 #include "../../src/gbm/gbtree_model.h"
-#include "filesystem.h"  // dmlc::TemporaryDirectory
+#include "filesystem.h"  // for TemporaryDirectory
 #include "xgboost/c_api.h"
 #include "xgboost/predictor.h"
 
@@ -505,6 +505,18 @@ int NumpyArrayIterForTest::Next() {
   return 1;
 }
 
+std::vector<float> GenerateRandomCategoricalSingleColumn(int n, size_t num_categories) {
+  std::vector<float> x(n);
+  std::mt19937 rng(0);
+  std::uniform_int_distribution<size_t> dist(0, num_categories - 1);
+  std::generate(x.begin(), x.end(), [&]() { return static_cast<float>(dist(rng)); });
+  // Make sure each category is present
+  for (size_t i = 0; i < num_categories; i++) {
+    x[i] = static_cast<decltype(x)::value_type>(i);
+  }
+  return x;
+}
+
 std::shared_ptr<DMatrix> GetDMatrixFromData(const std::vector<float>& x, std::size_t num_rows,
                                             bst_feature_t num_columns) {
   data::DenseAdapter adapter(x.data(), num_rows, num_columns);
@@ -568,9 +580,9 @@ std::unique_ptr<DMatrix> CreateSparsePageDMatrix(size_t n_entries,
   return dmat;
 }
 
-std::unique_ptr<DMatrix> CreateSparsePageDMatrixWithRC(
-    size_t n_rows, size_t n_cols, size_t page_size, bool deterministic,
-    const dmlc::TemporaryDirectory& tempdir) {
+std::unique_ptr<DMatrix> CreateSparsePageDMatrixWithRC(size_t n_rows, size_t n_cols,
+                                                       size_t page_size, bool deterministic,
+                                                       const TemporaryDirectory& tempdir) {
   if (!n_rows || !n_cols) {
     return nullptr;
   }

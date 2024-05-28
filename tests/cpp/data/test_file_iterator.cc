@@ -1,5 +1,5 @@
 /**
- * Copyright 2021-2023 XGBoost contributors
+ * Copyright 2021-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include "../../../src/data/adapter.h"
 #include "../../../src/data/file_iterator.h"
 #include "../../../src/data/proxy_dmatrix.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // TemporaryDirectory
 #include "../helpers.h"
 
 namespace xgboost::data {
@@ -25,7 +25,7 @@ TEST(FileIterator, Basic) {
     ASSERT_EQ(n_features, 5);
   };
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   {
     auto zpath = tmpdir.path + "/0-based.svm";
     CreateBigTestData(zpath, 3 * 64, true);

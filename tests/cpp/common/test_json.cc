@@ -11,7 +11,7 @@
 #include "../../../src/common/io.h"
 #include "../../../src/common/json_utils.h"
 #include "../../../src/common/threading_utils.h"  // for ParallelFor
-#include "../filesystem.h"                        // dmlc::TemporaryDirectory
+#include "../filesystem.h"                        // for TemporaryDirectory
 #include "../helpers.h"
 #include "dmlc/logging.h"
 #include "xgboost/json.h"
@@ -422,7 +422,7 @@ TEST(Json, LoadDump) {
   std::string ori_buffer = GetModelStr();
   Json origin{Json::Load(StringView{ori_buffer.c_str(), ori_buffer.size()})};
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   auto const& path = tempdir.path + "test_model_dump";
 
   std::string out;

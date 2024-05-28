@@ -1,5 +1,5 @@
 /**
- * Copyright 2019-2023 by XGBoost Contributors
+ * Copyright 2019-2024, XGBoost Contributors
  */
 #include <xgboost/data.h>  // for DMatrix
 
@@ -8,7 +8,7 @@
 #include "../../../src/data/ellpack_page.h"
 #include "../../../src/data/sparse_page_dmatrix.h"
 #include "../../../src/tree/param.h"  // TrainParam
-#include "../filesystem.h"            // dmlc::TemporaryDirectory
+#include "../filesystem.h"            // for TemporaryDirectory
 #include "../helpers.h"
 
 namespace xgboost {
@@ -16,7 +16,7 @@ namespace xgboost {
 TEST(SparsePageDMatrix, EllpackPage) {
   Context ctx{MakeCUDACtx(0)};
   auto param = BatchParam{256, tree::TrainParam::DftSparseThreshold()};
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   DMatrix* dmat = DMatrix::Load(tmp_file + "?format=libsvm" + "#" + tmp_file + ".cache");
@@ -45,7 +45,7 @@ TEST(SparsePageDMatrix, EllpackPage) {
 TEST(SparsePageDMatrix, MultipleEllpackPages) {
   Context ctx{MakeCUDACtx(0)};
   auto param = BatchParam{256, tree::TrainParam::DftSparseThreshold()};
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::string filename = tmpdir.path + "/big.libsvm";
   size_t constexpr kPageSize = 64, kEntriesPerCol = 3;
   size_t constexpr kEntries = kPageSize * kEntriesPerCol * 2;
@@ -118,7 +118,7 @@ TEST(SparsePageDMatrix, EllpackPageContent) {
   std::unique_ptr<DMatrix> dmat(CreateSparsePageDMatrixWithRC(kRows, kCols, 0, true));
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix>
       dmat_ext(CreateSparsePageDMatrixWithRC(kRows, kCols, kPageSize, true, tmpdir));
 
@@ -178,7 +178,7 @@ TEST(SparsePageDMatrix, MultipleEllpackPageContent) {
   std::unique_ptr<DMatrix> dmat(CreateSparsePageDMatrixWithRC(kRows, kCols, 0, true));
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix>
       dmat_ext(CreateSparsePageDMatrixWithRC(kRows, kCols, kPageSize, true, tmpdir));
 
@@ -222,7 +222,7 @@ TEST(SparsePageDMatrix, EllpackPageMultipleLoops) {
   std::unique_ptr<DMatrix> dmat(CreateSparsePageDMatrixWithRC(kRows, kCols, 0, true));
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix>
       dmat_ext(CreateSparsePageDMatrixWithRC(kRows, kCols, kPageSize, true, tmpdir));
 

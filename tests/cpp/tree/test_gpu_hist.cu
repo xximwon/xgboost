@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2023 by XGBoost contributors
+ * Copyright 2017-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
 #include <thrust/device_vector.h>
@@ -16,15 +16,11 @@
 #include "../../../src/tree/param.h"           // for TrainParam
 #include "../../../src/tree/updater_gpu_hist.cu"
 #include "../collective/test_worker.h"  // for BaseMGPUTest
-#include "../filesystem.h"              // dmlc::TemporaryDirectory
+#include "../filesystem.h"              // for TemporaryDirectory
 #include "../helpers.h"
 #include "../histogram_helpers.h"
 #include "xgboost/context.h"
 #include "xgboost/json.h"
-
-#if defined(XGBOOST_USE_FEDERATED)
-#include "../plugin/federated/test_worker.h"  // for TestFederatedGlobal
-#endif  // defined(XGBOOST_USE_FEDERATED)
 
 namespace xgboost::tree {
 TEST(GpuHist, DeviceHistogram) {
@@ -180,7 +176,7 @@ void TestHistogramIndexImpl() {
   std::unique_ptr<DMatrix> hist_maker_dmat(
     CreateSparsePageDMatrixWithRC(kNRows, kNCols, 0, true));
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::unique_ptr<DMatrix> hist_maker_ext_dmat(
     CreateSparsePageDMatrixWithRC(kNRows, kNCols, 128UL, true, tempdir));
 
@@ -322,7 +318,7 @@ TEST(GpuHist, ExternalMemory) {
   constexpr size_t kCols = 2;
   constexpr size_t kPageSize = 1024;
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
 
   // Create a DMatrix with multiple batches.
   std::unique_ptr<DMatrix> dmat_ext(
@@ -360,7 +356,7 @@ TEST(GpuHist, ExternalMemoryWithSampling) {
   const std::string kSamplingMethod = "gradient_based";
   common::GlobalRandom().seed(0);
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
 
   // Create a single batch DMatrix.
   std::unique_ptr<DMatrix> dmat(CreateSparsePageDMatrix(kRows, kCols, 1, tmpdir.path + "/cache"));

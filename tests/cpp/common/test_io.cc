@@ -8,7 +8,7 @@
 #include <numeric>  // for iota
 
 #include "../../../src/common/io.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
 
 namespace xgboost::common {
@@ -58,7 +58,7 @@ TEST(IO, FixedSizeStream) {
 TEST(IO, LoadSequentialFile) {
   EXPECT_THROW(LoadSequentialFile("non-exist"), dmlc::Error);
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::ofstream fout(tempdir.path + "test_file");
   std::string content;
 
@@ -136,7 +136,7 @@ TEST(IO, Resource) {
 
   {
     // test mmap
-    dmlc::TemporaryDirectory tmpdir;
+    TemporaryDirectory tmpdir;
     auto path = tmpdir.path + "/testfile";
 
     std::ofstream fout(path, std::ios::binary);
@@ -154,7 +154,7 @@ TEST(IO, Resource) {
 }
 
 TEST(IO, PrivateMmapStream) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   auto path = tempdir.path + "/testfile";
 
   // The page size on Linux is usually set to 4096, while the allocation granularity on

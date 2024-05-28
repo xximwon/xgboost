@@ -11,7 +11,7 @@
 #include <string>
 
 #include "../collective/test_worker.h"  // for TestDistributedGlobal
-#include "../filesystem.h"              // dmlc::TemporaryDirectory
+#include "../filesystem.h"              // TemporaryDirectory
 #include "../helpers.h"                 // for GMockTHrow
 #include "xgboost/base.h"
 
@@ -153,7 +153,7 @@ TEST(MetaInfo, SaveLoadBinary) {
                  [](auto const &str) { return str.c_str(); });
   info.SetFeatureInfo(u8"feature_name", c_names.data(), c_names.size());;
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/metainfo.binary";
   {
     std::unique_ptr<dmlc::Stream> fs {
@@ -204,7 +204,7 @@ TEST(MetaInfo, SaveLoadBinary) {
 }
 
 TEST(MetaInfo, LoadQid) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::string tmp_file = tempdir.path + "/qid_test.libsvm";
   {
     std::unique_ptr<dmlc::Stream> fs(dmlc::Stream::Create(tmp_file.c_str(), "w"));

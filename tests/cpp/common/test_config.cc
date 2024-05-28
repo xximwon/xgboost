@@ -1,5 +1,5 @@
-/*!
- * Copyright 2019 by Contributors
+/**
+ * Copyright 2019-2024, XGBoost Contributors
  */
 #include <gtest/gtest.h>
 
@@ -7,15 +7,12 @@
 #include <string>
 
 #include "../../../src/common/config.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
-#include "../helpers.h"
+#include "../filesystem.h"  // TemporaryDirectory
 
-namespace xgboost {
-namespace common {
-
+namespace xgboost::common {
 TEST(ConfigParser, NormalizeConfigEOL) {
   // Test whether strings with NL are loaded correctly.
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/my.conf";
   /* Old Mac OS uses \r for line ending */
   {
@@ -65,7 +62,7 @@ TEST(ConfigParser, TrimWhitespace) {
 
 TEST(ConfigParser, ParseKeyValuePair) {
   // Create dummy configuration file
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/my.conf";
   {
     std::ofstream fp(tmp_file);
@@ -166,6 +163,4 @@ TEST(ConfigParser, ParseKeyValuePair) {
     ASSERT_THROW(parser.ParseKeyValuePair(str, &key, &value), dmlc::Error);
   }
 }
-
-}  // namespace common
-}  // namespace xgboost
+}  // namespace xgboost::common

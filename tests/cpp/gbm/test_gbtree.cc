@@ -1,5 +1,5 @@
 /**
- * Copyright 2019-2023, XGBoost contributors
+ * Copyright 2019-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
 #include <xgboost/context.h>
@@ -14,7 +14,7 @@
 
 #include "../../../src/data/proxy_dmatrix.h"  // for DMatrixProxy
 #include "../../../src/gbm/gbtree.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
 #include "xgboost/base.h"
 #include "xgboost/predictor.h"
@@ -134,7 +134,7 @@ TEST(GBTree, ChoosePredictor) {
   }
   ASSERT_TRUE(data.HostCanWrite());
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string fname = tempdir.path + "/model_param.bst";
   {
     std::unique_ptr<dmlc::Stream> fo(dmlc::Stream::Create(fname.c_str(), "w"));

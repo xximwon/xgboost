@@ -1,5 +1,5 @@
 /**
- * Copyright 2016-2023 by XGBoost Contributors
+ * Copyright 2016-2024, XGBoost Contributors
  */
 #include <xgboost/data.h>
 
@@ -10,7 +10,7 @@
 #include "../../../src/data/adapter.h"         // ArrayAdapter
 #include "../../../src/data/simple_dmatrix.h"  // SimpleDMatrix
 #include "../collective/test_worker.h"         // for TestDistributedGlobal
-#include "../filesystem.h"                     // dmlc::TemporaryDirectory
+#include "../filesystem.h"                     // TemporaryDirectory
 #include "../helpers.h"                        // RandomDataGenerator,CreateSimpleTestData
 #include "xgboost/base.h"
 #include "xgboost/host_device_vector.h"  // HostDeviceVector
@@ -23,7 +23,7 @@ std::string UriSVM(std::string name) { return name + "?format=libsvm"; }
 }  // namespace
 
 TEST(SimpleDMatrix, MetaInfo) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   xgboost::DMatrix *dmat = xgboost::DMatrix::Load(UriSVM(tmp_file));
@@ -39,7 +39,7 @@ TEST(SimpleDMatrix, MetaInfo) {
 }
 
 TEST(SimpleDMatrix, RowAccess) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   xgboost::DMatrix *dmat = xgboost::DMatrix::Load(UriSVM(tmp_file), false);
@@ -63,7 +63,7 @@ TEST(SimpleDMatrix, RowAccess) {
 
 TEST(SimpleDMatrix, ColAccessWithoutBatches) {
   Context ctx;
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   xgboost::DMatrix *dmat = xgboost::DMatrix::Load(UriSVM(tmp_file));
@@ -208,7 +208,7 @@ TEST(SimpleDMatrix, FromCSC) {
 }
 
 TEST(SimpleDMatrix, FromFile) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::string filename = tempdir.path + "test.libsvm";
   CreateBigTestData(filename, 3 * 5);
   // Add an empty row at the end of the matrix
@@ -390,7 +390,7 @@ TEST(SimpleDMatrix, SliceCol) {
 }
 
 TEST(SimpleDMatrix, SaveLoadBinary) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   xgboost::DMatrix * dmat = xgboost::DMatrix::Load(UriSVM(tmp_file));

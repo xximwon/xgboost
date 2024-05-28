@@ -1,14 +1,23 @@
-/*!
- * Copyright (c) 2022 by XGBoost Contributors
+/**
+ * Copyright 2022-2024, XGBoost Contributors
  */
 #ifndef XGBOOST_TESTS_CPP_FILESYSTEM_H
 #define XGBOOST_TESTS_CPP_FILESYSTEM_H
 
-// A macro used inside `windows.h` to avoid conflicts with `winsock2.h`
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif  // WIN32_LEAN_AND_MEAN
+#include <iostream>
 
-#include "dmlc/filesystem.h"
+namespace xgboost {
+struct TemporaryDirectory {
+  std::string path;
+
+  TemporaryDirectory();
+  ~TemporaryDirectory() {
+    std::cout << "path:" << path << std::endl;
+    // if (!path.empty()) {
+    //   std::filesystem::remove_all(path);
+    // }
+  }
+};
+}  // namespace xgboost
 
 #endif  // XGBOOST_TESTS_CPP_FILESYSTEM_H

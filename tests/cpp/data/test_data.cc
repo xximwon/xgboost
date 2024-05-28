@@ -1,13 +1,12 @@
 /**
- * Copyright 2019-2023 by XGBoost Contributors
+ * Copyright 2019-2024, XGBoost Contributors
  */
 #include <gtest/gtest.h>
 
-#include <fstream>
 #include <memory>
 #include <vector>
 
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
 #include "xgboost/data.h"
 
@@ -115,7 +114,7 @@ TEST(DMatrix, Uri) {
   auto constexpr kRows {16};
   auto constexpr kCols {8};
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   auto const path = tmpdir.path + "/small.csv";
   CreateTestCSV(path, kRows, kCols);
 

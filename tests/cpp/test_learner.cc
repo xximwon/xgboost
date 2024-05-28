@@ -119,7 +119,7 @@ TEST(Learner, CheckGroup) {
 
 TEST(Learner, SLOW_CheckMultiBatch) {  // NOLINT
   // Create sufficiently large data to make two row pages
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/big.libsvm";
   CreateBigTestData(tmp_file, 50000);
   std::shared_ptr<DMatrix> dmat(
@@ -176,7 +176,7 @@ TEST(Learner, JsonModelIO) {
     Json out { Object() };
     learner->SaveModel(&out);
 
-    dmlc::TemporaryDirectory tmpdir;
+    TemporaryDirectory tmpdir;
 
     std::ofstream fout (tmpdir.path + "/model.json");
     fout << out;
@@ -298,7 +298,7 @@ TEST(Learner, BinaryModelIO) {
   for (int32_t iter = 0; iter < kIters; ++iter) {
     learner->UpdateOneIter(iter, p_dmat);
   }
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::string const fname = tempdir.path + "binary_model_io.bin";
   {
     // Make sure the write is complete before loading.

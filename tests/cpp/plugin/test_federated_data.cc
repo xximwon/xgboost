@@ -1,13 +1,11 @@
-/*!
- * Copyright 2023 XGBoost contributors
+/**
+ * Copyright 2023-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
 #include <xgboost/data.h>
 
-#include <thread>
-
 #include "../../../src/collective/communicator-inl.h"
-#include "../filesystem.h"
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
 #include "federated/test_worker.h"
 
@@ -19,7 +17,7 @@ void VerifyLoadUri() {
   size_t constexpr kRows{16};
   size_t const kCols = 8 + rank;
 
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::string path = tmpdir.path + "/small" + std::to_string(rank) + ".csv";
   CreateTestCSV(path, kRows, kCols);
 

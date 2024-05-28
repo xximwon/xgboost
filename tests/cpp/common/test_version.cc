@@ -10,7 +10,7 @@
 #include <string>
 
 #include "../../../src/common/version.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // TemporaryDirectory
 
 namespace xgboost {
 TEST(Version, Basic) {
@@ -19,7 +19,7 @@ TEST(Version, Basic) {
   auto triplet { Version::Load(j_ver) };
   ASSERT_TRUE(Version::Same(triplet));
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string fname = tempdir.path + "/version";
 
   {

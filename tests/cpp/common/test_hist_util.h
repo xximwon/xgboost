@@ -1,5 +1,5 @@
-/*!
- * Copyright 2019-2022 by XGBoost Contributors
+/**
+ * Copyright 2019-2024, XGBoost Contributors
  */
 #pragma once
 #include <gtest/gtest.h>
@@ -12,7 +12,7 @@
 #include "../../../src/common/hist_util.h"
 #include "../../../src/data/adapter.h"
 #include "../../../src/data/simple_dmatrix.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
 
 #ifdef __CUDACC__
@@ -74,16 +74,14 @@ GetDMatrixFromData(const std::vector<float> &x, int num_rows, int num_columns) {
 }
 
 inline std::shared_ptr<DMatrix> GetExternalMemoryDMatrixFromData(
-    const std::vector<float>& x, int num_rows, int num_columns,
-    const dmlc::TemporaryDirectory& tempdir) {
+    const std::vector<float>& x, int num_rows, int num_columns, const TemporaryDirectory& tempdir) {
   // Create the svm file in a temp dir
   const std::string tmp_file = tempdir.path + "/temp.libsvm";
   std::ofstream fo(tmp_file.c_str());
   for (auto i = 0; i < num_rows; i++) {
     std::stringstream row_data;
     for (auto j = 0; j < num_columns; j++) {
-      row_data << 1 << " " << j << ":" << std::setprecision(15)
-               << x[i * num_columns + j];
+      row_data << 1 << " " << j << ":" << std::setprecision(15) << x[i * num_columns + j];
     }
     fo << row_data.str() << "\n";
   }

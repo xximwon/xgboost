@@ -12,7 +12,6 @@
 #include "../../../src/data/file_iterator.h"
 #include "../../../src/data/simple_dmatrix.h"
 #include "../../../src/data/sparse_page_dmatrix.h"
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
 #include "../helpers.h"
 
 using namespace xgboost;  // NOLINT
@@ -24,7 +23,7 @@ std::string UriSVM(std::string name, std::string cache) {
 
 template <typename Page>
 void TestSparseDMatrixLoadFile(Context const* ctx) {
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   auto opath = tmpdir.path + "/1-based.svm";
   CreateBigTestData(opath, 3 * 64, false);
   opath += "?indexing_mode=1&format=libsvm";
@@ -116,7 +115,7 @@ TEST(SparsePageDMatrix, RetainSparsePage) {
 }
 
 TEST(SparsePageDMatrix, MetaInfo) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   size_t constexpr kEntries = 24;
   CreateBigTestData(tmp_file, kEntries);
@@ -143,7 +142,7 @@ TEST(SparsePageDMatrix, RowAccess) {
 }
 
 TEST(SparsePageDMatrix, ColAccess) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/simple.libsvm";
   CreateSimpleTestData(tmp_file);
   xgboost::DMatrix *dmat = xgboost::DMatrix::Load(UriSVM(tmp_file, tmp_file));
@@ -236,7 +235,7 @@ auto TestSparsePageDMatrixDeterminism(int32_t threads) {
   std::vector<float> sparse_data;
   std::vector<size_t> sparse_rptr;
   std::vector<bst_feature_t> sparse_cids;
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   std::string filename = tempdir.path + "/simple.libsvm";
   CreateBigTestData(filename, 1 << 16);
 

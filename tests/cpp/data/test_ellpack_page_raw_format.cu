@@ -1,14 +1,14 @@
 /**
- * Copyright 2021-2023, XGBoost contributors
+ * Copyright 2021-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
 #include <xgboost/data.h>
 
 #include "../../../src/common/io.h"  // for PrivateMmapConstStream, AlignedResourceReadStream...
 #include "../../../src/data/ellpack_page.cuh"
-#include "../../../src/data/sparse_page_source.h"
-#include "../../../src/tree/param.h"  // TrainParam
-#include "../filesystem.h"            // dmlc::TemporaryDirectory
+#include "../../../src/data/sparse_page_writer.h"  // for CreatePageFormat
+#include "../../../src/tree/param.h"               // for TrainParam
+#include "../filesystem.h"                         // for TemporaryDirectory
 #include "../helpers.h"
 
 namespace xgboost::data {
@@ -19,7 +19,7 @@ TEST(EllpackPageRawFormat, IO) {
   std::unique_ptr<SparsePageFormat<EllpackPage>> format{CreatePageFormat<EllpackPage>("raw")};
 
   auto m = RandomDataGenerator{100, 14, 0.5}.GenerateDMatrix();
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::string path = tmpdir.path + "/ellpack.page";
 
   std::size_t n_bytes{0};

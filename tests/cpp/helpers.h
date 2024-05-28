@@ -24,7 +24,7 @@
 #include "../../src/common/common.h"                // for AllVisibleGPUs
 #endif  // defined(__CUDACC__)
 
-#include "filesystem.h"  // dmlc::TemporaryDirectory
+#include "filesystem.h"  // TemporaryDirectory
 #include "xgboost/linalg.h"
 #if !defined(_OPENMP)
 #include <thread>
@@ -330,17 +330,7 @@ inline std::shared_ptr<DMatrix> EmptyDMatrix() {
   return RandomDataGenerator{0, 0, 0.0}.GenerateDMatrix();
 }
 
-inline std::vector<float> GenerateRandomCategoricalSingleColumn(int n, size_t num_categories) {
-  std::vector<float> x(n);
-  std::mt19937 rng(0);
-  std::uniform_int_distribution<size_t> dist(0, num_categories - 1);
-  std::generate(x.begin(), x.end(), [&]() { return static_cast<float>(dist(rng)); });
-  // Make sure each category is present
-  for (size_t i = 0; i < num_categories; i++) {
-    x[i] = static_cast<decltype(x)::value_type>(i);
-  }
-  return x;
-}
+std::vector<float> GenerateRandomCategoricalSingleColumn(int n, size_t num_categories);
 
 std::shared_ptr<DMatrix> GetDMatrixFromData(const std::vector<float>& x, std::size_t num_rows,
                                             bst_feature_t num_columns);
@@ -382,7 +372,7 @@ std::unique_ptr<DMatrix> CreateSparsePageDMatrix(size_t n_entries, std::string p
  */
 std::unique_ptr<DMatrix> CreateSparsePageDMatrixWithRC(
     size_t n_rows, size_t n_cols, size_t page_size, bool deterministic,
-    const dmlc::TemporaryDirectory& tempdir = dmlc::TemporaryDirectory());
+    const TemporaryDirectory& tempdir = TemporaryDirectory());
 
 std::unique_ptr<GradientBooster> CreateTrainedGBM(std::string name, Args kwargs, size_t kRows,
                                                   size_t kCols,

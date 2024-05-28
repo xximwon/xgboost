@@ -1,6 +1,7 @@
 /**
- * Copyright 2019-2023, XGBoost contributors
+ * Copyright 2019-2024, XGBoost contributors
  */
+#include <gtest/gtest.h>
 #include <xgboost/base.h>
 
 #include <utility>
@@ -9,10 +10,10 @@
 #include "../../../src/common/hist_util.h"
 #include "../../../src/data/ellpack_page.cuh"
 #include "../../../src/data/ellpack_page.h"
-#include "../../../src/tree/param.h"  // TrainParam
+#include "../../../src/tree/param.h"  // for TrainParam
+#include "../filesystem.h"            // for TemporaryDirectory
 #include "../helpers.h"
 #include "../histogram_helpers.h"
-#include "gtest/gtest.h"
 
 namespace xgboost {
 
@@ -144,7 +145,7 @@ TEST(EllpackPage, Copy) {
   constexpr size_t kPageSize = 1024;
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix>
       dmat(CreateSparsePageDMatrixWithRC(kRows, kCols, kPageSize, true, tmpdir));
   Context ctx{MakeCUDACtx(0)};
@@ -192,7 +193,7 @@ TEST(EllpackPage, Compact) {
   constexpr size_t kCompactedRows = 8;
 
   // Create a DMatrix with multiple batches.
-  dmlc::TemporaryDirectory tmpdir;
+  TemporaryDirectory tmpdir;
   std::unique_ptr<DMatrix> dmat(
       CreateSparsePageDMatrixWithRC(kRows, kCols, kPageSize, true, tmpdir));
   Context ctx{MakeCUDACtx(0)};

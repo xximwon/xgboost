@@ -1,11 +1,12 @@
-// Copyright by Contributors
+/**
+ * Copyright 2018-2024, XGBoost contributors
+ */
 #include <gtest/gtest.h>
 
 #include "../../../src/common/bitfield.h"
 #include "../../../src/common/categorical.h"
-#include "../filesystem.h"
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
-#include "xgboost/json_io.h"
 #include "xgboost/tree_model.h"
 
 namespace xgboost {
@@ -14,8 +15,9 @@ TEST(Tree, ModelShape) {
   RegTree tree{1u, n_features};
   ASSERT_EQ(tree.NumFeatures(), n_features);
 
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/tree.model";
+  std::cout << "tmp_file:" << tmp_file << std::endl;
   {
     // binary dump
     std::unique_ptr<dmlc::Stream> fo(dmlc::Stream::Create(tmp_file.c_str(), "w"));
@@ -59,7 +61,7 @@ TEST(Tree, ModelShape) {
 // Do not use structs in case they change
 // We want to preserve backwards compatibility
 TEST(Tree, Load) {
-  dmlc::TemporaryDirectory tempdir;
+  TemporaryDirectory tempdir;
   const std::string tmp_file = tempdir.path + "/tree.model";
   std::unique_ptr<dmlc::Stream> fo(dmlc::Stream::Create(tmp_file.c_str(), "w"));
 

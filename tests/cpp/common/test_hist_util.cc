@@ -1,14 +1,17 @@
 /**
  * Copyright 2019-2024, XGBoost Contributors
  */
+#include "test_hist_util.h"
+
 #include <gtest/gtest.h>
-#include <vector>
+
 #include <string>
+#include <vector>
 
 #include "../../../src/common/hist_util.h"
 #include "../../../src/data/gradient_index.h"
+#include "../filesystem.h"  // for TemporaryDirectory
 #include "../helpers.h"
-#include "test_hist_util.h"
 
 namespace xgboost {
 namespace common {
@@ -259,7 +262,7 @@ TEST(HistUtil, DenseCutsExternalMemory) {
   Context ctx;
   for (auto num_rows : sizes) {
     auto x = GenerateRandom(num_rows, num_columns);
-    dmlc::TemporaryDirectory tmpdir;
+    TemporaryDirectory tmpdir;
     auto dmat = GetExternalMemoryDMatrixFromData(x, num_rows, num_columns, tmpdir);
     for (auto num_bins : bin_sizes) {
       HistogramCuts cuts = SketchOnDMatrix(&ctx, dmat.get(), num_bins);

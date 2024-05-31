@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
-#include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
@@ -180,17 +179,23 @@ class MetaInfo {
    */
   void SynchronizeNumberOfColumns(Context const* ctx);
 
-  /*! \brief Whether the data is split row-wise. */
-  bool IsRowSplit() const { return (data_split_mode == DataSplitMode::kRow)
-  || (data_split_mode == DataSplitMode::kRowSecure); }
+  /** @brief Whether the data is split row-wise. */
+  bool IsRowSplit() const {
+    return (data_split_mode == DataSplitMode::kRow) ||
+           (data_split_mode == DataSplitMode::kRowSecure);
+  }
 
   /** @brief Whether the data is split column-wise. */
-  bool IsColumnSplit() const { return (data_split_mode == DataSplitMode::kCol)
-  || (data_split_mode == DataSplitMode::kColSecure); }
+  bool IsColumnSplit() const {
+    return (data_split_mode == DataSplitMode::kCol) ||
+           (data_split_mode == DataSplitMode::kColSecure);
+  }
 
-  /** @brief Whether the data is split column-wise with secure computation. */
-  bool IsSecure() const { return (data_split_mode == DataSplitMode::kColSecure)
-  || (data_split_mode == DataSplitMode::kRowSecure); }
+  /** @brief Whether the data is split with secure computation. */
+  bool IsSecure() const {
+    return (data_split_mode == DataSplitMode::kColSecure) ||
+           (data_split_mode == DataSplitMode::kRowSecure);
+  }
 
   /** @brief Whether this is a learning to rank data. */
   bool IsRanking() const { return !group_ptr_.empty(); }

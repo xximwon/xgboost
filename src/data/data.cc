@@ -11,7 +11,6 @@
 #include <cmath>        // for abs
 #include <cstdint>      // for uint64_t, int32_t, uint8_t, uint32_t
 #include <cstring>      // for size_t, strcmp, memcpy
-#include <exception>    // for exception
 #include <iostream>     // for operator<<, basic_ostream, basic_ostream::op...
 #include <map>          // for map, operator!=
 #include <numeric>      // for accumulate, partial_sum
@@ -22,7 +21,6 @@
 #include "../collective/communicator.h"      // for Operation
 #include "../common/algorithm.h"             // for StableSort
 #include "../common/api_entry.h"             // for XGBAPIThreadLocalEntry
-#include "../common/common.h"                // for Split
 #include "../common/error_msg.h"             // for GroupSize, GroupWeight, InfInData
 #include "../common/group_data.h"            // for ParallelGroupBuilder
 #include "../common/io.h"                    // for PeekableInStream

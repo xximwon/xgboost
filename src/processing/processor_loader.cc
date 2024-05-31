@@ -62,12 +62,12 @@ namespace processing {
         handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
         if (!handle_) {
             std::cerr << "Failed to load the dynamic library: " << dlerror() << std::endl;
-            return NULL;
+            return nullptr;
         }
         void* func_ptr = dlsym(handle_, kLoadFunc);
         if (!func_ptr) {
             std::cerr << "Failed to find loader function: " << dlerror() << std::endl;
-            return NULL;
+            return nullptr;
         }
 #endif
 

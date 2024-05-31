@@ -86,11 +86,12 @@ class HistogramBuilder {
       // for encrypted histogram computation
       auto cuts = gidx.Cuts().Ptrs();
       // only initialize the aggregation context once
-      if(!is_aggr_context_initialized_){
+      if (!is_aggr_context_initialized_) {
         auto slots = std::vector<int>();
-        auto num_rows = row_set_collection[0].Size();
+        auto num_rows = gidx.Size();
+        bst_feature_t n_features = gidx.Features();
         for (std::size_t row = 0; row < num_rows; row++) {
-          for (std::size_t f = 0; f < cuts.size()-1; f++) {
+          for (bst_feature_t f = 0; f < n_features; f++) {
             auto slot = gidx.GetGindex(row, f);
             slots.push_back(slot);
           }

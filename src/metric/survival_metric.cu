@@ -9,6 +9,7 @@
 
 #include <array>
 #include <memory>
+#include <numeric>  // for accumulate
 #include <vector>
 
 #include "../collective/communicator-inl.h"

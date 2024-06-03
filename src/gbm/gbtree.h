@@ -11,10 +11,9 @@
 
 #include <algorithm>
 #include <cstdint>  // std::int32_t
-#include <map>
 #include <memory>
+#include <numeric>  // for iota
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 

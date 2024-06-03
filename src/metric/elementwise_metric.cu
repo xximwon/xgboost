@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cmath>
+#include <numeric>  // for accumulate
 
 #include "../collective/communicator-inl.h"
 #include "../common/common.h"  // MetricNoCache

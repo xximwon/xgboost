@@ -6,8 +6,8 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <functional>
 #include <memory>   // for shared_ptr
+#include <numeric>  // for accumulate
 #include <string>   // for string
 #include <tuple>    // for make_tuple
 #include <utility>  // for move

@@ -7,7 +7,6 @@
 #include <algorithm>   // for max
 #include <cstddef>     // for size_t
 #include <cstdint>     // for int32_t
-#include <functional>  // for function
 #include <utility>     // for move
 #include <vector>      // for vector
 #include <map>         // for map
@@ -276,8 +275,15 @@ class HistogramBuilder {
       // Perform AllGather
       auto hist_vec = std::vector<std::int8_t>(hist_data.data(),
                                                hist_data.data() + hist_data.size());
+      // [Q] So, every site has a copy of the allgather result?
       auto hist_entries = collective::AllgatherV(hist_vec);
       // Call interface here to post-process the messages
+
+      // [Q], quote: Each worker only computes the histograms based on the received
+      // gradients, and send back to label owner by performing an allgather. This histogram is not sent.
+
+      // [Q] quote: The encryption / decryption / secure add can be performed: either at local gRPC handler by reaching out to external encryption utils in Python, or at processor plugin by encryption utils in C++
+      // Where's this step performed?
       std::vector<double> hist_aggr = processor_instance->HandleAggregation(
               hist_entries.data(), hist_entries.size());
 

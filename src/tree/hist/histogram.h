@@ -155,14 +155,14 @@ class HistogramPolicyContainer : public BuildPolicy {
                             std::vector<bst_node_t> const &nodes_to_build,
                             common::RowSetCollection const &row_set_collection,
                             common::Span<GradientPair const> gpair_h, bool force_read_by_column) {
-    BuildPolicy::template BuildLocalHistograms<any_missing>(
+    BuildPolicy::template BuildLocalHistogramsImpl<any_missing>(
         space, gidx, nodes_to_build, row_set_collection, gpair_h, force_read_by_column, &buffer_);
   }
 
   void SyncHistogram(Context const *ctx, RegTree const *p_tree,
                      std::vector<bst_node_t> const &nodes_to_build,
                      std::vector<bst_node_t> const &nodes_to_trick) {
-    BuildPolicy::SyncHistogram(ctx, p_tree, nodes_to_build, nodes_to_trick, &buffer_, &hist_);
+    BuildPolicy::SyncHistogramImpl(ctx, p_tree, nodes_to_build, nodes_to_trick, &buffer_, &hist_);
   }
 
  public:
@@ -189,11 +189,11 @@ class DefaultHistPolicy {
   }
 
   template <bool any_missing>
-  void BuildLocalHistograms(common::BlockedSpace2d const &space, GHistIndexMatrix const &gidx,
-                            std::vector<bst_node_t> const &nodes_to_build,
-                            common::RowSetCollection const &row_set_collection,
-                            common::Span<GradientPair const> gpair_h, bool force_read_by_column,
-                            common::ParallelGHistBuilder *buffer) {
+  void BuildLocalHistogramsImpl(common::BlockedSpace2d const &space, GHistIndexMatrix const &gidx,
+                                std::vector<bst_node_t> const &nodes_to_build,
+                                common::RowSetCollection const &row_set_collection,
+                                common::Span<GradientPair const> gpair_h, bool force_read_by_column,
+                                common::ParallelGHistBuilder *buffer) {
     // Parallel processing by nodes and data in each node
     common::ParallelFor2d(space, this->n_threads_, [&](bst_idx_t nid_in_set, common::Range1d r) {
       auto const tid = omp_get_thread_num();
@@ -210,10 +210,11 @@ class DefaultHistPolicy {
     });
   }
 
-  void SyncHistogram(Context const *ctx, RegTree const *p_tree,
-                     std::vector<bst_node_t> const &nodes_to_build,
-                     std::vector<bst_node_t> const &nodes_to_trick,
-                     common::ParallelGHistBuilder *buffer, BoundedHistCollection *p_hist) {
+  virtual void SyncHistogramImpl(Context const *ctx, RegTree const *p_tree,
+                                 std::vector<bst_node_t> const &nodes_to_build,
+                                 std::vector<bst_node_t> const &nodes_to_trick,
+                                 common::ParallelGHistBuilder *buffer,
+                                 BoundedHistCollection *p_hist) {
     auto n_total_bins = buffer->TotalBins();
     auto &hist = *p_hist;
     common::BlockedSpace2d space(
@@ -263,6 +264,13 @@ class DefaultHistPolicy {
           common::SubtractionHist(subtract_hist, parent_hist, sibling_hist, r.begin(), r.end());
         });
   }
+};
+
+/**
+ * @brief Federated histogram build policy
+ */
+class FederataedHistPolicy : public DefaultHistPolicy {
+
 };
 
 using HistogramBuilder = HistogramPolicyContainer<DefaultHistPolicy>;

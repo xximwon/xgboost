@@ -5,11 +5,26 @@
 
 #include <dlfcn.h>  // for dlclose, dlsym, dlopen
 
-#include "xgboost/json.h"  // for Json
-#include "xgboost/logging.h"
-#include "xgboost/linalg.h"
+#include <cstddef>  // for size_t
+#include <cstdint>  // for uint8_t, uint64_t
+#include <sstream>  // for stringstream
+
+#include "xgboost/base.h"         // for bst_bin_t, bst_feature_t
+#include "xgboost/json.h"         // for Json
+#include "xgboost/linalg.h"       // for MakeTensorView
+#include "xgboost/logging.h"      // for CHECK_EQ
+#include "xgboost/span.h"         // for Span
+#include "xgboost/string_view.h"  // for StringView
 
 namespace xgboost::collective {
+void FederatedPluginMock::Reset(common::Span<std::uint32_t const> cutptrs,
+                                common::Span<std::int32_t const> bin_idx) {
+  this->cuts_.resize(cutptrs.size());
+  std::copy_n(cutptrs.data(), cutptrs.size(), this->cuts_.data());
+  this->gidx_.resize(bin_idx.size());
+  std::copy_n(bin_idx.data(), bin_idx.size(), this->gidx_.data());
+}
+
 [[nodiscard]] common::Span<std::uint8_t> FederatedPluginMock::BuildEncryptedHistVert(
     common::Span<std::uint64_t const*> rowptrs, common::Span<std::size_t const> sizes,
     common::Span<bst_node_t const> nids) {
@@ -21,6 +36,7 @@ namespace xgboost::collective {
   hist_plain_.resize(hist_size);
   CHECK_EQ(rowptrs.size(), sizes.size());
   CHECK_EQ(nids.size(), sizes.size());
+  CHECK_EQ(n_total_samples * 2, grad_.size());
 
   Context ctx;
   auto gidx = linalg::MakeTensorView(&ctx, common::Span{gidx_.data(), gidx_.size()},
@@ -43,7 +59,8 @@ namespace xgboost::collective {
           common::Span<double>{hist_plain_}.size_bytes()};
 }
 
-common::Span<double> FederatedPluginMock::SyncEncryptedHistVert(common::Span<std::uint8_t>) {
+[[nodiscard]] common::Span<double> FederatedPluginMock::SyncEncryptedHistVert(
+    common::Span<std::uint8_t>) {
   return {hist_plain_};
 }
 
@@ -58,9 +75,9 @@ auto SafeLoad(federated::FederatedPluginHandle handle, StringView name) {
   return ptr;
 }
 
-FederatedPlugin::FederatedPlugin(std::string_view path, Json config)
+FederatedPlugin::FederatedPlugin(StringView path, Json config)
     : plugin_{[&] {
-                auto handle = dlopen(path.data(), RTLD_LAZY | RTLD_GLOBAL);
+                auto handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_GLOBAL);
                 CHECK(handle) << "Failed to load federated plugin `" << path << "`:" << dlerror();
                 return handle;
               }(),

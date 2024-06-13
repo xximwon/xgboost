@@ -17,12 +17,15 @@
  */
 #pragma once
 
-#include <functional>   // for function
-#include <memory>       // for unique_ptr
-#include <string_view>  // for string_view
+#include <algorithm>   // for copy_n
+#include <cstdint>     // for uint8_t
+#include <functional>  // for function
+#include <memory>      // for unique_ptr
+#include <vector>      // for vector
 
-#include "xgboost/json.h"  // for Json
-#include "xgboost/span.h"  // for Span
+#include "xgboost/json.h"         // for Json
+#include "xgboost/span.h"         // for Span
+#include "xgboost/string_view.h"  // for StringView
 
 namespace xgboost::collective {
 namespace federated {
@@ -41,13 +44,12 @@ using ErrorFn = char const *();
 using EncryptFn = int(FederatedPluginHandle handle, float const *in_gpair, size_t n_in,
                       uint8_t **out_gpair, size_t *n_out);
 using SyncEncryptFn = int(FederatedPluginHandle handle, uint8_t const *in_gpair, size_t n_bytes,
-                          uint8_t const **out_gpair, size_t *n_out);
+                          uint8_t **out_gpair, size_t *n_out);
 /**
  * @brief Vertical federated learning histogram functions.
  */
-using ResetHistCtxVertFn = int(FederatedPluginHandle handle, std::uint32_t const *cutptrs,
-                               std::size_t cutptr_len, std::int32_t const *bin_idx,
-                               std::size_t n_idx);
+using ResetHistCtxVertFn = int(FederatedPluginHandle handle, uint32_t const *cutptrs,
+                               size_t cutptr_len, int32_t const *bin_idx, size_t n_idx);
 using BuildHistVertFn = int(FederatedPluginHandle handle, uint64_t const **ridx,
                             size_t const *sizes, int32_t const *nidx, size_t len,
                             uint8_t **out_hist, size_t *out_len);
@@ -58,8 +60,8 @@ using SyncHistVertFn = int(FederatedPluginHandle handle, uint8_t *buf, size_t le
  */
 using BuildHistHoriFn = int(FederatedPluginHandle handle, double const *in_histogram, size_t len,
                             uint8_t **out_hist, size_t *out_len);
-using SyncHistHoriFn = int(FederatedPluginHandle handle, std::uint8_t const *buffer,
-                           std::size_t len, double **out_hist, std::size_t *out_len);
+using SyncHistHoriFn = int(FederatedPluginHandle handle, uint8_t const *buffer, size_t len,
+                           double **out_hist, size_t *out_len);
 }  // namespace federated
 
 // Base class for federated learning plugin.
@@ -101,6 +103,8 @@ class FederatedPluginMock : public FederatedPluginBase {
   std::vector<bst_bin_t> gidx_;      // GHistIndexMatrix
 
  public:
+  ~FederatedPluginMock() = default;
+
   [[nodiscard]] common::Span<std::uint8_t> EncryptGradient(
       common::Span<float const> data) override {
     grad_.resize(data.size_bytes());
@@ -170,7 +174,7 @@ class FederatedPlugin : public FederatedPluginBase {
   }
 
  public:
-  explicit FederatedPlugin(std::string_view path, Json config);
+  explicit FederatedPlugin(StringView path, Json config);
   ~FederatedPlugin();
   // Gradient
   [[nodiscard]] common::Span<std::uint8_t> EncryptGradient(
@@ -182,7 +186,7 @@ class FederatedPlugin : public FederatedPluginBase {
     return {ptr, n};
   }
   void SyncEncryptedGradient(common::Span<std::uint8_t const> data) override {
-    uint8_t const *out;
+    uint8_t *out;
     std::size_t n{0};
     auto rc = SyncEncrypt_(this->plugin_handle_.get(), data.data(), data.size(), &out, &n);
     CheckRC(rc, "Failed to sync encrypt gradient");
@@ -235,4 +239,12 @@ class FederatedPlugin : public FederatedPluginBase {
     return {ptr, n};
   }
 };
+
+[[nodiscard]] inline FederatedPluginBase *CreateFederatedPlugin(StringView path, Json config) {
+  if (path.empty()) {
+    return new FederatedPluginMock{};
+  } else {
+    return new FederatedPlugin{path, config};
+  }
+}
 }  // namespace xgboost::collective

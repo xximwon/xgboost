@@ -7,12 +7,48 @@
 
 #include "xgboost/json.h"  // for Json
 #include "xgboost/logging.h"
-
-typedef void* FederatedPluginHandle;  // NOLINT
+#include "xgboost/linalg.h"
 
 namespace xgboost::collective {
+[[nodiscard]] common::Span<std::uint8_t> FederatedPluginMock::BuildEncryptedHistVert(
+    common::Span<std::uint64_t const*> rowptrs, common::Span<std::size_t const> sizes,
+    common::Span<bst_node_t const> nids) {
+  bst_bin_t total_bin_size = cuts_.back();
+  bst_feature_t n_features = cuts_.size() - 1;
+  bst_idx_t n_total_samples = gidx_.size() / n_features;
+  CHECK_EQ(gidx_.size() % n_features, 0);
+  bst_bin_t hist_size = total_bin_size * 2;
+  hist_plain_.resize(hist_size);
+  CHECK_EQ(rowptrs.size(), sizes.size());
+  CHECK_EQ(nids.size(), sizes.size());
+
+  Context ctx;
+  auto gidx = linalg::MakeTensorView(&ctx, common::Span{gidx_.data(), gidx_.size()},
+                                     n_total_samples, n_features);
+  for (std::size_t i = 0; i < sizes.size(); ++i) {
+    auto n_samples = sizes[i];
+    auto samples = common::Span{rowptrs[i], n_samples};
+    for (auto ridx : samples) {
+      for (bst_feature_t f = 0; f < n_features; ++f) {
+        auto bin = gidx(ridx, f);
+        auto g = grad_[ridx * 2];
+        auto h = grad_[ridx * 2 + 1];
+        hist_plain_[bin * 2] += g;
+        hist_plain_[bin * 2 + 1] += h;
+      }
+    }
+  }
+
+  return {reinterpret_cast<std::uint8_t*>(hist_plain_.data()),
+          common::Span<double>{hist_plain_}.size_bytes()};
+}
+
+common::Span<double> FederatedPluginMock::SyncEncryptedHistVert(common::Span<std::uint8_t>) {
+  return {hist_plain_};
+}
+
 template <typename T>  // fixme, duplicated code
-auto SafeLoad(FederatedPluginHandle handle, StringView name) {
+auto SafeLoad(federated::FederatedPluginHandle handle, StringView name) {
   std::stringstream errs;
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.c_str()));
   if (!ptr) {
@@ -75,7 +111,7 @@ FederatedPlugin::FederatedPlugin(std::string_view path, Json config)
 
         return handle;
       }(),
-      [this](FederatedPluginHandle handle) {
+      [this](federated::FederatedPluginHandle handle) {
         int rc = this->PluginClose_(handle);
         if (rc != 0) {
           LOG(WARNING) << "Failed to close plugin";

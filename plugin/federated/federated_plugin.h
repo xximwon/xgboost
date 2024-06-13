@@ -113,7 +113,12 @@ class FederatedPluginMock : public FederatedPluginBase {
     std::copy_n(casted.data(), casted.size(), grad_.data());
     return grad_;
   }
-  void SyncEncryptedGradient(common::Span<std::uint8_t const>) override {}
+  void SyncEncryptedGradient(common::Span<std::uint8_t const> data) override {
+    auto casted =
+        common::Span{reinterpret_cast<float const *>(data.data()), data.size() / sizeof(float)};
+    grad_.resize(casted.size());
+    std::copy_n(casted.data(), casted.size(), grad_.data());
+  }
 
   // Vertical histogram
   void Reset(common::Span<std::uint32_t const>, common::Span<std::int32_t const>) override;
@@ -240,11 +245,5 @@ class FederatedPlugin : public FederatedPluginBase {
   }
 };
 
-[[nodiscard]] inline FederatedPluginBase *CreateFederatedPlugin(StringView path, Json config) {
-  if (path.empty()) {
-    return new FederatedPluginMock{};
-  } else {
-    return new FederatedPlugin{path, config};
-  }
-}
+[[nodiscard]] FederatedPluginBase *CreateFederatedPlugin(Json config);
 }  // namespace xgboost::collective

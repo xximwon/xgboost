@@ -15,6 +15,7 @@
 #include "xgboost/logging.h"      // for CHECK_EQ
 #include "xgboost/span.h"         // for Span
 #include "xgboost/string_view.h"  // for StringView
+#include "../../src/common/json_utils.h"  // for OptionalArg
 
 namespace xgboost::collective {
 void FederatedPluginMock::Reset(common::Span<std::uint32_t const> cutptrs,
@@ -47,6 +48,9 @@ void FederatedPluginMock::Reset(common::Span<std::uint32_t const> cutptrs,
     for (auto ridx : samples) {
       for (bst_feature_t f = 0; f < n_features; ++f) {
         auto bin = gidx(ridx, f);
+        if (bin < 0) {
+          continue;
+        }
         auto g = grad_[ridx * 2];
         auto h = grad_[ridx * 2 + 1];
         hist_plain_[bin * 2] += g;
@@ -154,4 +158,13 @@ FederatedPlugin::FederatedPlugin(StringView path, Json config)
 }
 
 FederatedPlugin::~FederatedPlugin() = default;
+
+[[nodiscard]] FederatedPluginBase* CreateFederatedPlugin(Json config) {
+  auto plugin = OptionalArg<Object>(config, "federated_plugin", Object::Map{});
+  if (!plugin.empty()) {
+    auto path = get<String>(plugin["path"]);
+    return new FederatedPlugin{path, config};
+  }
+  return new FederatedPluginMock{};
+}
 }  // namespace xgboost::collective

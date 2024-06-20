@@ -1,15 +1,17 @@
-/*!
- * Copyright 2022 by XGBoost Contributors
+/**
+ * Copyright 2022-2024, XGBoost Contributors
  * \file common.h
  * \brief cuda pinned allocator for usage with thrust containers
  */
 
 #pragma once
 
-#include <cstddef>
-#include <limits>
+#include <cuda_runtime.h>  // for cudaMallocHost, cudaFreeHost
 
-#include "common.h"
+#include <cstddef>
+
+#include "common.h"        // for safe_cuda
+#include "xgboost/base.h"  // for XGBOOST_DEVICE
 
 namespace xgboost {
 namespace common {
@@ -68,15 +70,17 @@ class pinned_allocator {
   XGBOOST_DEVICE inline pointer address(reference r) { return &r; } // NOLINT
   XGBOOST_DEVICE inline const_pointer address(const_reference r) { return &r; } // NOLINT
 
-  inline pointer allocate(size_type cnt, const_pointer = nullptr) { // NOLINT
-    if (cnt > this->max_size()) { throw std::bad_alloc(); }  // end if
+  [[nodiscard]] pointer allocate(size_type cnt, const_pointer = nullptr) {  // NOLINT
+    if (cnt > this->max_size()) {
+      throw std::bad_alloc();
+    }  // end if
 
     pointer result(nullptr);
     dh::safe_cuda(cudaMallocHost(reinterpret_cast<void**>(&result), cnt * sizeof(value_type)));
     return result;
   }
 
-  inline void deallocate(pointer p, size_type) { dh::safe_cuda(cudaFreeHost(p)); } // NOLINT
+  void deallocate(pointer p, size_type) { dh::safe_cuda(cudaFreeHost(p)); }  // NOLINT
 
   inline size_type max_size() const { return (std::numeric_limits<size_type>::max)() / sizeof(T); } // NOLINT
 

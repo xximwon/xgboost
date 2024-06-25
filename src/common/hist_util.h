@@ -36,6 +36,7 @@ using GHistIndexRow = Span<uint32_t const>;
 class HistogramCuts {
   bool has_categorical_{false};
   float max_cat_{-1.0f};
+  bst_bin_t n_total_bins_{-1};
 
  protected:
   void Swap(HistogramCuts&& that) noexcept(true) {
@@ -45,6 +46,7 @@ class HistogramCuts {
 
     std::swap(has_categorical_, that.has_categorical_);
     std::swap(max_cat_, that.max_cat_);
+    std::swap(n_total_bins_, that.n_total_bins_);
   }
 
   void Copy(HistogramCuts const& that) {
@@ -56,11 +58,12 @@ class HistogramCuts {
     min_vals_.Copy(that.min_vals_);
     has_categorical_ = that.has_categorical_;
     max_cat_ = that.max_cat_;
+    n_total_bins_ = that.n_total_bins_;
   }
 
  public:
-  HostDeviceVector<float> cut_values_;   // NOLINT
-  HostDeviceVector<uint32_t> cut_ptrs_;  // NOLINT
+  HostDeviceVector<float> cut_values_;        // NOLINT
+  HostDeviceVector<std::uint32_t> cut_ptrs_;  // NOLINT
   // storing minimum value in a sketch set.
   HostDeviceVector<float> min_vals_;  // NOLINT
 
@@ -101,8 +104,11 @@ class HistogramCuts {
     has_categorical_ = has_cat;
     max_cat_ = max_cat;
   }
-
-  [[nodiscard]] bst_bin_t TotalBins() const { return cut_ptrs_.ConstHostVector().back(); }
+  void SetTotalBins(bst_bin_t n_total_bins) { n_total_bins_ = n_total_bins; }
+  [[nodiscard]] bst_bin_t TotalBins() const {
+    CHECK_GE(n_total_bins_, 0);
+    return n_total_bins_;
+  }
 
   // Return the index of a cut point that is strictly greater than the input
   // value, or the last available index if none exists

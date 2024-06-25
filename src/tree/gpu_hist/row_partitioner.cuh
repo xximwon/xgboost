@@ -11,6 +11,7 @@
 #include <cstdint>    // for int32_t, uint32_t
 #include <vector>     // for vector
 
+#include "../../common/cuda_pinned_allocator.h"
 #include "../../common/device_helpers.cuh"  // for MakeTransformIterator
 #include "xgboost/base.h"                   // for bst_idx_t
 #include "xgboost/context.h"                // for Context
@@ -239,9 +240,9 @@ class RowPartitioner {
   // Staging area for sorting ridx
   dh::DeviceUVector<RowIndexT> ridx_tmp_;
   dh::DeviceUVector<int8_t> tmp_;
-  dh::PinnedMemory pinned_;
-  dh::PinnedMemory pinned2_;
   bst_node_t n_nodes_{0};  // Counter for internal checks.
+  common::cuda_impl::GrowOnlyPinnedVector<false> pinned_;
+  common::cuda_impl::GrowOnlyPinnedVector<true> pinned2_;
 
  public:
   /**
@@ -299,6 +300,8 @@ class RowPartitioner {
     if (nidx.empty()) {
       return;
     }
+    dh::DeviceUVector<cuda_impl::RowIndexT> d_counts;
+    d_counts.resize(nidx.size(), 0u);
 
     CHECK_EQ(nidx.size(), left_nidx.size());
     CHECK_EQ(nidx.size(), right_nidx.size());
@@ -306,26 +309,28 @@ class RowPartitioner {
     this->n_nodes_ += (left_nidx.size() + right_nidx.size());
 
     auto h_batch_info = pinned2_.GetSpan<PerNodeData<OpDataT>>(nidx.size());
-    dh::TemporaryArray<PerNodeData<OpDataT>> d_batch_info(nidx.size());
 
-    std::size_t total_rows = 0;
+    bst_idx_t total_rows = 0;
     for (size_t i = 0; i < nidx.size(); i++) {
       h_batch_info[i] = {ridx_segments_.at(nidx.at(i)).segment, op_data.at(i)};
       total_rows += ridx_segments_.at(nidx.at(i)).segment.Size();
     }
-    dh::safe_cuda(cudaMemcpyAsync(d_batch_info.data().get(), h_batch_info.data(),
-                                  h_batch_info.size() * sizeof(PerNodeData<OpDataT>),
-                                  cudaMemcpyDefault));
+    dh::safe_cuda(cudaMemAdvise(h_batch_info.data(), h_batch_info.size_bytes(),
+                                cudaMemAdviseSetAccessedBy, 0));
+    dh::safe_cuda(cudaMemAdvise(h_batch_info.data(), h_batch_info.size_bytes(),
+                                cudaMemAdviseSetReadMostly, 0));
+    // dh::safe_cuda(cudaMemcpyAsync(d_batch_info.data().get(), h_batch_info.data(),
+    //                               h_batch_info.size() * sizeof(PerNodeData<OpDataT>),
+    //                               cudaMemcpyDefault));
 
     // Temporary arrays
-    auto h_counts = pinned_.GetSpan<RowIndexT>(nidx.size(), 0);
-    dh::TemporaryArray<RowIndexT> d_counts(nidx.size(), 0);
+    auto h_counts = pinned_.GetSpan<bst_uint>(nidx.size());
 
     // Partition the rows according to the operator
-    SortPositionBatch<UpdatePositionOpT, OpDataT>(dh::ToSpan(d_batch_info), dh::ToSpan(ridx_),
+    SortPositionBatch<UpdatePositionOpT, OpDataT>(h_batch_info, dh::ToSpan(ridx_),
                                                   dh::ToSpan(ridx_tmp_), dh::ToSpan(d_counts),
                                                   total_rows, op, &tmp_);
-    dh::safe_cuda(cudaMemcpyAsync(h_counts.data(), d_counts.data().get(), h_counts.size_bytes(),
+    dh::safe_cuda(cudaMemcpyAsync(h_counts.data(), d_counts.data(), h_counts.size_bytes(),
                                   cudaMemcpyDefault));
     // TODO(Rory): this synchronisation hurts performance a lot
     // Future optimisation should find a way to skip this

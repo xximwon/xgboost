@@ -20,6 +20,7 @@
 #include "../common/device_vector.cuh"  // for device_vector
 #include "../common/hist_util.h"        // for HistogramCuts
 #include "../common/random.h"           // for ColumnSampler, GlobalRandom
+#include "../common/threadpool.h"       // for ThreadPool
 #include "../common/timer.h"
 #include "../data/ellpack_page.cuh"
 #include "../data/ellpack_page.h"
@@ -121,6 +122,10 @@ struct GPUHistMakerDevice {
   dh::device_vector<bst_node_t> positions_;
   HistMakerTrainParam const* hist_param_;
   std::shared_ptr<common::HistogramCuts const> cuts_{nullptr};
+
+  common::ThreadPool workers_{"pf", 2, [config = *GlobalConfigThreadLocalStore::Get()] {
+                                *GlobalConfigThreadLocalStore::Get() = config;
+                              }};
 
   auto CreatePartitionNodes(RegTree const* p_tree, std::vector<GPUExpandEntry> const& candidates) {
     std::vector<bst_node_t> nidx(candidates.size());
@@ -493,13 +498,22 @@ struct GPUHistMakerDevice {
 
     this->histogram_.AllocateHistograms(ctx_, build_nidx, subtraction_nidx);
 
+    // Update position and build histogram.
     monitor.Start("Partition-BuildHist");
 
     std::int32_t k{0};
-    for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(prefetch_copy))) {
-      auto d_matrix = page.Impl()->GetDeviceAccessor(ctx_->Device());
-      auto go_left = GoLeftOp{d_matrix};
+    auto batch_set = p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(prefetch_copy));
+    auto it = batch_set.begin();
+    while (it != batch_set.end()) {
+      monitor.Start("Iter-Partition-BuildHist");
 
+      std::shared_ptr<EllpackPage const> page = it.Page();
+      // Spin a thread to forward the iterator while building histogram.
+      auto fut = workers_.Submit([&] { ++it; });
+
+      auto batch = page->Impl();
+      auto d_matrix = batch->GetDeviceAccessor(ctx_->Device());
+      auto go_left = GoLeftOp{d_matrix};
       // Partition histogram.
       monitor.Start("UpdatePositionBatch");
       if (p_fmat->Info().IsColumnSplit()) {
@@ -513,10 +527,13 @@ struct GPUHistMakerDevice {
       monitor.Stop("UpdatePositionBatch");
 
       for (auto nidx : build_nidx) {
-        this->BuildHist(page, k, nidx);
+        this->BuildHist(*page, k, nidx);
       }
 
       ++k;
+      fut.get();
+
+      monitor.Stop("Iter-Partition-BuildHist");
     }
 
     monitor.Stop("Partition-BuildHist");

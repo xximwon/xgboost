@@ -453,6 +453,7 @@ void SketchContainerImpl<WQSketch>::MakeCuts(Context const *ctx, MetaInfo const 
   }
 
   p_cuts->SetCategorical(this->has_categorical_, max_cat);
+  p_cuts->SetTotalBins(p_cuts->cut_ptrs_.ConstHostVector().back());
   monitor_.Stop(__func__);
 }
 

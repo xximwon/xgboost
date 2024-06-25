@@ -444,6 +444,10 @@ void SketchContainer::Prune(Context const* ctx, std::size_t to) {
 void SketchContainer::Merge(Context const *ctx, Span<OffsetT const> d_that_columns_ptr,
                             Span<SketchEntry const> that) {
   common::SetDevice(device_.ordinal);
+  auto self = dh::ToSpan(this->Current());
+  LOG(DEBUG) << "Merge: self:" << self.size_bytes() / 1024.0 / 1024.0 << "MB. "
+             << "That:" << that.size_bytes() / 1024.0 / 1024.0 << "MB" << std::endl;
+
   timer_.Start(__func__);
   if (this->Current().size() == 0) {
     CHECK_EQ(this->columns_ptr_.HostVector().back(), 0);
@@ -737,6 +741,7 @@ void SketchContainer::MakeCuts(Context const* ctx, HistogramCuts* p_cuts, bool i
   });
 
   p_cuts->SetCategorical(this->has_categorical_, max_cat);
+  p_cuts->SetTotalBins(p_cuts->cut_ptrs_.ConstHostVector().back());
   timer_.Stop(__func__);
 }
 }  // namespace xgboost::common

@@ -18,7 +18,10 @@ class HistogramCutsWrapper : public common::HistogramCuts {
  public:
   using SuperT = common::HistogramCuts;
   void SetValues(std::vector<float> cuts) { SuperT::cut_values_.HostVector() = std::move(cuts); }
-  void SetPtrs(std::vector<uint32_t> ptrs) { SuperT::cut_ptrs_.HostVector() = std::move(ptrs); }
+  void SetPtrs(std::vector<uint32_t> ptrs) {
+    SuperT::cut_ptrs_.HostVector() = std::move(ptrs);
+    this->SetTotalBins(this->cut_ptrs_.ConstHostVector().back());
+  }
   void SetMins(std::vector<float> mins) { SuperT::min_vals_.HostVector() = std::move(mins); }
 };
 }  // namespace detail

@@ -399,8 +399,8 @@ struct PinnedMemory {
     size_t num_bytes = size * sizeof(T);
     if (num_bytes > temp_storage_bytes) {
       Free();
-      safe_cuda(cudaMallocHost(&temp_storage, num_bytes));
-      temp_storage_bytes = num_bytes;
+      safe_cuda(cudaMallocHost(&temp_storage, num_bytes * 2));
+      temp_storage_bytes = num_bytes * 2;
     }
     return xgboost::common::Span<T>(static_cast<T *>(temp_storage), size);
   }

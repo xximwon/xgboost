@@ -13,11 +13,11 @@
 namespace xgboost::tree {
 struct GradientBasedSample {
   /*!\brief Number of sampled rows. */
-  std::size_t sample_rows;
+  bst_idx_t sample_rows;
   /*!\brief Sampled rows in ELLPACK format. */
-  EllpackPageImpl const* page;
+  DMatrix* p_fmat;
   /*!\brief Gradient pairs for the sampled rows. */
-  common::Span<GradientPair> gpair;
+  common::Span<GradientPair const> gpair;
 };
 
 class SamplingStrategy {
@@ -48,7 +48,6 @@ class ExternalMemoryNoSampling : public SamplingStrategy {
 
  private:
   BatchParam batch_param_;
-  std::unique_ptr<EllpackPageImpl> page_{nullptr};
   bool page_concatenated_{false};
 };
 
@@ -74,7 +73,7 @@ class ExternalMemoryUniformSampling : public SamplingStrategy {
  private:
   BatchParam batch_param_;
   float subsample_;
-  std::unique_ptr<EllpackPageImpl> page_;
+  std::unique_ptr<DMatrix> p_fmat_new_{nullptr};
   dh::device_vector<GradientPair> gpair_{};
   dh::caching_device_vector<size_t> sample_row_index_;
 };
@@ -105,7 +104,7 @@ class ExternalMemoryGradientBasedSampling : public SamplingStrategy {
   float subsample_;
   dh::device_vector<float> threshold_;
   dh::device_vector<float> grad_sum_;
-  std::unique_ptr<EllpackPageImpl> page_;
+  std::unique_ptr<DMatrix> p_fmat_new_{nullptr};
   dh::device_vector<GradientPair> gpair_;
   dh::device_vector<size_t> sample_row_index_;
 };

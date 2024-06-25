@@ -11,6 +11,7 @@
 #include <cstdint>    // for int32_t, uint32_t
 #include <vector>     // for vector
 
+#include "../../common/cuda_pinned_allocator.h"
 #include "../../common/device_helpers.cuh"  // for MakeTransformIterator
 #include "xgboost/base.h"                   // for bst_idx_t
 #include "xgboost/context.h"                // for Context
@@ -200,11 +201,11 @@ XGBOOST_DEV_INLINE int GetPositionFromSegments(std::size_t idx,
 
 template <int kBlockSize, typename RowIndexT, typename OpT>
 __global__ __launch_bounds__(kBlockSize) void FinalisePositionKernel(
-    const common::Span<const NodePositionInfo> d_node_info,
+    const common::Span<const NodePositionInfo> d_node_info, bst_idx_t base_ridx,
     const common::Span<const RowIndexT> d_ridx, common::Span<bst_node_t> d_out_position, OpT op) {
   for (auto idx : dh::GridStrideRange<std::size_t>(0, d_ridx.size())) {
     auto position = GetPositionFromSegments(idx, d_node_info.data());
-    RowIndexT ridx = d_ridx[idx];
+    RowIndexT ridx = d_ridx[idx] - base_ridx;
     bst_node_t new_position = op(ridx, position);
     d_out_position[ridx] = new_position;
   }
@@ -239,9 +240,9 @@ class RowPartitioner {
   // Staging area for sorting ridx
   dh::DeviceUVector<RowIndexT> ridx_tmp_;
   dh::DeviceUVector<int8_t> tmp_;
-  dh::PinnedMemory pinned_;
-  dh::PinnedMemory pinned2_;
   bst_node_t n_nodes_{0};  // Counter for internal checks.
+  common::cuda_impl::GrowOnlyPinnedVector<false> pinned_;
+  common::cuda_impl::GrowOnlyPinnedVector<true> pinned2_;
 
  public:
   /**
@@ -264,7 +265,12 @@ class RowPartitioner {
   /**
    * \brief Gets all training rows in the set.
    */
-  common::Span<const RowIndexT> GetRows();
+  common::Span<const RowIndexT> GetRows() const;
+  /**
+   * @brief Get the number of rows in this partitioner.
+   */
+  std::size_t Size() const { return this->GetRows().size(); }
+
   [[nodiscard]] bst_node_t GetNumNodes() const { return n_nodes_; }
 
   /**
@@ -294,6 +300,8 @@ class RowPartitioner {
     if (nidx.empty()) {
       return;
     }
+    dh::DeviceUVector<cuda_impl::RowIndexT> d_counts;
+    d_counts.resize(nidx.size(), 0u);
 
     CHECK_EQ(nidx.size(), left_nidx.size());
     CHECK_EQ(nidx.size(), right_nidx.size());
@@ -301,26 +309,28 @@ class RowPartitioner {
     this->n_nodes_ += (left_nidx.size() + right_nidx.size());
 
     auto h_batch_info = pinned2_.GetSpan<PerNodeData<OpDataT>>(nidx.size());
-    dh::TemporaryArray<PerNodeData<OpDataT>> d_batch_info(nidx.size());
 
-    std::size_t total_rows = 0;
+    bst_idx_t total_rows = 0;
     for (size_t i = 0; i < nidx.size(); i++) {
       h_batch_info[i] = {ridx_segments_.at(nidx.at(i)).segment, op_data.at(i)};
       total_rows += ridx_segments_.at(nidx.at(i)).segment.Size();
     }
-    dh::safe_cuda(cudaMemcpyAsync(d_batch_info.data().get(), h_batch_info.data(),
-                                  h_batch_info.size() * sizeof(PerNodeData<OpDataT>),
-                                  cudaMemcpyDefault));
+    dh::safe_cuda(cudaMemAdvise(h_batch_info.data(), h_batch_info.size_bytes(),
+                                cudaMemAdviseSetAccessedBy, 0));
+    dh::safe_cuda(cudaMemAdvise(h_batch_info.data(), h_batch_info.size_bytes(),
+                                cudaMemAdviseSetReadMostly, 0));
+    // dh::safe_cuda(cudaMemcpyAsync(d_batch_info.data().get(), h_batch_info.data(),
+    //                               h_batch_info.size() * sizeof(PerNodeData<OpDataT>),
+    //                               cudaMemcpyDefault));
 
     // Temporary arrays
-    auto h_counts = pinned_.GetSpan<RowIndexT>(nidx.size(), 0);
-    dh::TemporaryArray<RowIndexT> d_counts(nidx.size(), 0);
+    auto h_counts = pinned_.GetSpan<bst_uint>(nidx.size());
 
     // Partition the rows according to the operator
-    SortPositionBatch<UpdatePositionOpT, OpDataT>(dh::ToSpan(d_batch_info), dh::ToSpan(ridx_),
+    SortPositionBatch<UpdatePositionOpT, OpDataT>(h_batch_info, dh::ToSpan(ridx_),
                                                   dh::ToSpan(ridx_tmp_), dh::ToSpan(d_counts),
                                                   total_rows, op, &tmp_);
-    dh::safe_cuda(cudaMemcpyAsync(h_counts.data(), d_counts.data().get(), h_counts.size_bytes(),
+    dh::safe_cuda(cudaMemcpyAsync(h_counts.data(), d_counts.data(), h_counts.size_bytes(),
                                   cudaMemcpyDefault));
     // TODO(Rory): this synchronisation hurts performance a lot
     // Future optimisation should find a way to skip this
@@ -351,7 +361,8 @@ class RowPartitioner {
    *           argument and return the new position for this training instance.
    */
   template <typename FinalisePositionOpT>
-  void FinalisePosition(common::Span<bst_node_t> d_out_position, FinalisePositionOpT op) const {
+  void FinalisePosition(common::Span<bst_node_t> d_out_position, bst_idx_t base_ridx,
+                        FinalisePositionOpT op) const {
     dh::TemporaryArray<NodePositionInfo> d_node_info_storage(ridx_segments_.size());
     dh::safe_cuda(cudaMemcpyAsync(d_node_info_storage.data().get(), ridx_segments_.data(),
                                   sizeof(NodePositionInfo) * ridx_segments_.size(),
@@ -361,8 +372,8 @@ class RowPartitioner {
     const int kItemsThread = 8;
     const int grid_size = xgboost::common::DivRoundUp(ridx_.size(), kBlockSize * kItemsThread);
     common::Span<RowIndexT const> d_ridx{ridx_.data(), ridx_.size()};
-    FinalisePositionKernel<kBlockSize>
-        <<<grid_size, kBlockSize, 0>>>(dh::ToSpan(d_node_info_storage), d_ridx, d_out_position, op);
+    FinalisePositionKernel<kBlockSize><<<grid_size, kBlockSize, 0>>>(
+        dh::ToSpan(d_node_info_storage), base_ridx, d_ridx, d_out_position, op);
   }
 };
 };  // namespace xgboost::tree

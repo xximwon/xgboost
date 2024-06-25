@@ -387,11 +387,6 @@ void CopyTo(Src const &src, Dst *dst) {
                                 src.size() * sizeof(SVT), cudaMemcpyDefault));
 }
 
-template <class HContainer, class DContainer>
-void CopyToD(HContainer const &h, DContainer *d) {
-  CopyTo(h, d);
-}
-
 // Keep track of pinned memory allocation
 struct PinnedMemory {
   void *temp_storage{nullptr};
@@ -404,8 +399,8 @@ struct PinnedMemory {
     size_t num_bytes = size * sizeof(T);
     if (num_bytes > temp_storage_bytes) {
       Free();
-      safe_cuda(cudaMallocHost(&temp_storage, num_bytes));
-      temp_storage_bytes = num_bytes;
+      safe_cuda(cudaMallocHost(&temp_storage, num_bytes * 2));
+      temp_storage_bytes = num_bytes * 2;
     }
     return xgboost::common::Span<T>(static_cast<T *>(temp_storage), size);
   }
@@ -505,6 +500,11 @@ xgboost::common::Span<T> ToSpan(thrust::device_vector<T> &vec, size_t offset, si
 
 template <typename T>
 xgboost::common::Span<T> ToSpan(DeviceUVector<T> &vec) {
+  return {vec.data(), vec.size()};
+}
+
+template <typename T>
+xgboost::common::Span<std::add_const_t<T>> ToSpan(DeviceUVector<T> const &vec) {
   return {vec.data(), vec.size()};
 }
 

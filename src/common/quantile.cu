@@ -182,7 +182,8 @@ common::Span<thrust::tuple<uint64_t, uint64_t>> MergePath(
       merge_path.data(), [=] XGBOOST_DEVICE(Tuple const &t) -> Tuple {
         auto ind = get_ind(t);  // == 0 if element is from x
         // x_counter, y_counter
-        return thrust::tuple<std::uint64_t, std::uint64_t>{!ind, ind};
+        return thrust::make_tuple(static_cast<std::uint64_t>(!ind),
+                                  static_cast<std::uint64_t>(ind));
       });
 
   // Compute the index for both x and y (which of the element in a and b are used in each
@@ -441,8 +442,10 @@ void SketchContainer::Prune(size_t to) {
   timer_.Stop(__func__);
 }
 
-void SketchContainer::Merge(Span<OffsetT const> d_that_columns_ptr,
-                            Span<SketchEntry const> that) {
+void SketchContainer::Merge(Span<OffsetT const> d_that_columns_ptr, Span<SketchEntry const> that) {
+  auto self = dh::ToSpan(this->Current());
+  std::cout << "merge:" << self.size_bytes() / 1024.0 / 1024.0
+            << " new:" << that.size_bytes() / 1024.0 / 1024.0 << "MB" << std::endl;
   dh::safe_cuda(cudaSetDevice(device_.ordinal));
   timer_.Start(__func__);
   if (this->Current().size() == 0) {
@@ -739,6 +742,7 @@ void SketchContainer::MakeCuts(Context const* ctx, HistogramCuts* p_cuts, bool i
   });
 
   p_cuts->SetCategorical(this->has_categorical_, max_cat);
+  p_cuts->SetTotalBins(p_cuts->cut_ptrs_.ConstHostVector().back());
   timer_.Stop(__func__);
 }
 }  // namespace xgboost::common

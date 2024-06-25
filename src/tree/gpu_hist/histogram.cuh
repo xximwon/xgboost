@@ -147,6 +147,15 @@ class DeviceHistogramStorage {
     CHECK_GE(data_.size(), nidx_map_.size() * HistogramSize());
   }
 
+  void AllocateHistograms(Context const* ctx, std::vector<bst_node_t> const& nodes_to_build,
+                          std::vector<bst_node_t> const& nodes_to_sub) {
+    std::vector<bst_node_t> all_new = nodes_to_build;
+    all_new.insert(all_new.end(), nodes_to_sub.cbegin(), nodes_to_sub.cend());
+    // Allocate the histograms
+    // Guaranteed contiguous memory
+    this->AllocateHistograms(ctx, all_new);
+  }
+
   /**
    * \summary   Return pointer to histogram memory for a given node.
    * \param nidx    Tree node index.

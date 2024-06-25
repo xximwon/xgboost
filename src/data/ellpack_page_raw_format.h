@@ -7,9 +7,9 @@
 #include <memory>   // for shared_ptr
 #include <utility>  // for move
 
-#include "../common/io.h"        // for AlignedResourceReadStream
-#include "sparse_page_writer.h"  // for SparsePageFormat
-#include "xgboost/data.h"        // for EllpackPage
+#include "../common/io.h"             // for AlignedResourceReadStream
+#include "sparse_page_writer.h"       // for SparsePageFormat
+#include "xgboost/data.h"             // for EllpackPage
 
 #if !defined(XGBOOST_USE_CUDA)
 #include "../common/common.h"  // for AssertGPUSupport

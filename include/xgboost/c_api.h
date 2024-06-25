@@ -503,6 +503,31 @@ XGB_DLL int XGQuantileDMatrixCreateFromCallback(DataIterHandle iter, DMatrixHand
                                                 XGDMatrixCallbackNext *next, char const *config,
                                                 DMatrixHandle *out);
 
+/**
+ * @brief Create a Quantile DMatrix backed by external memory.
+ *
+ * @note This is still under development.
+ *
+ * @param iter     A handle to external data iterator.
+ * @param proxy    A DMatrix proxy handle created by \ref XGProxyDMatrixCreate.
+ * @param ref      Reference DMatrix for providing quantile information.
+ * @param reset    Callback function resetting the iterator state.
+ * @param next     Callback function yielding the next batch of data.
+ * @param config   JSON encoded parameters for DMatrix construction.  Accepted fields are:
+ *   - missing:      Which value to represent missing value
+ *   - cache_prefix: The path of cache file, caller must initialize all the directories in this path.
+ *   - nthread (optional): Number of threads used for initializing DMatrix.
+ *   - max_bin (optional): Maximum number of bins for building histogram.
+ * @param out      The created Quantile DMatrix.
+ *
+ * @return 0 when success, -1 when failure happens
+ */
+XGB_DLL int XGExtMemQuantileDMatrixCreateFromCallback(DataIterHandle iter, DMatrixHandle proxy,
+                                                      DataIterHandle ref,
+                                                      DataIterResetCallback *reset,
+                                                      XGDMatrixCallbackNext *next,
+                                                      char const *config, DMatrixHandle *out);
+
 /*!
  * \brief Create a Device Quantile DMatrix with data iterator.
  * \deprecated since 1.7.0

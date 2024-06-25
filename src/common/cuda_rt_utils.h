@@ -25,7 +25,7 @@ void CheckComputeCapability();
 void SetDevice(std::int32_t device);
 
 struct NvtxDomain {
-  static constexpr char const *name{"libxgboost"};  // NOLINT
+  static constexpr char const* name{"libxgboost"};  // NOLINT
 };
 
 #if defined(XGBOOST_USE_NVTX)

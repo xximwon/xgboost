@@ -9,9 +9,12 @@
 #include <cuda_runtime.h>
 
 #include <cstddef>  // for size_t
-#include <limits>   // for numeric_limits
+#include <functional>
+#include <limits>  // for numeric_limits
 
 #include "common.h"
+#include "type.h"
+#include "xgboost/span.h"
 
 namespace xgboost::common::cuda_impl {
 // \p pinned_allocator is a CUDA-specific host memory allocator
@@ -146,4 +149,62 @@ using ManagedAllocator = CudaHostAllocatorImpl<T, ManagedAllocPolicy>;  // NOLIN
 
 template <typename T>
 using SamAllocator = CudaHostAllocatorImpl<T, SamAllocPolicy>;
+
+template <bool managed>
+class GrowOnlyPinnedVector {
+  using T = std::int8_t;
+
+ public:
+  using size_type = typename PinnedAllocator<T>::size_type;              // NOLINT
+  using pointer = typename PinnedAllocator<T>::pointer;                  // NOLINT
+  using const_pointer = typename PinnedAllocator<T>::const_pointer;      // NOLINT
+  using reference = typename PinnedAllocator<T>::reference;              // NOLINT
+  using const_reference = typename PinnedAllocator<T>::const_reference;  // NOLINT
+
+ private:
+  std::unique_ptr<T, std::function<void(T*)>> data_;
+  size_type capacity_{0};
+  size_type n_{0};
+
+ public:
+  GrowOnlyPinnedVector() { this->Resize(1024); }
+
+  void Resize(size_type n_bytes) {
+    if (n_bytes > capacity_) {
+      T* new_ptr{nullptr};
+      auto new_size = std::max(n_bytes * 2, capacity_ * 2);
+      if (managed) {
+        dh::safe_cuda(cudaMallocManaged(&new_ptr, new_size));
+      } else {
+        dh::safe_cuda(cudaMallocHost(&new_ptr, new_size));
+      }
+
+      auto old_ptr = data_.get();
+      dh::safe_cuda(cudaMemcpyAsync(new_ptr, old_ptr, n_, cudaMemcpyDefault));
+
+      data_ = decltype(data_){new_ptr, [](T* ptr) {
+                                if (managed) {
+                                  dh::safe_cuda(cudaFree(ptr));
+                                } else {
+                                  dh::safe_cuda(cudaFreeHost(ptr));
+                                }
+                              }};
+      capacity_ = new_size;
+    }
+    n_ = n_bytes;
+  }
+  [[nodiscard]] size_type Size() const { return n_; }
+  [[nodiscard]] const_pointer Data() const { return data_.get(); }
+  [[nodiscard]] pointer Data() { return data_.get(); }
+
+  reference operator[](size_type i) { return Data()[i]; }
+  const_reference operator[](size_type i) const { return Data()[i]; }
+
+  template <typename U>
+  [[nodiscard]] Span<U> GetSpan(size_type n) {
+    auto n_bytes = n * sizeof(U);
+    this->Resize(n_bytes);
+    return RestoreType<U>(Span{data_.get(), n_bytes});
+  }
+};
 }  // namespace xgboost::common::cuda_impl

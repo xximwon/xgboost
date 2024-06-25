@@ -53,6 +53,7 @@ class EllpackHostCacheStream {
   // Limit the size of read. offset_bytes is the maximum offset that this stream can read
   // to. An error is raised if the limited is exceeded.
   void Bound(bst_idx_t offset_bytes);
+  void Sync();
 };
 
 template <typename S>

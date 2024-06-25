@@ -405,8 +405,8 @@ struct PinnedMemory {
     size_t num_bytes = size * sizeof(T);
     if (num_bytes > temp_storage_bytes) {
       Free();
-      safe_cuda(cudaMallocHost(&temp_storage, num_bytes));
-      temp_storage_bytes = num_bytes;
+      safe_cuda(cudaMallocHost(&temp_storage, num_bytes * 2));
+      temp_storage_bytes = num_bytes * 2;
     }
     return xgboost::common::Span<T>(static_cast<T *>(temp_storage), size);
   }
@@ -499,7 +499,7 @@ xgboost::common::Span<T> ToSpan(
     IndexT size = std::numeric_limits<size_t>::max()) {
   size = size == std::numeric_limits<size_t>::max() ? vec.size() : size;
   CHECK_LE(offset + size, vec.size());
-  return {vec.data().get() + offset, size};
+  return {thrust::raw_pointer_cast(vec.data()) + offset, size};
 }
 
 template <typename T>
@@ -875,13 +875,7 @@ inline void CUDAEvent::Record(CUDAStreamView stream) {  // NOLINT
 
 // Changing this has effect on prediction return, where we need to pass the pointer to
 // third-party libraries like cuPy
-inline CUDAStreamView DefaultStream() {
-#ifdef CUDA_API_PER_THREAD_DEFAULT_STREAM
-  return CUDAStreamView{cudaStreamPerThread};
-#else
-  return CUDAStreamView{cudaStreamLegacy};
-#endif
-}
+inline CUDAStreamView DefaultStream() { return CUDAStreamView{cudaStreamPerThread}; }
 
 class CUDAStream {
   cudaStream_t stream_;

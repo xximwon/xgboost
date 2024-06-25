@@ -18,11 +18,17 @@
 
 namespace xgboost::data {
 struct EllpackHostCache {
-  thrust::host_vector<std::int8_t, common::cuda::pinned_allocator<std::int8_t>> cache;
+  dh::CUDAStreamView stream = dh::DefaultStream();
+  std::vector<std::int8_t, common::cuda::managed_allocator<std::int8_t>> cache;
 
-  void Resize(std::size_t n, dh::CUDAStreamView stream) {
+  void Resize(std::size_t n) {
+    auto nvtxid = nvtxRangeStartA("Resize::sync");
     stream.Sync();  // Prevent partial copy inside resize.
+    nvtxRangeEnd(nvtxid);
+
+    nvtxid = nvtxRangeStartA("Resize::resize");
     cache.resize(n);
+    nvtxRangeEnd(nvtxid);
   }
 };
 
@@ -38,10 +44,16 @@ class EllpackHostCacheStreamImpl {
   [[nodiscard]] bst_idx_t Write(void const* ptr, bst_idx_t n_bytes) {
     auto n = cur_ptr_ + n_bytes;
     if (n > cache_->cache.size()) {
-      cache_->Resize(n, dh::DefaultStream());
+      auto rs_nvtx = nvtxRangeStartA("resize");
+      cache_->Resize(n);
+      nvtxRangeEnd(rs_nvtx);
     }
+
+    auto cpy_nvtx = nvtxRangeStartA("memcpy");
     dh::safe_cuda(cudaMemcpyAsync(cache_->cache.data() + cur_ptr_, ptr, n_bytes, cudaMemcpyDefault,
-                                  dh::DefaultStream()));
+                                  cache_->stream));
+    nvtxRangeEnd(cpy_nvtx);
+
     cur_ptr_ = n;
     return n_bytes;
   }
@@ -49,7 +61,7 @@ class EllpackHostCacheStreamImpl {
   [[nodiscard]] bool Read(void* ptr, bst_idx_t n_bytes) {
     CHECK_LE(cur_ptr_ + n_bytes, bound_);
     dh::safe_cuda(cudaMemcpyAsync(ptr, cache_->cache.data() + cur_ptr_, n_bytes, cudaMemcpyDefault,
-                                  dh::DefaultStream()));
+                                  cache_->stream));
     cur_ptr_ += n_bytes;
     return true;
   }
@@ -60,6 +72,7 @@ class EllpackHostCacheStreamImpl {
     CHECK_LE(offset_bytes, cache_->cache.size());
     this->bound_ = offset_bytes;
   }
+  void Sync() { this->cache_->stream.Sync(); }
 };
 
 /**
@@ -84,6 +97,8 @@ EllpackHostCacheStream::~EllpackHostCacheStream() = default;
 void EllpackHostCacheStream::Seek(bst_idx_t offset_bytes) { this->p_impl_->Seek(offset_bytes); }
 
 void EllpackHostCacheStream::Bound(bst_idx_t offset_bytes) { this->p_impl_->Bound(offset_bytes); }
+
+void EllpackHostCacheStream::Sync() { this->p_impl_->Sync(); }
 
 /**
  * EllpackFormatType
@@ -134,6 +149,7 @@ EllpackFormatStreamPolicy<EllpackPage, EllpackFormatPolicy>::CreateReader(
  */
 template <typename F>
 void EllpackPageSourceImpl<F>::Fetch() {
+  nvtxMark(__func__);
   dh::safe_cuda(cudaSetDevice(this->Device().ordinal));
   if (!this->ReadCache()) {
     if (this->count_ != 0 && !this->sync_) {

@@ -153,6 +153,5 @@ TEST(GradientBasedSampler, GradientBasedSamplingExternalMemory) {
   constexpr bool kFixedSizeSampling = false;
   VerifySampling(kPageSize, kSubsample, kSamplingMethod, kFixedSizeSampling);
 }
-
 };  // namespace tree
 };  // namespace xgboost

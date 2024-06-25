@@ -34,17 +34,14 @@ void Monitor::Stop(const std::string &name) {
   }
 }
 
-void Monitor::PrintStatistics(StatMap const& statistics) const {
+void Monitor::PrintStatistics(StatMap const &statistics) const {
   for (auto &kv : statistics) {
     if (kv.second.first == 0) {
-      LOG(WARNING) <<
-          "Timer for " << kv.first << " did not get stopped properly.";
+      LOG(WARNING) << "Timer for " << kv.first << " did not get stopped properly.";
       continue;
     }
-    LOG(CONSOLE) << kv.first << ": " << static_cast<double>(kv.second.second) / 1e+6
-                 << "s, " << kv.second.first << " calls @ "
-                 << kv.second.second
-                 << "us" << std::endl;
+    LOG(CONSOLE) << kv.first << ": " << static_cast<double>(kv.second.second) / 1e+6 << "s, "
+                 << kv.second.first << " calls @ " << kv.second.second << "us" << std::endl;
   }
 }
 

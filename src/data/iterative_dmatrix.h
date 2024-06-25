@@ -1,5 +1,5 @@
 /**
- * Copyright 2020-2023 by XGBoost Contributors
+ * Copyright 2020-2024, XGBoost Contributors
  * \file iterative_dmatrix.h
  *
  * \brief Implementation of the higher-level `QuantileDMatrix`.
@@ -8,13 +8,8 @@
 #define XGBOOST_DATA_ITERATIVE_DMATRIX_H_
 
 #include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 #include "../common/error_msg.h"
-#include "proxy_dmatrix.h"
-#include "simple_batch_iterator.h"
 #include "xgboost/base.h"
 #include "xgboost/c_api.h"
 #include "xgboost/context.h"  // for Context
@@ -106,8 +101,6 @@ class IterativeDMatrix : public DMatrix {
 
   BatchSet<EllpackPage> GetEllpackBatches(Context const *ctx, const BatchParam &param) override;
   BatchSet<ExtSparsePage> GetExtBatches(Context const *ctx, BatchParam const &param) override;
-
-  bool SingleColBlock() const override { return true; }
 
   MetaInfo &Info() override { return info_; }
   MetaInfo const &Info() const override { return info_; }

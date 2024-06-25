@@ -60,7 +60,7 @@ struct EllpackDeviceAccessor {
   }
   // Get a matrix element, uses binary search for look up Return NaN if missing
   // Given a row index and a feature index, returns the corresponding cut value
-  [[nodiscard]] __device__ int32_t GetBinIndex(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ bst_bin_t GetBinIndex(bst_idx_t ridx, size_t fidx) const {
     ridx -= base_rowid;
     auto row_begin = row_stride * ridx;
     auto row_end = row_begin + row_stride;
@@ -100,10 +100,10 @@ struct EllpackDeviceAccessor {
     return idx;
   }
 
-  [[nodiscard]] __device__ bst_float GetFvalue(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ float GetFvalue(bst_idx_t ridx, size_t fidx) const {
     auto gidx = GetBinIndex(ridx, fidx);
     if (gidx == -1) {
-      return nan("");
+      return std::numeric_limits<float>::quiet_NaN();
     }
     return gidx_fvalue_map[gidx];
   }

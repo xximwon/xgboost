@@ -3,10 +3,10 @@
  */
 #include "sparse_page_source.h"
 
-#include <filesystem>  // for exists
-#include <string>      // for string
 #include <cstdio>      // for remove
+#include <filesystem>  // for exists
 #include <numeric>     // for partial_sum
+#include <string>      // for string
 
 namespace xgboost::data {
 void Cache::Commit() {

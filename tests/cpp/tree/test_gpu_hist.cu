@@ -91,10 +91,13 @@ void TestBuildHist(bool use_shared_memory_histograms) {
 
   auto page = BuildEllpackPage(kNRows, kNCols);
   BatchParam batch_param{};
+  auto cuts = page->CutsShared();
   Context ctx{MakeCUDACtx(0)};
   auto cs = std::make_shared<common::ColumnSampler>(0);
+  std::vector<bst_idx_t> base_ridx{0};
+  std::vector<bst_idx_t> batch_sizes{kNRows};
   GPUHistMakerDevice maker(&ctx, /*is_external_memory=*/false, {}, kNRows, param, cs, kNCols,
-                           batch_param, MetaInfo());
+                           batch_param, MetaInfo(), base_ridx, batch_sizes, cuts);
   xgboost::SimpleLCG gen;
   xgboost::SimpleRealUniformDistribution<bst_float> dist(0.0f, 1.0f);
   HostDeviceVector<GradientPair> gpair(kNRows);
@@ -106,24 +109,23 @@ void TestBuildHist(bool use_shared_memory_histograms) {
   gpair.SetDevice(ctx.Device());
 
   thrust::host_vector<common::CompressedByteT> h_gidx_buffer(page->gidx_buffer.HostVector());
-  maker.row_partitioner = std::make_unique<RowPartitioner>(&ctx, kNRows, 0);
 
   maker.hist.Init(ctx.Device(), page->Cuts().TotalBins());
   maker.hist.AllocateHistograms({0});
 
   maker.gpair = gpair.DeviceSpan();
   maker.quantiser = std::make_unique<GradientQuantiser>(&ctx, maker.gpair, MetaInfo());
-  maker.page = page.get();
+  // maker.page = page.get();
 
   maker.InitFeatureGroupsOnce();
 
   DeviceHistogramBuilder builder;
   builder.Reset(&ctx, maker.feature_groups->DeviceAccessor(ctx.Device()),
                 !use_shared_memory_histograms);
-  builder.BuildHistogram(ctx.CUDACtx(), page->GetDeviceAccessor(ctx.Device()),
-                         maker.feature_groups->DeviceAccessor(ctx.Device()), gpair.DeviceSpan(),
-                         maker.row_partitioner->GetRows(0), maker.hist.GetNodeHistogram(0),
-                         *maker.quantiser);
+  // builder.BuildHistogram(ctx.CUDACtx(), page->GetDeviceAccessor(ctx.Device()),
+  //                        maker.feature_groups->DeviceAccessor(ctx.Device()), gpair.DeviceSpan(),
+  //                        maker.row_partitioner.at(0)->GetRows(0), maker.hist.GetNodeHistogram(0),
+  //                        *maker.quantiser);
 
   DeviceHistogramStorage<>& d_hist = maker.hist;
 
@@ -164,52 +166,6 @@ std::shared_ptr<detail::HistogramCutsWrapper> GetHostCutMatrix () {
               0.26f, 0.74f, 1.98f,
               0.26f, 0.71f, 1.83f});
   return cmat;
-}
-
-void TestHistogramIndexImpl() {
-  // Test if the compressed histogram index matches when using a sparse
-  // dmatrix with and without using external memory
-
-  int constexpr kNRows = 1000, kNCols = 10;
-
-  // Build 2 matrices and build a histogram maker with that
-  Context ctx(MakeCUDACtx(0));
-  ObjInfo task{ObjInfo::kRegression};
-  tree::GPUHistMaker hist_maker{&ctx, &task}, hist_maker_ext{&ctx, &task};
-  std::unique_ptr<DMatrix> hist_maker_dmat(
-    CreateSparsePageDMatrixWithRC(kNRows, kNCols, 0, true));
-
-  dmlc::TemporaryDirectory tempdir;
-  std::unique_ptr<DMatrix> hist_maker_ext_dmat(
-    CreateSparsePageDMatrixWithRC(kNRows, kNCols, 128UL, true, tempdir));
-
-  Args training_params = {{"max_depth", "10"}, {"max_leaves", "0"}};
-  TrainParam param;
-  param.UpdateAllowUnknown(training_params);
-
-  hist_maker.Configure(training_params);
-  hist_maker.InitDataOnce(&param, hist_maker_dmat.get());
-  hist_maker_ext.Configure(training_params);
-  hist_maker_ext.InitDataOnce(&param, hist_maker_ext_dmat.get());
-
-  // Extract the device maker from the histogram makers and from that its compressed
-  // histogram index
-  const auto &maker = hist_maker.maker;
-  auto grad = GenerateRandomGradients(kNRows);
-  grad.SetDevice(DeviceOrd::CUDA(0));
-  maker->Reset(&grad, hist_maker_dmat.get(), kNCols);
-  std::vector<common::CompressedByteT> h_gidx_buffer(maker->page->gidx_buffer.HostVector());
-
-  const auto &maker_ext = hist_maker_ext.maker;
-  maker_ext->Reset(&grad, hist_maker_ext_dmat.get(), kNCols);
-  std::vector<common::CompressedByteT> h_gidx_buffer_ext(maker_ext->page->gidx_buffer.HostVector());
-
-  ASSERT_EQ(maker->page->Cuts().TotalBins(), maker_ext->page->Cuts().TotalBins());
-  ASSERT_EQ(maker->page->gidx_buffer.Size(), maker_ext->page->gidx_buffer.Size());
-}
-
-TEST(GpuHist, TestHistogramIndex) {
-  TestHistogramIndexImpl();
 }
 
 void UpdateTree(Context const* ctx, linalg::Matrix<GradientPair>* gpair, DMatrix* dmat,

@@ -1,5 +1,5 @@
 /**
- * Copyright 2022-2023, XGBoost contributors
+ * Copyright 2022-2024, XGBoost contributors
  */
 #include "iterative_dmatrix.h"
 
@@ -7,6 +7,7 @@
 #include <cstddef>      // for size_t
 #include <memory>       // for shared_ptr
 #include <type_traits>  // for underlying_type_t
+#include <utility>      // for move
 #include <vector>       // for vector
 
 #include "../collective/allreduce.h"         // for Allreduce
@@ -17,6 +18,7 @@
 #include "batch_utils.h"    // for RegenGHist
 #include "gradient_index.h"
 #include "proxy_dmatrix.h"
+#include "simple_batch_iterator.h"  // for SimpleBatchIteratorImpl
 #include "simple_batch_iterator.h"
 #include "xgboost/data.h"  // for FeatureType, DMatrix
 #include "xgboost/logging.h"

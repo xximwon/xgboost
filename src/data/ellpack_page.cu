@@ -358,7 +358,6 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, GHistIndexMatrix const& pag
     : is_dense{page.IsDense()},
       base_rowid{page.base_rowid},
       n_rows{page.Size()},
-      // This makes a copy of the cut values.
       cuts_{std::make_shared<common::HistogramCuts>(page.cut)} {
   auto it = common::MakeIndexTransformIter(
       [&](size_t i) { return page.row_ptr[i + 1] - page.row_ptr[i]; });
@@ -470,7 +469,7 @@ void EllpackPageImpl::Compact(Context const* ctx, EllpackPageImpl const* page,
   gidx_buffer.SetDevice(ctx->Device());
   page->gidx_buffer.SetDevice(ctx->Device());
   auto cuctx = ctx->CUDACtx();
-  dh::LaunchN(page->n_rows, cuctx->Stream(), CompactPage(this, page, row_indexes));
+  dh::LaunchN(page->n_rows, cuctx->Stream(), CompactPage{this, page, row_indexes});
   monitor_.Stop(__func__);
 }
 

@@ -14,6 +14,7 @@
 #include <string>     // for string
 #include <utility>    // for pair, move
 #include <vector>     // for vector
+#include <nvtx3/nvToolsExt.h>
 
 #if !defined(XGBOOST_USE_CUDA)
 #include "../common/common.h"  // for AssertGPUSupport
@@ -226,7 +227,7 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
     }
     // An heuristic for number of pre-fetched batches.  We can make it part of BatchParam
     // to let user adjust number of pre-fetched batches when needed.
-    std::int32_t kPrefetches = 3;
+    std::int32_t kPrefetches = 1;
     std::int32_t n_prefetches = std::min(nthreads_, kPrefetches);
     n_prefetches = std::max(n_prefetches, 1);
     std::int32_t n_prefetch_batches = std::min(static_cast<bst_idx_t>(n_prefetches), n_batches_);
@@ -261,11 +262,11 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
              n_prefetch_batches)
         << "Sparse DMatrix assumes forward iteration.";
 
-    monitor_.Start("Wait");
+    // monitor_.Start("Wait");
     CHECK((*ring_)[count_].valid());
     page_ = (*ring_)[count_].get();
     CHECK(!(*ring_)[count_].valid());
-    monitor_.Stop("Wait");
+    // monitor_.Stop("Wait");
 
     exce_.Rethrow();
 

@@ -14,12 +14,18 @@ See :doc:`the tutorial </tutorials/external_memory>` for more details.
 
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, List, Tuple
 
 import numpy as np
-from sklearn.datasets import make_regression
-
 import xgboost
+from sklearn.datasets import make_regression
+from xgboost.compat import concat
+
+import rmm
+
+
+rmm.reinitialize(pool_allocator=True)
 
 
 def make_batches(
@@ -29,31 +35,53 @@ def make_batches(
     tmpdir: str,
 ) -> List[Tuple[str, str]]:
     files: List[Tuple[str, str]] = []
-    rng = np.random.RandomState(1994)
-    for i in range(n_batches):
-        X, y = make_regression(n_samples_per_batch, n_features, random_state=rng)
+    n_workers = min(n_batches, 36)
+    futures = []
+
+    # for i in range(n_batches):
+    #     X_path = os.path.join(tmpdir, "X-" + str(i) + ".npy")
+    #     y_path = os.path.join(tmpdir, "y-" + str(i) + ".npy")
+    #     files.append((X_path, y_path))
+    # return files
+
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        for i in range(n_batches):
+            fut = executor.submit(
+                make_regression,
+                n_samples=n_samples_per_batch,
+                n_features=n_features,
+                random_state=i,
+            )
+            futures.append(fut)
+
+    for i, f in enumerate(futures):
+        X, y = f.result()
         X_path = os.path.join(tmpdir, "X-" + str(i) + ".npy")
         y_path = os.path.join(tmpdir, "y-" + str(i) + ".npy")
+        print(f"Save to X_path: {X_path}", flush=True)
         np.save(X_path, X)
         np.save(y_path, y)
         files.append((X_path, y_path))
+
     return files
 
 
 class Iterator(xgboost.DataIter):
     """A custom iterator for loading files in batches."""
 
-    def __init__(self, file_paths: List[Tuple[str, str]]) -> None:
+    def __init__(self, file_paths: List[Tuple[str, str]], on_host: bool) -> None:
         self._file_paths = file_paths
         self._it = 0
         # XGBoost will generate some cache files under current directory with the prefix
         # "cache"
-        super().__init__(cache_prefix=os.path.join(".", "cache"))
+        super().__init__(cache_prefix="cache", on_host=on_host)
 
     def load_file(self) -> Tuple[np.ndarray, np.ndarray]:
         X_path, y_path = self._file_paths[self._it]
-        X = np.load(X_path)
-        y = np.load(y_path)
+        # X = np.load(X_path)
+        # y = np.load(y_path)
+        X = np.lib.format.open_memmap(filename=X_path, mode="r")
+        y = np.lib.format.open_memmap(filename=y_path, mode="r")
         assert X.shape[0] == y.shape[0]
         return X, y
 
@@ -62,6 +90,7 @@ class Iterator(xgboost.DataIter):
         called by XGBoost during the construction of ``DMatrix``
 
         """
+        print("Next", flush=True)
         if self._it == len(self._file_paths):
             # return 0 to let XGBoost know this is the end of iteration
             return 0
@@ -80,8 +109,8 @@ class Iterator(xgboost.DataIter):
 
 def main(tmpdir: str) -> xgboost.Booster:
     # generate some random data for demo
-    files = make_batches(1024, 17, 31, tmpdir)
-    it = Iterator(files)
+    files = make_batches(2 ** 22, 242, 16, tmpdir)
+    it = Iterator(files, on_host=True)
     # For non-data arguments, specify it here once instead of passing them by the `next`
     # method.
     missing = np.nan
@@ -91,14 +120,17 @@ def main(tmpdir: str) -> xgboost.Booster:
     # differently than CPU tree methods as it uses a hybrid approach. See tutorial in
     # doc for details.
     booster = xgboost.train(
-        {"tree_method": "hist", "max_depth": 4},
+        {"tree_method": "hist", "max_depth": 3, "device": "cuda"},
         Xy,
-        evals=[(Xy, "Train")],
+        # evals=[(Xy, "Train")],
         num_boost_round=10,
     )
     return booster
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as tmpdir:
-        main(tmpdir)
+    data_dir = "./data"
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+    with xgboost.config_context(verbosity=3, use_rmm=True):
+        main(data_dir)

@@ -30,6 +30,12 @@ SparsePageDMatrix::SparsePageDMatrix(DataIterHandle iter_handle, DMatrixHandle p
   Context ctx;
   ctx.nthread = nthreads;
 
+  cuda_prefetch_config_ = common::CudaPrefetchConfig{.read_mostly = false,
+                                                     .preferred = false,
+                                                     .accessed_by = false,
+                                                     .prefetch = false,
+                                                     .copy = true};
+
   cache_prefix_ = cache_prefix_.empty() ? "DMatrix" : cache_prefix_;
   if (collective::IsDistributed()) {
     cache_prefix_ += ("-r" + std::to_string(collective::GetRank()));

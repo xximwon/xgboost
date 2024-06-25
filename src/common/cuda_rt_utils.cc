@@ -82,5 +82,7 @@ void SetDevice(std::int32_t device) {
     AssertGPUSupport();
   }
 }
+
+void CudaPrefetch(CudaPrefetchConfig const &, void *, std::size_t) { AssertGPUSupport(); }
 #endif  // !defined(XGBOOST_USE_CUDA)
 }  // namespace xgboost::common

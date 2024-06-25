@@ -25,7 +25,7 @@ void CheckComputeCapability();
 void SetDevice(std::int32_t device);
 
 struct NvtxDomain {
-  static constexpr char const *name{"libxgboost"};  // NOLINT
+  static constexpr char const* name{"libxgboost"};  // NOLINT
 };
 
 #if defined(XGBOOST_USE_NVTX)
@@ -49,6 +49,19 @@ class NvtxRgb {
   explicit NvtxRgb(Args &&...) {}
 };
 #endif  // defined(XGBOOST_USE_NVTX)
+
+struct CudaPrefetchConfig {
+  bool read_mostly{false};
+  bool preferred{false};
+  bool accessed_by{false};
+  bool prefetch{false};
+  bool copy{false};
+};
+
+/**
+ * @brief Helper for performing CUDA mem advice and prefetch.
+ */
+void CudaPrefetch(CudaPrefetchConfig const& config, void* ptr, std::size_t n_bytes);
 }  // namespace xgboost::common
 
 #if defined(XGBOOST_USE_NVTX)

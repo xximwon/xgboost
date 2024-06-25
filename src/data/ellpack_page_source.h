@@ -21,11 +21,33 @@
 #include "xgboost/span.h"             // for Span
 
 namespace xgboost::data {
-// We need to decouple the storage and the view of the storage so that we can implement
-// concurrent read.
+enum class EllpackCacheType : std::int8_t {
+  kSam = 0,
+  kPinned = 1,
+  kManaged = 2,
+};
 
-// Dummy type to hide CUDA calls from the host compiler.
-struct EllpackHostCache;
+// We need to decouple the storage and the view of the storage so that we can implement
+// concurrent read. As a result, there are two classes, one for cache storage, another one
+// for stream.
+
+// Pimpl type to hide CUDA calls from the host compiler.
+struct EllpackHostCacheImpl;
+
+struct EllpackHostCache : public common::ResourceHandler {
+  std::unique_ptr<EllpackHostCacheImpl> p_impl;
+
+  explicit EllpackHostCache(EllpackCacheType type);
+  ~EllpackHostCache() override;
+
+  [[nodiscard]] std::size_t Size() const override;
+  [[nodiscard]] void* Data() override;
+
+  bool Empty() const { return this->Size() == 0; }
+
+  void Resize(std::size_t n_bytes);
+};
+
 // Pimpl to hide CUDA calls from the host compiler.
 class EllpackHostCacheStreamImpl;
 
@@ -37,6 +59,8 @@ class EllpackHostCacheStream {
   explicit EllpackHostCacheStream(std::shared_ptr<EllpackHostCache> cache);
   ~EllpackHostCacheStream();
 
+  std::shared_ptr<EllpackHostCache> Share();
+
   [[nodiscard]] bst_idx_t Write(void const* ptr, bst_idx_t n_bytes);
   template <typename T>
   [[nodiscard]] std::enable_if_t<std::is_pod_v<T>, bst_idx_t> Write(T const& v) {
@@ -44,6 +68,7 @@ class EllpackHostCacheStream {
   }
 
   [[nodiscard]] bool Read(void* ptr, bst_idx_t n_bytes);
+  [[nodiscard]] void* Consume(bst_idx_t n_bytes);
 
   template <typename T>
   [[nodiscard]] auto Read(T* ptr) -> std::enable_if_t<std::is_pod_v<T>, bool> {
@@ -55,6 +80,7 @@ class EllpackHostCacheStream {
   // Limit the size of read. offset_bytes is the maximum offset that this stream can read
   // to. An error is raised if the limited is exceeded.
   void Bound(bst_idx_t offset_bytes);
+  void Sync();
 };
 
 template <typename S>
@@ -62,6 +88,7 @@ class EllpackFormatPolicy {
   std::shared_ptr<common::HistogramCuts const> cuts_{nullptr};
   DeviceOrd device_;
   bool has_hmm_{common::SupportsPageableMem()};
+  common::CudaPrefetchConfig config_;
 
  public:
   using FormatT = EllpackPageRawFormat;
@@ -73,7 +100,7 @@ class EllpackFormatPolicy {
 
   [[nodiscard]] auto CreatePageFormat() const {
     CHECK_EQ(cuts_->cut_values_.Device(), device_);
-    std::unique_ptr<FormatT> fmt{new EllpackPageRawFormat{cuts_, device_, has_hmm_}};
+    std::unique_ptr<FormatT> fmt{new EllpackPageRawFormat{cuts_, device_, has_hmm_, config_}};
     return fmt;
   }
 
@@ -86,6 +113,8 @@ class EllpackFormatPolicy {
     CHECK(cuts_);
     return cuts_;
   }
+  void SetPrefetchConfig(common::CudaPrefetchConfig const& config) { config_ = config; }
+
   [[nodiscard]] auto Device() const { return device_; }
 };
 
@@ -147,7 +176,8 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
                         std::size_t n_batches, std::shared_ptr<Cache> cache, BatchParam param,
                         std::shared_ptr<common::HistogramCuts> cuts, bool is_dense,
                         bst_idx_t row_stride, common::Span<FeatureType const> feature_types,
-                        std::shared_ptr<SparsePageSource> source, DeviceOrd device)
+                        std::shared_ptr<SparsePageSource> source, DeviceOrd device,
+                        common::CudaPrefetchConfig const& config)
       : Super{missing, nthreads, n_features, n_batches, cache, false},
         is_dense_{is_dense},
         row_stride_{row_stride},
@@ -156,6 +186,7 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
     this->source_ = source;
     cuts->SetDevice(device);
     this->SetCuts(std::move(cuts), device);
+    this->SetPrefetchConfig(config);
     this->Fetch();
   }
 

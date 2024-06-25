@@ -13,6 +13,7 @@
 #include <string>   // for string
 #include <variant>  // for variant, visit
 
+#include "../common/cuda_rt_utils.h"     // for CudaPrefetchConfig
 #include "ellpack_page_source.h"         // for EllpackPageSource, EllpackPageHostSource
 #include "gradient_index_page_source.h"  // for GradientIndexPageSource
 #include "sparse_page_source.h"          // for SparsePageSource, Cache
@@ -73,6 +74,7 @@ class SparsePageDMatrix : public DMatrix {
   float missing_;
   Context fmat_ctx_;
   std::string cache_prefix_;
+  common::CudaPrefetchConfig cuda_prefetch_config_;
   bool on_host_{false};
   std::uint32_t n_batches_{0};
   // sparse page is the source to other page types, we make a special member function.
@@ -91,7 +93,7 @@ class SparsePageDMatrix : public DMatrix {
   [[nodiscard]] const MetaInfo &Info() const override;
   [[nodiscard]] Context const *Ctx() const override { return &fmat_ctx_; }
   // The only DMatrix implementation that returns false.
-  [[nodiscard]] bool SingleColBlock() const override { return false; }
+  [[nodiscard]] std::int32_t NumBatches() const override { return n_batches_; }
   DMatrix *Slice(common::Span<std::int32_t const>) override {
     LOG(FATAL) << "Slicing DMatrix is not supported for external memory.";
     return nullptr;

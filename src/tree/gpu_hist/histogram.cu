@@ -2,6 +2,7 @@
  * Copyright 2020-2024, XGBoost Contributors
  */
 #include <thrust/iterator/transform_iterator.h>  // for make_transform_iterator
+#include <nvtx3/nvToolsExt.h>
 
 #include <algorithm>
 #include <cstdint>  // uint32_t, int32_t

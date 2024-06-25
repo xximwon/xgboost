@@ -7,6 +7,7 @@
 #include <cstdint>  // for int8_t, uint64_t, uint32_t
 #include <memory>   // for shared_ptr, make_unique, make_shared
 #include <utility>  // for move
+#include <variant>  // for variant
 
 #include "../common/common.h"                 // for safe_cuda
 #include "../common/cuda_pinned_allocator.h"  // for pinned_allocator
@@ -19,14 +20,68 @@
 #include "xgboost/base.h"     // for bst_idx_t
 
 namespace xgboost::data {
-struct EllpackHostCache {
-  thrust::host_vector<std::int8_t, common::cuda::pinned_allocator<std::int8_t>> cache;
+/**
+ * Cache
+ */
 
-  void Resize(std::size_t n, dh::CUDAStreamView stream) {
-    stream.Sync();  // Prevent partial copy inside resize.
-    cache.resize(n);
+struct EllpackHostCacheImpl {
+  using Sam = std::allocator<std::int8_t>;
+  using Pinned = common::cuda::pinned_allocator<std::int8_t>;
+  using Managed = common::cuda::managed_allocator<std::int8_t>;
+
+  template <typename Alloc>
+  using CacheVec = std::vector<std::int8_t, Alloc>;
+
+  std::variant<CacheVec<Sam>, CacheVec<Pinned>, CacheVec<Managed>> cache;
+
+  explicit EllpackHostCacheImpl(EllpackCacheType type) {
+    std::cout << "type:" << static_cast<std::int32_t>(type) << std::endl;
+    switch (type) {
+      case EllpackCacheType::kSam: {
+        cache.emplace<CacheVec<Sam>>();
+        break;
+      }
+      case EllpackCacheType::kPinned: {
+        cache.emplace<CacheVec<Pinned>>();
+        break;
+      }
+      case EllpackCacheType::kManaged: {
+        cache.emplace<CacheVec<Managed>>();
+        break;
+      }
+    }
+  }
+
+  [[nodiscard]] std::size_t Size() const {
+    return std::visit([](auto&& cache) { return cache.size(); }, this->cache);
+  }
+  [[nodiscard]] void* Data() {
+    return std::visit([](auto&& cache) { return cache.data(); }, this->cache);
+  }
+
+  void Resize(std::size_t n) {
+    auto nvtxid = nvtxRangeStartA("Resize::sync");
+    dh::DefaultStream().Sync();  // Prevent partial copy inside resize.
+    nvtxRangeEnd(nvtxid);
+
+    nvtxid = nvtxRangeStartA("Resize::resize");
+    std::visit([n](auto&& cache) { cache.resize(n); }, this->cache);
+    nvtxRangeEnd(nvtxid);
   }
 };
+
+EllpackHostCache::EllpackHostCache(EllpackCacheType type)
+    : common::ResourceHandler{kCudaHostCache},
+      p_impl{std::make_unique<EllpackHostCacheImpl>(type)} {}
+EllpackHostCache::~EllpackHostCache() = default;
+
+[[nodiscard]] std::size_t EllpackHostCache::Size() const { return this->p_impl->Size(); }
+[[nodiscard]] void* EllpackHostCache::Data() { return this->p_impl->Data(); }
+void EllpackHostCache::Resize(std::size_t n_bytes) { this->p_impl->Resize(n_bytes); }
+
+/**
+ * Cache stream.
+ */
 
 class EllpackHostCacheStreamImpl {
   std::shared_ptr<EllpackHostCache> cache_;
@@ -37,31 +92,48 @@ class EllpackHostCacheStreamImpl {
   explicit EllpackHostCacheStreamImpl(std::shared_ptr<EllpackHostCache> cache)
       : cache_{std::move(cache)} {}
 
+  void* Data() const { return static_cast<std::int8_t*>(cache_->Data()) + cur_ptr_; }
+  auto Share() { return cache_; }
+
   [[nodiscard]] bst_idx_t Write(void const* ptr, bst_idx_t n_bytes) {
     auto n = cur_ptr_ + n_bytes;
-    if (n > cache_->cache.size()) {
-      cache_->Resize(n, dh::DefaultStream());
+    if (n > cache_->Size()) {
+      auto rs_nvtx = nvtxRangeStartA("resize");
+      cache_->Resize(n);
+      nvtxRangeEnd(rs_nvtx);
     }
-    dh::safe_cuda(cudaMemcpyAsync(cache_->cache.data() + cur_ptr_, ptr, n_bytes, cudaMemcpyDefault,
-                                  dh::DefaultStream()));
+
+    auto cpy_nvtx = nvtxRangeStartA("memcpy");
+    dh::safe_cuda(
+        cudaMemcpyAsync(this->Data(), ptr, n_bytes, cudaMemcpyDefault, dh::DefaultStream()));
+    nvtxRangeEnd(cpy_nvtx);
+
     cur_ptr_ = n;
     return n_bytes;
   }
 
   [[nodiscard]] bool Read(void* ptr, bst_idx_t n_bytes) {
     CHECK_LE(cur_ptr_ + n_bytes, bound_);
-    dh::safe_cuda(cudaMemcpyAsync(ptr, cache_->cache.data() + cur_ptr_, n_bytes, cudaMemcpyDefault,
-                                  dh::DefaultStream()));
+    dh::safe_cuda(
+        cudaMemcpyAsync(ptr, this->Data(), n_bytes, cudaMemcpyDefault, dh::DefaultStream()));
     cur_ptr_ += n_bytes;
     return true;
+  }
+
+  [[nodiscard]] void* Consume(bst_idx_t n_bytes) {
+    CHECK_LE(cur_ptr_ + n_bytes, bound_);
+    auto ptr = this->Data();
+    cur_ptr_ += n_bytes;
+    return ptr;
   }
 
   [[nodiscard]] bst_idx_t Tell() const { return cur_ptr_; }
   void Seek(bst_idx_t offset_bytes) { cur_ptr_ = offset_bytes; }
   void Bound(bst_idx_t offset_bytes) {
-    CHECK_LE(offset_bytes, cache_->cache.size());
+    CHECK_LE(offset_bytes, cache_->Size());
     this->bound_ = offset_bytes;
   }
+  void Sync() { dh::DefaultStream().Sync(); }
 };
 
 /**
@@ -73,6 +145,8 @@ EllpackHostCacheStream::EllpackHostCacheStream(std::shared_ptr<EllpackHostCache>
 
 EllpackHostCacheStream::~EllpackHostCacheStream() = default;
 
+std::shared_ptr<EllpackHostCache> EllpackHostCacheStream::Share() { return p_impl_->Share(); }
+
 [[nodiscard]] bst_idx_t EllpackHostCacheStream::Write(void const* ptr, bst_idx_t n_bytes) {
   return this->p_impl_->Write(ptr, n_bytes);
 }
@@ -81,11 +155,17 @@ EllpackHostCacheStream::~EllpackHostCacheStream() = default;
   return this->p_impl_->Read(ptr, n_bytes);
 }
 
+[[nodiscard]] void* EllpackHostCacheStream::Consume(bst_idx_t n_bytes) {
+  return this->p_impl_->Consume(n_bytes);
+}
+
 [[nodiscard]] bst_idx_t EllpackHostCacheStream::Tell() const { return this->p_impl_->Tell(); }
 
 void EllpackHostCacheStream::Seek(bst_idx_t offset_bytes) { this->p_impl_->Seek(offset_bytes); }
 
 void EllpackHostCacheStream::Bound(bst_idx_t offset_bytes) { this->p_impl_->Bound(offset_bytes); }
+
+void EllpackHostCacheStream::Sync() { this->p_impl_->Sync(); }
 
 /**
  * EllpackCacheStreamPolicy
@@ -93,16 +173,16 @@ void EllpackHostCacheStream::Bound(bst_idx_t offset_bytes) { this->p_impl_->Boun
 
 template <typename S, template <typename> typename F>
 EllpackCacheStreamPolicy<S, F>::EllpackCacheStreamPolicy()
-    : p_cache_{std::make_shared<EllpackHostCache>()} {}
+    : p_cache_{std::make_shared<EllpackHostCache>(EllpackCacheType::kSam)} {}
 
 template <typename S, template <typename> typename F>
 [[nodiscard]] std::unique_ptr<typename EllpackCacheStreamPolicy<S, F>::WriterT>
 EllpackCacheStreamPolicy<S, F>::CreateWriter(StringView, std::uint32_t iter) {
   auto fo = std::make_unique<EllpackHostCacheStream>(this->p_cache_);
   if (iter == 0) {
-    CHECK(this->p_cache_->cache.empty());
+    CHECK(this->p_cache_->Empty());
   } else {
-    fo->Seek(this->p_cache_->cache.size());
+    fo->Seek(this->p_cache_->Size());
   }
   return fo;
 }
@@ -157,6 +237,7 @@ EllpackMmapStreamPolicy<EllpackPage, EllpackFormatPolicy>::CreateReader(StringVi
  */
 template <typename F>
 void EllpackPageSourceImpl<F>::Fetch() {
+  nvtxMark(__func__);
   dh::safe_cuda(cudaSetDevice(this->Device().ordinal));
   if (!this->ReadCache()) {
     if (this->count_ != 0 && !this->sync_) {
@@ -172,6 +253,8 @@ void EllpackPageSourceImpl<F>::Fetch() {
     Context ctx = Context{}.MakeCUDA(this->Device().ordinal);
     *impl = EllpackPageImpl{&ctx, this->GetCuts(), *csr, is_dense_, row_stride_, feature_types_};
     this->page_->SetBaseRowId(csr->base_rowid);
+    LOG(INFO) << "Generated an Ellpack page with size: " << impl->MemCostBytes()
+              << " from a SparsePage with size:" << csr->MemCostBytes();
     this->WriteCache();
   }
 }

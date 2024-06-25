@@ -60,6 +60,7 @@ struct EllpackDeviceAccessor {
       min_fvalue = cuts->min_vals_.ConstHostSpan();
     }
   }
+
   /**
    * @brief Given a row index and a feature index, returns the corresponding cut value.
    *
@@ -69,7 +70,7 @@ struct EllpackDeviceAccessor {
    *                     local to the current batch.
    */
   template <bool global_ridx = true>
-  [[nodiscard]] __device__ bst_bin_t GetBinIndex(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ bst_bin_t GetBinIndex(bst_idx_t ridx, size_t fidx) const {
     if (global_ridx) {
       ridx -= base_rowid;
     }
@@ -108,10 +109,10 @@ struct EllpackDeviceAccessor {
     return idx;
   }
 
-  [[nodiscard]] __device__ bst_float GetFvalue(size_t ridx, size_t fidx) const {
+  [[nodiscard]] __device__ float GetFvalue(bst_idx_t ridx, size_t fidx) const {
     auto gidx = GetBinIndex(ridx, fidx);
     if (gidx == -1) {
-      return nan("");
+      return std::numeric_limits<float>::quiet_NaN();
     }
     return gidx_fvalue_map[gidx];
   }
@@ -212,7 +213,6 @@ class EllpackPageImpl {
   [[nodiscard]] bool IsDense() const { return is_dense; }
   /** @return Estimation of memory cost of this page. */
   static size_t MemCostBytes(size_t num_rows, size_t row_stride, const common::HistogramCuts&cuts) ;
-
 
   /**
    * @brief Return the total number of symbols (total number of bins plus 1 for not

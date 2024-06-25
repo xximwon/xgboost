@@ -1,7 +1,7 @@
 /**
  * Copyright 2021-2024, XGBoost contributors
  */
-#include "../common/device_helpers.cuh"  // for CurrentDevice
+#include "../common/device_helpers.cuh"  // for CurrentDevice, DefaultStream
 #include "proxy_dmatrix.cuh"             // for Dispatch, DMatrixProxy
 #include "simple_dmatrix.cuh"            // for CopyToSparsePage
 #include "sparse_page_source.h"
@@ -17,5 +17,10 @@ void DevicePush(DMatrixProxy *proxy, float missing, SparsePage *page) {
 
   cuda_impl::Dispatch(proxy,
                       [&](auto const &value) { CopyToSparsePage(value, device, missing, page); });
+}
+
+void InitNewThread::operator()() const {
+  *GlobalConfigThreadLocalStore::Get() = config;
+  dh::DefaultStream().Sync();  // Force initialize the global CUDA ctx
 }
 }  // namespace xgboost::data

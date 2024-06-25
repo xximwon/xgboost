@@ -543,7 +543,8 @@ class DMatrix {
   /**
    * @return Whether the data columns single column block.
    */
-  [[nodiscard]] virtual bool SingleColBlock() const = 0;
+  [[nodiscard]] bool SingleColBlock() const { return this->NumBatches() == 1; }
+  [[nodiscard]] virtual std::int32_t NumBatches() const { return 1; }
 
   virtual ~DMatrix();
 

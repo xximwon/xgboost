@@ -1,6 +1,8 @@
 /**
  * Copyright 2021-2024, XGBoost contributors
  */
+#include <nvtx3/nvToolsExt.h>
+
 #include <memory>   // for shared_ptr
 #include <utility>  // for move
 #include <variant>  // for visit
@@ -16,6 +18,7 @@
 namespace xgboost::data {
 BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
                                                            const BatchParam& param) {
+  nvtxMark(__func__);
   CHECK(ctx->IsCUDA());
   if (param.Initialized()) {
     CHECK_GE(param.max_bin, 2);
@@ -53,20 +56,22 @@ BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
         [&](auto&& ptr) {
           ptr.reset();  // make sure resource is released before making new ones.
           using SourceT = typename std::remove_reference_t<decltype(ptr)>::element_type;
-          ptr = std::make_shared<SourceT>(this->missing_, ctx->Threads(), this->Info().num_col_,
-                                          this->n_batches_, cache_info_.at(id), param,
-                                          std::move(cuts), this->IsDense(), row_stride, ft,
-                                          this->sparse_page_source_, ctx->Device());
+          ptr = std::make_shared<SourceT>(
+              this->missing_, ctx->Threads(), this->Info().num_col_, this->n_batches_,
+              cache_info_.at(id), param, std::move(cuts), this->IsDense(), row_stride, ft,
+              this->sparse_page_source_, ctx->Device(), cuda_prefetch_config_);
         },
         ellpack_page_source_);
   } else {
     CHECK(sparse_page_source_);
+    nvtxMark("Reset-page");
     std::visit([&](auto&& ptr) { ptr->Reset(); }, this->ellpack_page_source_);
   }
 
   auto batch_set =
       std::visit([this](auto&& ptr) { return BatchSet{BatchIterator<EllpackPage>{ptr}}; },
                  this->ellpack_page_source_);
+  nvtxMark("Return-batch");
   return batch_set;
 }
 }  // namespace xgboost::data

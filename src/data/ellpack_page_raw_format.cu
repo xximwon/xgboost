@@ -89,6 +89,29 @@ template <typename T>
   return bytes;
 }
 
+namespace {
+[[nodiscard]] bool ReadHostVec(Context const* ctx, common::CudaPrefetchConfig const& config,
+                               EllpackPageImpl* impl, EllpackHostCacheStream* fi) {
+  bst_idx_t n{0};
+  RET_IF_NOT(fi->Read(&n));
+  if (n == 0) {
+    return true;
+  }
+  std::cout << "config.copy:" << config.copy << std::endl;
+  if (config.copy) {
+    impl->gidx_buffer = common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(ctx, n);
+    RET_IF_NOT(fi->Read(impl->gidx_buffer.data(), impl->gidx_buffer.size_bytes()));
+  } else {
+    using T = typename decltype(impl->gidx_buffer)::value_type;
+    auto ptr = fi->Consume(n * sizeof(T));
+    impl->gidx_buffer = common::RefResourceView<T>{static_cast<T*>(ptr), n, fi->Share()};
+    common::CudaPrefetch(config, impl->gidx_buffer.data(), impl->gidx_buffer.size());
+  }
+
+  return true;
+}
+}  // namespace
+
 [[nodiscard]] bool EllpackPageRawFormat::Read(EllpackPage* page, EllpackHostCacheStream* fi) const {
   xgboost_NVTX_FN_RANGE();
 
@@ -98,25 +121,14 @@ template <typename T>
 
   // Read vector
   Context ctx = Context{}.MakeCUDA(common::CurrentDevice());
-  auto read_vec = [&] {
-    common::NvtxScopedRange range{common::NvtxEventAttr{"read-vec", common::NvtxRgb{127, 255, 0}}};
-    bst_idx_t n{0};
-    RET_IF_NOT(fi->Read(&n));
-    if (n == 0) {
-      return true;
-    }
-    impl->gidx_buffer = common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(&ctx, n);
-    RET_IF_NOT(fi->Read(impl->gidx_buffer.data(), impl->gidx_buffer.size_bytes()));
-    return true;
-  };
-  RET_IF_NOT(read_vec());
+  RET_IF_NOT(ReadHostVec(&ctx, config_, impl, fi));
 
   RET_IF_NOT(fi->Read(&impl->n_rows));
   RET_IF_NOT(fi->Read(&impl->is_dense));
   RET_IF_NOT(fi->Read(&impl->row_stride));
   RET_IF_NOT(fi->Read(&impl->base_rowid));
 
-  dh::DefaultStream().Sync();
+  fi->Sync();
   return true;
 }
 
@@ -145,7 +157,7 @@ template <typename T>
   bytes += fo->Write(impl->row_stride);
   bytes += fo->Write(impl->base_rowid);
 
-  dh::DefaultStream().Sync();
+  fo->Sync();
   return bytes;
 }
 

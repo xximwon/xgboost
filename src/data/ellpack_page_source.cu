@@ -18,6 +18,7 @@
 
 namespace xgboost::data {
 struct EllpackHostCache {
+  std::vector<std::int8_t> main_cache;
   thrust::host_vector<std::int8_t, common::cuda::pinned_allocator<std::int8_t>> cache;
 
   void Resize(std::size_t n, dh::CUDAStreamView stream) {

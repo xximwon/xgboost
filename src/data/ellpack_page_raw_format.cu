@@ -79,6 +79,7 @@ template <typename T>
 }
 
 [[nodiscard]] bool EllpackPageRawFormat::Read(EllpackPage* page, EllpackHostCacheStream* fi) const {
+  // FIXME: Read a page into pinned, and read a page from pinned to device.
   auto* impl = page->Impl();
   CHECK(this->cuts_->cut_values_.DeviceCanRead());
   impl->SetCuts(this->cuts_);

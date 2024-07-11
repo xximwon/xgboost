@@ -120,10 +120,10 @@ def main(tmpdir: str) -> xgboost.Booster:
     # differently than CPU tree methods as it uses a hybrid approach. See tutorial in
     # doc for details.
     booster = xgboost.train(
-        {"tree_method": "hist", "max_depth": 3, "device": "cuda"},
+        {"tree_method": "hist", "max_depth": 6, "device": "cuda"},
         Xy,
         # evals=[(Xy, "Train")],
-        num_boost_round=10,
+        num_boost_round=6,
     )
     return booster
 

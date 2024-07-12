@@ -15,11 +15,12 @@
 #include "../collective/aggregator.h"
 #include "../collective/broadcast.h"
 #include "../common/bitfield.h"
-#include "../common/threadpool.h"
 #include "../common/categorical.h"
 #include "../common/cuda_context.cuh"  // CUDAContext
 #include "../common/device_helpers.cuh"
 #include "../common/hist_util.h"
+#include "../common/random.h"
+#include "../common/threadpool.h"
 #include "../common/timer.h"
 #include "../data/ellpack_page.cuh"
 #include "../data/ellpack_page.h"

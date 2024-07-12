@@ -1,16 +1,13 @@
-/*!
- * Copyright 2017-2019 XGBoost contributors
+/**
+ * Copyright 2017-2024, XGBoost contributors
  */
 #pragma once
 #include <thrust/random.h>
-#include <cstdio>
+
 #include <cub/cub.cuh>
-#include <stdexcept>
-#include <string>
-#include <vector>
-#include "../common/categorical.h"
-#include "../common/device_helpers.cuh"
-#include "../common/random.h"
+#include <limits>   // for numeric_limits
+#include <ostream>  // for ostream
+
 #include "gpu_hist/histogram.cuh"
 #include "param.h"
 
@@ -54,7 +51,7 @@ enum DefaultDirection {
 };
 
 struct DeviceSplitCandidate {
-  float loss_chg {-FLT_MAX};
+  float loss_chg{-std::numeric_limits<float>::max()};
   DefaultDirection dir {kLeftDir};
   int findex {-1};
   float fvalue {0};

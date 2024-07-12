@@ -176,6 +176,7 @@ def train(
     bst = cb_container.before_training(bst)
 
     for i in range(start_iteration, num_boost_round):
+        print("i:", i, flush=True)
         if cb_container.before_iteration(bst, i, dtrain, evals):
             break
         bst.update(dtrain, iteration=i, fobj=obj)

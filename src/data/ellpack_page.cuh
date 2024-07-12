@@ -23,7 +23,7 @@ namespace xgboost {
 struct EllpackDeviceAccessor {
   /*! \brief Whether or not if the matrix is dense. */
   bool is_dense;
-  /*! \brief Row length for ELLPACK, equal to number of features. */
+  /*! \brief Row length for ELLPACK, equal to number of features if it's a dense matrix. */
   bst_idx_t row_stride;
   bst_idx_t base_rowid{0};
   bst_idx_t n_rows{0};
@@ -62,7 +62,7 @@ struct EllpackDeviceAccessor {
   }
   // Get a matrix element, uses binary search for look up Return NaN if missing
   // Given a row index and a feature index, returns the corresponding cut value
-  [[nodiscard]] __device__ int32_t GetBinIndex(size_t ridx, size_t fidx) const {
+  [[nodiscard]] XGBOOST_DEVICE bst_bin_t GetBinIndex(bst_idx_t ridx, size_t fidx) const {
     ridx -= base_rowid;
     auto row_begin = row_stride * ridx;
     auto row_end = row_begin + row_stride;
@@ -70,10 +70,7 @@ struct EllpackDeviceAccessor {
     if (is_dense) {
       gidx = gidx_iter[row_begin + fidx];
     } else {
-      gidx = common::BinarySearchBin(row_begin,
-                                     row_end,
-                                     gidx_iter,
-                                     feature_segments[fidx],
+      gidx = common::BinarySearchBin(row_begin, row_end, gidx_iter, feature_segments[fidx],
                                      feature_segments[fidx + 1]);
     }
     return gidx;

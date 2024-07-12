@@ -536,7 +536,9 @@ def make_sparse_regression(
 
     # Use multi-thread to speed up the generation, convenient if you use this function
     # for benchmarking.
-    n_threads = min(multiprocessing.cpu_count(), n_features)
+    n_cpus = os.cpu_count()
+    assert n_cpus is not None
+    n_threads = min(n_cpus, n_features)
 
     def random_csc(t_id: int) -> sparse.csc_matrix:
         rng = np.random.default_rng(1994 * t_id)

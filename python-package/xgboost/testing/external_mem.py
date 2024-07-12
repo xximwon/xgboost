@@ -103,7 +103,9 @@ def run_external_memory(
 def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> Booster:
     import rmm
 
-    rmm.reinitialize()
+    rmm.reinitialize(
+        system_memory=True, system_memory_headroom_size=2 * 1024 * 1024 * 1024
+    )
 
     X_path = os.path.join(tmpdir, "over_subscription-X.npy")
     y_path = os.path.join(tmpdir, "over_subscription-y.npy")

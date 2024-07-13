@@ -122,7 +122,7 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
     else:
         X, y = make_dense_regression(n_samples, n_features=n_features)
         np.save(X_path, X)
-        np.save(y_path, X)
+        np.save(y_path, y)
 
     start = time()
     Xy = QuantileDMatrix(X, y)

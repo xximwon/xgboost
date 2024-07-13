@@ -112,11 +112,15 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
 
     X_path = os.path.join(tmpdir, "over_subscription-X.npy")
     y_path = os.path.join(tmpdir, "over_subscription-y.npy")
+    n_features = 512
+
     if reuse and os.path.exists(X_path) and os.path.exists(y_path):
         X = np.lib.format.open_memmap(filename=X_path, mode="r")
         y = np.lib.format.open_memmap(filename=y_path, mode="r")
+        if not (X.shape[0] == n_samples and X.shape[1] == n_features and y.shape[0] == n_samples):
+            raise ValueError("Invalid cache.")
     else:
-        X, y = make_dense_regression(n_samples, n_features=512)
+        X, y = make_dense_regression(n_samples, n_features=n_features)
         np.save(X_path, X)
         np.save(y_path, X)
 

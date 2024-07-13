@@ -1,5 +1,6 @@
 import os
 
+import xgboost as xgb
 from xgboost.testing.external_mem import run_external_memory, run_over_subscription
 
 
@@ -13,5 +14,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    with  xgb.config_context(verbosity=3):
+    with xgb.config_context(verbosity=3):
         main()

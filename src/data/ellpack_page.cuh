@@ -1,18 +1,18 @@
 /**
- * Copyright 2019-2023, XGBoost Contributors
+ * Copyright 2019-2024, XGBoost Contributors
  */
-
 #ifndef XGBOOST_DATA_ELLPACK_PAGE_CUH_
 #define XGBOOST_DATA_ELLPACK_PAGE_CUH_
 
 #include <thrust/binary_search.h>
-#include <xgboost/data.h>
 
 #include "../common/categorical.h"
 #include "../common/compressed_iterator.h"
 #include "../common/device_helpers.cuh"
 #include "../common/hist_util.h"
+#include "../common/ref_resource_view.h"  // for RefResourceView
 #include "ellpack_page.h"
+#include "xgboost/data.h"
 
 namespace xgboost {
 /** \brief Struct for accessing and manipulating an ELLPACK matrix on the
@@ -213,14 +213,13 @@ class EllpackPageImpl {
       common::Span<FeatureType const> feature_types = {}) const;
 
  private:
-  /*!
-   * \brief Compress a single page of CSR data into ELLPACK.
+  /**
+   * @brief Compress a single page of CSR data into ELLPACK.
    *
    * @param device The GPU device to use.
    * @param row_batch The CSR page.
    */
-  void CreateHistIndices(DeviceOrd device,
-                         const SparsePage& row_batch,
+  void CreateHistIndices(DeviceOrd device, const SparsePage& row_batch,
                          common::Span<FeatureType const> feature_types);
   /*!
    * \brief Initialize the buffer to store compressed features.
@@ -233,9 +232,9 @@ class EllpackPageImpl {
   /*! \brief Row length for ELLPACK. */
   bst_idx_t row_stride;
   bst_idx_t base_rowid{0};
-  bst_idx_t n_rows{};
-  /*! \brief global index of histogram, which is stored in ELLPACK format. */
-  HostDeviceVector<common::CompressedByteT> gidx_buffer;
+  bst_idx_t n_rows{0};
+  /** @brief global index of histogram, which is stored in ELLPACK format. */
+  common::RefResourceView<common::CompressedByteT> gidx_buffer;
 
  private:
   std::shared_ptr<common::HistogramCuts const> cuts_;

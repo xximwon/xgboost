@@ -234,7 +234,7 @@ void CopyDataToEllpack(const AdapterBatchT& batch, common::Span<FeatureType cons
 
   auto device_accessor = dst->GetDeviceAccessor(device);
   common::CompressedBufferWriter writer(device_accessor.NumSymbols());
-  auto d_compressed_buffer = dst->gidx_buffer.DevicePointer();
+  auto d_compressed_buffer = dst->gidx_buffer.data();
 
   // We redirect the scan output into this functor to do the actual writing
   WriteCompressedEllpackFunctor<AdapterBatchT> functor(
@@ -369,7 +369,7 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, GHistIndexMatrix const& pag
   monitor_.Stop("InitCompressedData");
 
   // copy gidx
-  common::CompressedByteT* d_compressed_buffer = gidx_buffer.DevicePointer();
+  common::CompressedByteT* d_compressed_buffer = gidx_buffer.data();
   dh::device_vector<size_t> row_ptr(page.row_ptr.size());
   auto d_row_ptr = dh::ToSpan(row_ptr);
   dh::safe_cuda(cudaMemcpyAsync(d_row_ptr.data(), page.row_ptr.data(), d_row_ptr.size_bytes(),
@@ -388,9 +388,10 @@ struct CopyPage {
   // The number of elements to skip.
   size_t offset;
 
-  CopyPage(EllpackPageImpl *dst, EllpackPageImpl const *src, size_t offset)
-      : cbw{dst->NumSymbols()}, dst_data_d{dst->gidx_buffer.DevicePointer()},
-        src_iterator_d{src->gidx_buffer.DevicePointer(), src->NumSymbols()},
+  CopyPage(EllpackPageImpl* dst, EllpackPageImpl const* src, size_t offset)
+      : cbw{dst->NumSymbols()},
+        dst_data_d{dst->gidx_buffer.data()},
+        src_iterator_d{src->gidx_buffer.data(), src->NumSymbols()},
         offset(offset) {}
 
   __device__ void operator()(size_t element_id) {

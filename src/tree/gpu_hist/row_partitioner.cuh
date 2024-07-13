@@ -13,6 +13,7 @@
 #include "../../common/device_helpers.cuh"  // for MakeTransformIterator
 #include "xgboost/base.h"                   // for bst_idx_t
 #include "xgboost/context.h"                // for Context
+#include "xgboost/span.h"                   // for Span
 
 namespace xgboost {
 namespace tree {
@@ -217,9 +218,9 @@ class RowPartitioner {
    * node id  |    1    |    2   |
    * rows idx | 3, 5, 1 | 13, 31 |
    */
-  dh::TemporaryArray<RowIndexT> ridx_;
+  dh::DeviceUVector<RowIndexT> ridx_;
   // Staging area for sorting ridx
-  dh::TemporaryArray<RowIndexT> ridx_tmp_;
+  dh::DeviceUVector<RowIndexT> ridx_tmp_;
   dh::device_vector<int8_t> tmp_;
   common::cuda::GrowOnlyPinnedVector<false> pinned_;
   common::cuda::GrowOnlyPinnedVector<true> pinned2_;
@@ -344,7 +345,7 @@ class RowPartitioner {
     constexpr int kBlockSize = 512;
     const int kItemsThread = 8;
     const int grid_size = xgboost::common::DivRoundUp(ridx_.size(), kBlockSize * kItemsThread);
-    common::Span<const RowIndexT> d_ridx(ridx_.data().get(), ridx_.size());
+    common::Span<RowIndexT const> d_ridx{thrust::raw_pointer_cast(ridx_.data()), ridx_.size()};
     FinalisePositionKernel<kBlockSize>
         <<<grid_size, kBlockSize, 0>>>(dh::ToSpan(d_node_info_storage), d_ridx, d_out_position, op);
   }

@@ -101,14 +101,17 @@ def run_external_memory(
     return booster
 
 
-def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> Booster:
+def run_over_subscription(tmpdir: str, reuse: bool, n_bins: int, n_samples: int, is_sam: bool) -> Booster:
     import rmm
 
-    rmm.reinitialize(
-        pool_allocator=True,
-        # system_memory=True,
-        # system_memory_headroom_size=16 * 1024 * 1024 * 1024,
-    )
+    if is_sam:
+        rmm.reinitialize(
+            pool_allocator=True,
+            system_memory=True,
+            system_memory_headroom_size=16 * 1024 * 1024 * 1024,
+        )
+    else:
+        rmm.reinitialize(pool_allocator=True)
 
     X_path = os.path.join(tmpdir, "over_subscription-X.npy")
     y_path = os.path.join(tmpdir, "over_subscription-y.npy")
@@ -125,11 +128,11 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
         np.save(y_path, y)
 
     start = time()
-    Xy = QuantileDMatrix(X, y)
+    Xy = QuantileDMatrix(X, y, max_bin=n_bins)
     end = time()
     print("QuantileDMatrix duration:", end - start)
     booster = train(
-        {"tree_method": "hist", "max_depth": 1, "device": "cuda"},
+        {"tree_method": "hist", "max_depth": 1, "device": "cuda", "max_bin": n_bins},
         Xy,
         # evals=[(Xy, "Train")],
         num_boost_round=10,

@@ -1,5 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
+from time import time
 from typing import Callable, List, Tuple
 
 import numpy as np
@@ -106,7 +107,7 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
     rmm.reinitialize(
         pool_allocator=True,
         system_memory=True,
-        system_memory_headroom_size=2 * 1024 * 1024 * 1024,
+        system_memory_headroom_size=16 * 1024 * 1024 * 1024,
     )
 
     X_path = os.path.join(tmpdir, "over_subscription-X.npy")
@@ -115,13 +116,18 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
         X = np.lib.format.open_memmap(filename=X_path, mode="r")
         y = np.lib.format.open_memmap(filename=y_path, mode="r")
     else:
-        X, y = make_dense_regression(n_samples, n_features=242)
+        X, y = make_dense_regression(n_samples, n_features=512)
+        np.save(X_path, X)
+        np.save(y_path, X)
 
+    start = time()
     Xy = QuantileDMatrix(X, y)
+    end = time()
+    print("QuantileDMatrix duration:", end - start)
     booster = train(
         {"tree_method": "hist", "max_depth": 6, "device": "cuda"},
         Xy,
         # evals=[(Xy, "Train")],
-        num_boost_round=6,
+        num_boost_round=10,
     )
     return booster

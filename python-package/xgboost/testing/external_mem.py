@@ -106,8 +106,8 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
 
     rmm.reinitialize(
         pool_allocator=True,
-        system_memory=True,
-        system_memory_headroom_size=16 * 1024 * 1024 * 1024,
+        # system_memory=True,
+        # system_memory_headroom_size=16 * 1024 * 1024 * 1024,
     )
 
     X_path = os.path.join(tmpdir, "over_subscription-X.npy")

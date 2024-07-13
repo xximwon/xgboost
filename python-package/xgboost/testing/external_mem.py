@@ -129,7 +129,7 @@ def run_over_subscription(tmpdir: str, reuse: bool, n_samples: int = 2**22) -> B
     end = time()
     print("QuantileDMatrix duration:", end - start)
     booster = train(
-        {"tree_method": "hist", "max_depth": 6, "device": "cuda"},
+        {"tree_method": "hist", "max_depth": 1, "device": "cuda"},
         Xy,
         # evals=[(Xy, "Train")],
         num_boost_round=10,

@@ -19,6 +19,7 @@
 #include "../common/cuda_context.cuh"  // CUDAContext
 #include "../common/device_helpers.cuh"
 #include "../common/hist_util.h"
+#include "../common/node_position.h"  // NodePosition
 #include "../common/timer.h"
 #include "../data/ellpack_page.cuh"
 #include "../data/ellpack_page.h"
@@ -583,7 +584,8 @@ struct GPUHistMakerDevice {
     dh::LaunchN(row_partitioner->GetRows().size(), [=] __device__(size_t idx) {
       bst_node_t position = d_out_position[idx];
       bool is_row_sampled = d_gpair[idx].GetHess() - .0f == 0.f;
-      d_out_position[idx] = is_row_sampled ? ~position : position;
+      d_out_position[idx] =
+          is_row_sampled ? common::NodePosition::EncodeMissing(position) : position;
     });
   }
 

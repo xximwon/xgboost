@@ -18,6 +18,7 @@
 
 #include "categorical.h"
 #include "column_matrix.h"
+#include "node_position.h"  // for NodePosition
 #include "xgboost/context.h"
 #include "xgboost/tree_model.h"
 
@@ -381,7 +382,7 @@ class PartitionBuilder {
         size_t ptr_offset = node.end() - p_begin;
         CHECK_LE(ptr_offset, row_set.Data()->size()) << node.node_id;
         for (auto idx = node.begin(); idx != node.end(); ++idx) {
-          h_pos[*idx] = sampledp(*idx) ? ~node.node_id : node.node_id;
+          h_pos[*idx] = sampledp(*idx) ? NodePosition::EncodeMissing(node.node_id) : node.node_id;
         }
       }
     });

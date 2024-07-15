@@ -1,5 +1,5 @@
 /**
- * Copyright 2014-2023 by Contributors
+ * Copyright 2014-2024, XGBoost Contributors
  * \file gbtree.cc
  * \brief gradient boosted tree implementation.
  * \author Tianqi Chen
@@ -223,7 +223,7 @@ void GBTree::DoBoost(DMatrix* p_fmat, linalg::Matrix<GradientPair>* in_gpair,
   // The node position for each row, 1 HDV for each tree in the forest.  Note that the
   // position is negated if the row is sampled out.
   std::vector<HostDeviceVector<bst_node_t>> node_position;
-
+  // Updating the prediction cache is not supported in some cases.
   auto is_cache_updated = [this, p_fmat, predt](std::size_t n_new_trees,
                                                 linalg::MatrixView<float> out_predt) -> bool {
     return updaters_.size() > 0 && n_new_trees == 1 && !predt->predictions.Empty() &&

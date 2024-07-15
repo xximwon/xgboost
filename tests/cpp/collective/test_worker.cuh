@@ -1,11 +1,12 @@
 /**
- * Copyright 2023, XGBoost Contributors
+ * Copyright 2023-2024, XGBoost Contributors
  */
 #pragma once
 #include <memory>  // for shared_ptr
 
 #include "../../../src/collective/coll.h"  // for Coll
 #include "../../../src/collective/comm.h"  // for Comm
+#include "../helpers.h"                    // for MakeCUDACtx
 #include "test_worker.h"
 #include "xgboost/context.h"  // for Context
 

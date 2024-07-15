@@ -6,7 +6,7 @@
 
 #include <chrono>   // for seconds
 #include <cstdint>  // for int32_t
-#include <fstream>  // for ifstream
+
 #include <string>   // for string
 #include <thread>   // for thread
 #include <utility>  // for move
@@ -16,7 +16,6 @@
 #include "../../../src/collective/communicator-inl.h"  // for Init, Finalize
 #include "../../../src/collective/tracker.h"           // for GetHostAddress
 #include "../../../src/common/common.h"                // for AllVisibleGPUs
-#include "../helpers.h"                                // for FileExists
 
 #if defined(XGBOOST_USE_FEDERATED)
 #include "../plugin/federated/test_worker.h"
@@ -61,30 +60,16 @@ class SocketTest : public ::testing::Test {
  protected:
   std::string skip_msg_{"Skipping IPv6 test"};
 
-  bool SkipTest() {
-    std::string path{"/sys/module/ipv6/parameters/disable"};
-    if (FileExists(path)) {
-      std::ifstream fin(path);
-      if (!fin) {
-        return true;
-      }
-      std::string s_value;
-      fin >> s_value;
-      auto value = std::stoi(s_value);
-      if (value != 0) {
-        return true;
-      }
-    } else {
-      return true;
-    }
-    return false;
-  }
+  bool SkipTest();
 
  protected:
   void SetUp() override { system::SocketStartup(); }
   void TearDown() override { system::SocketFinalize(); }
 };
 
+/**
+ * @brief Helper for testing the tracker or testing with a tracker.
+ */
 class TrackerTest : public SocketTest {
  public:
   std::int32_t n_workers{2};
@@ -97,6 +82,11 @@ class TrackerTest : public SocketTest {
     SafeColl(rc);
   }
 };
+
+/**
+ * @brief Obtain worker-local context for tests.
+ */
+[[nodiscard]] Context MakeCtxForDistributedTest(bool use_cuda);
 
 inline Json MakeTrackerConfig(std::string host, std::int32_t n_workers,
                               std::chrono::seconds timeout) {

@@ -101,7 +101,7 @@ void TestPredictionDeviceAccess();
 
 void TestCategoricalPrediction(bool use_gpu, bool is_column_split);
 
-void TestPredictionWithLesserFeaturesColumnSplit(bool use_gpu);
+void TestPredictionWithLesserFeaturesColumnSplit(bool use_cuda);
 
 void TestCategoricalPredictLeaf(Context const *ctx, bool is_column_split);
 

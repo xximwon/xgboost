@@ -1,11 +1,9 @@
 /**
- * Copyright 2017-2023 by XGBoost contributors
+ * Copyright 2017-2024, XGBoost contributors
  */
 #include <gtest/gtest.h>
+#include <xgboost/context.h>  // for Context
 #include <xgboost/predictor.h>
-
-#include <cstdint>
-#include <thread>
 
 #include "../../../src/collective/communicator-inl.h"
 #include "../../../src/data/adapter.h"
@@ -13,7 +11,7 @@
 #include "../../../src/gbm/gbtree.h"
 #include "../../../src/gbm/gbtree_model.h"
 #include "../collective/test_worker.h"  // for TestDistributedGlobal
-#include "../filesystem.h"  // dmlc::TemporaryDirectory
+#include "../filesystem.h"              // dmlc::TemporaryDirectory
 #include "../helpers.h"
 #include "test_predictor.h"
 
@@ -27,24 +25,20 @@ TEST(CpuPredictor, Basic) {
   TestBasic(dmat.get(), &ctx);
 }
 
-namespace {
-void TestColumnSplit() {
-  Context ctx;
-  size_t constexpr kRows = 5;
-  size_t constexpr kCols = 5;
-  auto dmat = RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
-
-  auto const world_size = collective::GetWorldSize();
-  auto const rank = collective::GetRank();
-  dmat = std::unique_ptr<DMatrix>{dmat->SliceCol(world_size, rank)};
-
-  TestBasic(dmat.get(), &ctx);
-}
-}  // anonymous namespace
-
 TEST(CpuPredictor, BasicColumnSplit) {
   auto constexpr kWorldSize = 2;
-  collective::TestDistributedGlobal(kWorldSize, TestColumnSplit);
+  collective::TestDistributedGlobal(kWorldSize, [] {
+    auto ctx = collective::MakeCtxForDistributedTest(false);
+    size_t constexpr kRows = 5;
+    size_t constexpr kCols = 5;
+    auto dmat = RandomDataGenerator(kRows, kCols, 0).GenerateDMatrix();
+
+    auto const world_size = collective::GetWorldSize();
+    auto const rank = collective::GetRank();
+    dmat = std::unique_ptr<DMatrix>{dmat->SliceCol(world_size, rank)};
+
+    TestBasic(dmat.get(), &ctx);
+  });
 }
 
 TEST(CpuPredictor, IterationRange) {
@@ -202,7 +196,6 @@ TEST(CpuPredictor, SparseColumnSplit) {
 
 TEST(CpuPredictor, Multi) {
   Context ctx;
-  ctx.nthread = 1;
   TestVectorLeafPrediction(&ctx);
 }
 

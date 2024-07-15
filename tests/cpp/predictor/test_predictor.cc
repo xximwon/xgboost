@@ -315,16 +315,13 @@ void TestPredictionDeviceAccess() {
 #endif  // defined(XGBOOST_USE_CUDA)
 }
 
-void TestPredictionWithLesserFeaturesColumnSplit(bool use_gpu) {
+void TestPredictionWithLesserFeaturesColumnSplit(bool use_cuda) {
   auto const world_size = collective::GetWorldSize();
   auto const rank = collective::GetRank();
 
   std::size_t constexpr kRows = 256, kTrainCols = 256, kTestCols = 4, kIters = 4;
   auto m_train = RandomDataGenerator(kRows, kTrainCols, 0.5).Seed(rank).GenerateDMatrix(true);
-  Context ctx;
-  if (use_gpu) {
-    ctx = MakeCUDACtx(common::AllVisibleGPUs() == 1 ? 0 : rank);
-  }
+  Context ctx = collective::MakeCtxForDistributedTest(use_cuda);
   auto learner = LearnerForTest(&ctx, m_train, kIters);
   auto m_test = RandomDataGenerator(kRows, kTestCols, 0.5).GenerateDMatrix(false);
   auto m_invalid = RandomDataGenerator(kRows, kTrainCols + 1, 0.5).GenerateDMatrix(false);

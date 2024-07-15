@@ -10,8 +10,7 @@
 #include <dmlc/parameter.h>
 
 #include <algorithm>  // for equal
-#include <cinttypes>  // for uint32_t
-#include <limits>
+#include <cstdint>    // for uint32_t
 #include <memory>
 #include <string>
 #include <utility>
@@ -225,24 +224,28 @@ void GBTree::DoBoost(DMatrix* p_fmat, linalg::Matrix<GradientPair>* in_gpair,
   // position is negated if the row is sampled out.
   std::vector<HostDeviceVector<bst_node_t>> node_position;
 
+  auto is_cache_updated = [this, p_fmat, predt](std::size_t n_new_trees,
+                                                linalg::MatrixView<float> out_predt) -> bool {
+    return updaters_.size() > 0 && n_new_trees == 1 && !predt->predictions.Empty() &&
+           updaters_.back()->UpdatePredictionCache(p_fmat, out_predt);
+  };
+
   if (model_.learner_model_param->IsVectorLeaf()) {
     TreesOneGroup ret;
     BoostNewTrees(in_gpair, p_fmat, 0, &node_position, &ret);
     UpdateTreeLeaf(p_fmat, predt->predictions, obj, 0, node_position, &ret);
-    std::size_t num_new_trees = ret.size();
+    std::size_t n_new_trees = ret.size();
     new_trees.push_back(std::move(ret));
-    if (updaters_.size() > 0 && num_new_trees == 1 && predt->predictions.Size() > 0 &&
-        updaters_.back()->UpdatePredictionCache(p_fmat, out)) {
+    if (is_cache_updated(n_new_trees, out)) {
       predt->Update(1);
     }
   } else if (model_.learner_model_param->OutputLength() == 1u) {
     TreesOneGroup ret;
     BoostNewTrees(in_gpair, p_fmat, 0, &node_position, &ret);
     UpdateTreeLeaf(p_fmat, predt->predictions, obj, 0, node_position, &ret);
-    const size_t num_new_trees = ret.size();
+    const size_t n_new_trees = ret.size();
     new_trees.push_back(std::move(ret));
-    if (updaters_.size() > 0 && num_new_trees == 1 && predt->predictions.Size() > 0 &&
-        updaters_.back()->UpdatePredictionCache(p_fmat, out)) {
+    if (is_cache_updated(n_new_trees, out)) {
       predt->Update(1);
     }
   } else {
@@ -259,8 +262,7 @@ void GBTree::DoBoost(DMatrix* p_fmat, linalg::Matrix<GradientPair>* in_gpair,
       const size_t num_new_trees = ret.size();
       new_trees.push_back(std::move(ret));
       auto v_predt = out.Slice(linalg::All(), linalg::Range(gid, gid + 1));
-      if (!(updaters_.size() > 0 && predt->predictions.Size() > 0 && num_new_trees == 1 &&
-            updaters_.back()->UpdatePredictionCache(p_fmat, v_predt))) {
+      if (!is_cache_updated(num_new_trees, v_predt)) {
         update_predict = false;
       }
     }

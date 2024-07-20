@@ -66,6 +66,7 @@ def make_batches(
 
     n_workers = min(n_batches, 36)
     futures = []
+
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for i in range(n_batches):
             fut = executor.submit(
@@ -89,11 +90,12 @@ def make_batches(
 
 
 def run_external_memory(
-    tmpdir: str, reuse: bool, on_host: bool, n_samples_per_batch: int
+    tmpdir: str, reuse: bool, on_host: bool, n_samples_per_batch: int, n_batches: int,
 ) -> Booster:
     rmm.reinitialize(pool_allocator=True, initial_pool_size=0)
 
-    files = make_batches(n_samples_per_batch, 242, 8, reuse, tmpdir)
+    n_features = 512
+    files = make_batches(n_samples_per_batch, n_features, n_batches, reuse, tmpdir)
     it = EmTestIterator(files, on_host=on_host)
     Xy = DMatrix(it, missing=np.nan, enable_categorical=False)
 

@@ -8,8 +8,16 @@ def main() -> None:
     data_dir = "./data"
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
-    # run_external_memory(data_dir, reuse=False, on_host=True, n_samples_per_batch=2**22)
-    run_over_subscription(data_dir, True, n_bins=256, n_samples=2**26 + 2 ** 24, is_sam=True)
+    n = 2**26 + 2**24
+    n_batches = 16
+    run_external_memory(
+        data_dir,
+        reuse=False,
+        on_host=True,
+        n_batches=n_batches,
+        n_samples_per_batch=n // n_batches,
+    )
+    # run_over_subscription(data_dir, True, n_bins=256, n_samples=n, is_sam=True)
 
 
 if __name__ == "__main__":

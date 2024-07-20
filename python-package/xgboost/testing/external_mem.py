@@ -100,7 +100,6 @@ def run_external_memory(
     booster = train(
         {"tree_method": "hist", "max_depth": 6, "device": "cuda"},
         Xy,
-        # evals=[(Xy, "Train")],
         num_boost_round=6,
     )
     return booster

@@ -285,8 +285,8 @@ class RowPartitioner {
     if (nidx.empty()) {
       return;
     }
-    rmm::device_uvector<bst_uint> d_counts(nidx.size(), rmm::cuda_stream_per_thread);
-    thrust::fill_n(rmm::exec_policy_nosync{}, d_counts.data(), d_counts.size(), 0u);
+    dh::DeviceUVector<cuda_impl::RowIndexT> d_counts;
+    d_counts.resize(nidx.size(), 0u);
 
     CHECK_EQ(nidx.size(), left_nidx.size());
     CHECK_EQ(nidx.size(), right_nidx.size());

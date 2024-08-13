@@ -49,6 +49,12 @@
 namespace xgboost::tree {
 DMLC_REGISTRY_FILE_TAG(updater_gpu_hist);
 
+namespace {
+BatchParam HistBatch(TrainParam const& param) {
+  return {param.max_bin, TrainParam::DftSparseThreshold()};
+}
+}  // anonymous namespace
+
 // Manage memory for a single GPU
 struct GPUHistMakerDevice {
  private:
@@ -573,7 +579,7 @@ struct GPUHistMakerDevice {
 
     this->positions.resize(p_fmat->Info().num_row_, 0);
 
-    if (false) {  // fixme
+    if (!p_fmat->SingleColBlock()) {
       if (task.UpdateTreeLeaf()) {
         LOG(FATAL) << "Current objective function can not be used with external memory.";
       }
@@ -599,9 +605,8 @@ struct GPUHistMakerDevice {
       dh::CopyToD(categories_segments, &d_categories_segments);
     }
 
-    auto bp = BatchParam{this->param.max_bin, TrainParam::DftSparseThreshold()};
     std::int32_t k{0};
-    for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, bp)) {
+    for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, HistBatch(this->param))) {
       auto batch = page.Impl();
       FinalisePositionInPage(batch, k, dh::ToSpan(d_nodes), dh::ToSpan(d_split_types),
                              dh::ToSpan(d_categories), dh::ToSpan(d_categories_segments),
@@ -622,11 +627,10 @@ struct GPUHistMakerDevice {
 
     auto new_position_op = [=] __device__(bst_idx_t row_id, bst_node_t nidx) {
       // What happens if user prune the tree?
-      // if (!d_matrix.IsInRange(row_id)) {
-      //   // fixme: when is this true?
-      //   SPAN_CHECK(false);
-      //   return RowPartitioner::kIgnoredTreePosition;
-      // }
+      if (!d_matrix.IsInRange(row_id)) {
+        // fixme: when is this true?
+        return RowPartitioner::kIgnoredTreePosition;
+      }
       auto node = d_nodes[nidx];
 
       while (!node.IsLeaf()) {
@@ -1156,9 +1160,9 @@ class GPUGlobalApproxMaker : public TreeUpdater {
     if (maker_ == nullptr || p_last_fmat_ == nullptr || p_last_fmat_ != data) {
       return false;
     }
-    monitor_.Start("UpdatePredictionCache");
+    monitor_.Start(__func__);
     bool result = maker_->UpdatePredictionCache(p_out_preds, p_last_tree_);
-    monitor_.Stop("UpdatePredictionCache");
+    monitor_.Stop(__func__);
     return result;
   }
 

@@ -79,9 +79,9 @@ BatchSet<EllpackPage> ExtMemQuantileDMatrix::GetEllpackBatches(Context const *,
   }
 
   std::visit(
-      [this](auto &&ptr) {
+      [this, param](auto &&ptr) {
         CHECK(ptr);
-        ptr->Reset();
+        ptr->Reset(param);
       },
       this->ellpack_page_source_);
 

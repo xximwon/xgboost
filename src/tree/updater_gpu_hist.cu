@@ -60,24 +60,36 @@ struct NodeSplitData {
 };
 static_assert(std::is_trivially_copyable_v<NodeSplitData>);
 
+constexpr double ExtMemPrefetchThresh() { return 4.0; }
+
 // Some nodes we will manually compute histograms, others we will do by subtraction
-void AssignNodes(RegTree const* p_tree, std::vector<GPUExpandEntry> const& candidates,
-                 common::Span<bst_node_t> nodes_to_build, common::Span<bst_node_t> nodes_to_sub) {
+[[nodiscard]] bool AssignNodes(RegTree const* p_tree, GradientQuantiser const* quantizer,
+                               std::vector<GPUExpandEntry> const& candidates,
+                               common::Span<bst_node_t> nodes_to_build,
+                               common::Span<bst_node_t> nodes_to_sub) {
   auto const& tree = *p_tree;
   std::size_t nidx_in_set{0};
+  double total{0.0}, smaller{0.0};
   for (auto& e : candidates) {
     // Decide whether to build the left histogram or right histogram
     // Use sum of Hessian as a heuristic to select node with fewest training instances
-    bool fewer_right = e.split.right_sum.GetQuantisedHess() < e.split.left_sum.GetQuantisedHess();
+    auto left_sum = quantizer->ToFloatingPoint(e.split.left_sum);
+    auto right_sum = quantizer->ToFloatingPoint(e.split.right_sum);
+    bool fewer_right = right_sum.GetHess() < left_sum.GetHess();
+    total += left_sum.GetHess() + right_sum.GetHess();
     if (fewer_right) {
       nodes_to_build[nidx_in_set] = tree[e.nid].RightChild();
       nodes_to_sub[nidx_in_set] = tree[e.nid].LeftChild();
+      smaller += right_sum.GetHess();
     } else {
       nodes_to_build[nidx_in_set] = tree[e.nid].LeftChild();
       nodes_to_sub[nidx_in_set] = tree[e.nid].RightChild();
+      smaller += left_sum.GetHess();
     }
     ++nidx_in_set;
   }
+  // Prefetch if these smaller nodes are not quite small.
+  return (total / smaller) < ExtMemPrefetchThresh();
 }
 
 // GPU tree updater implementation.
@@ -441,7 +453,8 @@ struct GPUHistMakerDevice {
     // Prepare for build hist
     std::vector<bst_node_t> build_nidx(candidates.size());
     std::vector<bst_node_t> subtraction_nidx(candidates.size());
-    AssignNodes(p_tree, candidates, build_nidx, subtraction_nidx);
+    auto prefetch =
+        AssignNodes(p_tree, this->quantiser.get(), candidates, build_nidx, subtraction_nidx);
 
     this->hist.AllocateHistograms(ctx_, build_nidx, subtraction_nidx);
 
@@ -449,7 +462,7 @@ struct GPUHistMakerDevice {
     monitor.Start("Partition-BuildHist");
 
     std::int32_t k{0};
-    auto batch_set = p_fmat->GetBatches<EllpackPage>(ctx_, HistBatch(this->param));
+    auto batch_set = p_fmat->GetBatches<EllpackPage>(ctx_, HistBatch(this->param, prefetch));
     auto it = batch_set.begin();
     while (it != batch_set.end()) {
       monitor.Start("Iter-Partition-BuildHist");

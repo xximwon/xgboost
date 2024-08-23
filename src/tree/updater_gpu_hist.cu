@@ -71,8 +71,10 @@ constexpr double ExtMemPrefetchThresh() { return 4.0; }
   std::size_t nidx_in_set{0};
   double total{0.0}, smaller{0.0};
   for (auto& e : candidates) {
-    // Decide whether to build the left histogram or right histogram
-    // Use sum of Hessian as a heuristic to select node with fewest training instances
+    // Decide whether to build the left histogram or right histogram Use sum of Hessian as
+    // a heuristic to select node with fewest training instances This optimization is for
+    // distributed training to avoid an allreduce call for synchronizing the number of
+    // instances for each node.
     auto left_sum = quantizer->ToFloatingPoint(e.split.left_sum);
     auto right_sum = quantizer->ToFloatingPoint(e.split.right_sum);
     bool fewer_right = right_sum.GetHess() < left_sum.GetHess();
@@ -87,6 +89,10 @@ constexpr double ExtMemPrefetchThresh() { return 4.0; }
       smaller += left_sum.GetHess();
     }
     ++nidx_in_set;
+  }
+
+  if (-kRtEps < smaller && smaller < kRtEps) {  // Too close to 0, don't prefetch.
+    return false;
   }
   // Prefetch if these smaller nodes are not quite small.
   return (total / smaller) < ExtMemPrefetchThresh();

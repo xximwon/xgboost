@@ -65,20 +65,20 @@ class ClangTidy:
 
     def __enter__(self) -> "ClangTidy":
         self.start = time()
-        # if os.path.exists(self.cdb_path):
-        #     shutil.rmtree(self.cdb_path)
+        if os.path.exists(self.cdb_path):
+            shutil.rmtree(self.cdb_path)
         self._generate_cdb()
         return self
 
     def __exit__(self, *args: list) -> None:
-        # if os.path.exists(self.cdb_path):
-        #     shutil.rmtree(self.cdb_path)
+        if os.path.exists(self.cdb_path):
+            shutil.rmtree(self.cdb_path)
         self.end = time()
         print("Finish running clang-tidy:", self.end - self.start)
 
     def _generate_cdb(self) -> None:
         """Run CMake to generate compilation database."""
-        # os.mkdir(self.cdb_path)
+        os.mkdir(self.cdb_path)
         os.chdir(self.cdb_path)
         cmake_args = [
             "cmake",

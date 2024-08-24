@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import platform
 import re
 import shutil
 import subprocess
@@ -18,9 +20,10 @@ def call(args: list[str]) -> tuple[int, int, str, list[str]]:
     error_msg = completed.stdout.decode("utf-8")
     # `workspace` is a name used in the CI container.  Normally we should keep the dir
     # as `xgboost`.
-    matched = re.search(
-        "(workspace|xgboost)/.*(src|tests|include)/.*warning:", error_msg, re.MULTILINE
-    )
+    msg = "(workspace|xgboost)/.*(src|tests|include)/.*warning:"
+    if platform.system() == "Windows":
+        msg = msg.replace("/", "\\\\")
+    matched = re.search(msg, error_msg, re.MULTILINE)
 
     if matched is None:
         return_code = 0
@@ -62,39 +65,44 @@ class ClangTidy:
 
     def __enter__(self) -> "ClangTidy":
         self.start = time()
-        if os.path.exists(self.cdb_path):
-            shutil.rmtree(self.cdb_path)
+        # if os.path.exists(self.cdb_path):
+        #     shutil.rmtree(self.cdb_path)
         self._generate_cdb()
         return self
 
     def __exit__(self, *args: list) -> None:
-        if os.path.exists(self.cdb_path):
-            shutil.rmtree(self.cdb_path)
+        # if os.path.exists(self.cdb_path):
+        #     shutil.rmtree(self.cdb_path)
         self.end = time()
         print("Finish running clang-tidy:", self.end - self.start)
 
     def _generate_cdb(self) -> None:
         """Run CMake to generate compilation database."""
-        os.mkdir(self.cdb_path)
+        # os.mkdir(self.cdb_path)
         os.chdir(self.cdb_path)
         cmake_args = [
             "cmake",
             self.root_path,
             "-GNinja",  # prevents cmake from using --option-files for include path.
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-            "-DGOOGLE_TEST=ON",
-            "-DCMAKE_CXX_FLAGS='-Wno-clang-diagnostic-deprecated-declarations'",
+            "-DGOOGLE_TEST=OFF",
         ]
+        if platform.system() != "Windows":
+            cmake_args.append(
+                "-DCMAKE_CXX_FLAGS='-Wno-clang-diagnostic-deprecated-declarations'"
+            )
         if self.use_dmlc_gtest:
             cmake_args.append("-DUSE_DMLC_GTEST=ON")
         else:
             cmake_args.append("-DUSE_DMLC_GTEST=OFF")
 
         if self.cuda_lint:
-            cmake_args.extend(["-DUSE_CUDA=ON", "-DUSE_NCCL=ON"])
+            cmake_args.extend(["-DUSE_CUDA=ON"])
             if self.cuda_archs:
                 arch_list = ";".join(self.cuda_archs)
                 cmake_args.append(f"-DCMAKE_CUDA_ARCHITECTURES={arch_list}")
+            if platform.system() != "Windows":
+                cmake_args.append("-DUSE_NCCL=ON")
         subprocess.run(cmake_args)
         os.chdir(self.root_path)
 
@@ -186,13 +194,23 @@ class ClangTidy:
 
         # Two passes, one for device code another for host code.
         if path.endswith("cu"):
-            args = [common_args.copy(), common_args.copy()]
+            copied = common_args.copy()
+            if platform.system() == "Windows":
+                cupath = os.path.join(
+                    "c:/", "Program Files", "NVIDIA GPU Computing Toolkit", "CUDA"
+                )
+                version = os.listdir(cupath)[-1]
+                cupath = os.path.join(cupath, version)
+                copied.append(f"--cuda-path={cupath}")
+
+            args = [copied.copy(), copied]
             args[0].append("--cuda-host-only")
             args[1].append("--cuda-device-only")
         else:
             args = [common_args.copy()]
         for a in args:
             a.append("-Wno-unused-command-line-argument")
+
         return args
 
     def _configure(self) -> list[list[str]]:
@@ -219,6 +237,7 @@ class ClangTidy:
             if should_lint(path):
                 args = self._configure_flags(path, entry["command"])
                 all_files.extend(args)
+
         return all_files
 
     def run(self) -> bool:
@@ -275,7 +294,7 @@ def test_tidy(args: argparse.Namespace) -> None:
     cmd = [tidy, tidy_config, test_file_path]
     (proc_code, tidy_status, error_msg, _) = call(cmd)
     assert proc_code == 0
-    assert tidy_status == 1
+    assert tidy_status == 1, error_msg
     print("clang-tidy is working.")
 
 

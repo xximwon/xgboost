@@ -85,7 +85,7 @@ class ClangTidy:
             self.root_path,
             "-GNinja",  # prevents cmake from using --option-files for include path.
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-            "-DGOOGLE_TEST=OFF",
+            "-DGOOGLE_TEST=ON",
         ]
         if platform.system() != "Windows":
             cmake_args.append(

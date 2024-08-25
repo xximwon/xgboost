@@ -444,8 +444,8 @@ void SketchContainer::Prune(size_t to) {
 
 void SketchContainer::Merge(Span<OffsetT const> d_that_columns_ptr, Span<SketchEntry const> that) {
   auto self = dh::ToSpan(this->Current());
-  std::cout << "merge:" << self.size_bytes() / 1024.0 / 1024.0
-            << " new:" << that.size_bytes() / 1024.0 / 1024.0 << "MB" << std::endl;
+  LOG(DEBUG) << "Merge: self:" << self.size_bytes() / 1024.0 / 1024.0 << "MB. "
+             << "That:" << that.size_bytes() / 1024.0 / 1024.0 << "MB" << std::endl;
   dh::safe_cuda(cudaSetDevice(device_.ordinal));
   timer_.Start(__func__);
   if (this->Current().size() == 0) {

@@ -276,3 +276,23 @@ def test_cat_check() -> None:
         Xy = xgb.DMatrix(it, enable_categorical=True)
         with pytest.raises(ValueError, match="categorical features"):
             xgb.train({"booster": "gblinear"}, Xy)
+
+
+@given(
+    strategies.integers(0, 1024),
+    strategies.integers(1, 7),
+    strategies.integers(0, 13),
+    strategies.booleans(),
+)
+@settings(deadline=None, max_examples=10, print_blob=True)
+def test_extmem_qdm(
+    n_samples_per_batch: int,
+    n_features: int,
+    n_batches: int,
+) -> None:
+    it = IteratorForTest(
+        *make_batches(n_samples_per_batch, n_features, n_batches, use_cupy=False),
+        cache="cache",
+        on_host=False,
+    )
+    Xy = xgb.core.ExtMemQuantileDMatrix(it)

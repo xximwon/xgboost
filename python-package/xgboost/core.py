@@ -526,8 +526,11 @@ class DataIter(ABC):  # pylint: disable=too-many-instance-attributes
     on_host :
         Whether the data should be cached on host memory instead of harddrive when using
         GPU with external memory. If set to true, then the "external memory" would
-        simply be CPU (host) memory. This is still working in progress, not ready for
-        test yet.
+        simply be CPU (host) memory.
+
+        .. warning::
+
+            This is still working in progress, not ready for test yet.
 
     """
 
@@ -1673,6 +1676,14 @@ class QuantileDMatrix(DMatrix):
 
 
 class ExtMemQuantileDMatrix(DMatrix):
+    """The external memory version of the :py:class:`QuantileDMatrix`.
+
+    .. warning::
+
+        This is still working in progress, not ready for test yet.
+
+    """
+
     def __init__(
         self,
         data: DataIter,

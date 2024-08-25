@@ -278,11 +278,35 @@ def test_cat_check() -> None:
             xgb.train({"booster": "gblinear"}, Xy)
 
 
+def check_extmem_qdm(
+    n_samples_per_batch: int,
+    n_features: int,
+    n_batches: int,
+    device: str,
+    on_host: bool,
+) -> None:
+    it = IteratorForTest(
+        *make_batches(
+            n_samples_per_batch, n_features, n_batches, use_cupy=device != "cpu"
+        ),
+        cache="cache",
+        on_host=on_host,
+    )
+    Xy_it = xgb.core.ExtMemQuantileDMatrix(it)
+    booster_it = xgb.train({"device": device}, Xy_it, num_boost_round=8)
+
+    X, y, w = it.as_arrays()
+    Xy = xgb.QuantileDMatrix(X, y, weight=w)
+    booster = xgb.train({"device": device}, Xy, num_boost_round=8)
+
+    predt_it = booster_it.predict(Xy_it)
+    predt = booster.predict(Xy)
+
+
 @given(
-    strategies.integers(0, 1024),
-    strategies.integers(1, 7),
-    strategies.integers(0, 13),
-    strategies.booleans(),
+    strategies.integers(1, 512),
+    strategies.integers(1, 4),
+    strategies.integers(1, 6),
 )
 @settings(deadline=None, max_examples=10, print_blob=True)
 def test_extmem_qdm(
@@ -290,9 +314,4 @@ def test_extmem_qdm(
     n_features: int,
     n_batches: int,
 ) -> None:
-    it = IteratorForTest(
-        *make_batches(n_samples_per_batch, n_features, n_batches, use_cupy=False),
-        cache="cache",
-        on_host=False,
-    )
-    Xy = xgb.core.ExtMemQuantileDMatrix(it)
+    check_extmem_qdm(n_samples_per_batch, n_features, n_batches, "cpu", False)

@@ -113,7 +113,7 @@ struct GPUHistMakerDevice {
   std::vector<bst_idx_t> batch_ptr_;
   std::unique_ptr<DeviceHistogramBuilder> histogram_builder_;
 
-  common::ThreadPool workers_{2, [config = *GlobalConfigThreadLocalStore::Get()] {
+  common::ThreadPool workers_{"pf", 2, [config = *GlobalConfigThreadLocalStore::Get()] {
                                 *GlobalConfigThreadLocalStore::Get() = config;
                               }};
   // node idx for each sample

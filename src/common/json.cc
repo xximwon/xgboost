@@ -629,7 +629,7 @@ Json JsonReader::ParseNumber() {
     if (negative) {
       i = -i;
     }
-    return Json(JsonInteger(i));
+    return Json{JsonInteger(i)};
   }
 }
 

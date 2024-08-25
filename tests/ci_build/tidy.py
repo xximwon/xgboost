@@ -32,6 +32,18 @@ def call(args: list[str]) -> tuple[int, int, str, list[str]]:
     return (completed.returncode, return_code, error_msg, args)
 
 
+def find_cupath():
+    if platform.system() == "Windows":
+        cupath = os.path.join(
+            "c:/", "Program Files", "NVIDIA GPU Computing Toolkit", "CUDA"
+        )
+        version = os.listdir(cupath)[-1]
+        cupath = os.path.join(cupath, version)
+    else:
+        cupath = "/usr/local/cuda/"
+    return cupath
+
+
 class ClangTidy:
     """clang tidy wrapper.
     Args:
@@ -106,7 +118,7 @@ class ClangTidy:
         subprocess.run(cmake_args)
         os.chdir(self.root_path)
 
-    def convert_nvcc_command_to_clang(self, command: str) -> str:
+    def _convert_nvcc_command(self, command: str) -> str:
         """Convert nvcc flags to corresponding clang flags."""
         components = command.split()
         compiler: str = components[0]
@@ -123,7 +135,7 @@ class ClangTidy:
                 continue
             elif components[i] == "-fuse-ld=lld":
                 continue
-            elif components[i].find("--default-stream") != -1:
+            elif components[i].find("--default-stream") != -1 or components[i].find("per-thread") != -1:
                 continue
             elif components[i] == "-rdynamic":
                 continue
@@ -151,19 +163,29 @@ class ClangTidy:
                 ]
                 if pos != -1:
                     converted_components.append("--cuda-gpu-arch=sm_" + capability)
-            elif components[i].find("--std=c++14") != -1:
-                converted_components.append("-std=c++14")
+            elif components[i].find("--std=c++17") != -1:
+                converted_components.append("-std=c++17")
             elif components[i].startswith("-isystem="):
                 converted_components.extend(components[i].split("="))
             else:
                 converted_components.append(components[i])
 
-        converted_components.append("-isystem /usr/local/cuda/include/")
+        cuinc = os.path.join(find_cupath(), "include")
+        converted_components.append(f"-isystem {cuinc}")
 
-        command = ""
-        for c in converted_components:
-            command = command + " " + c
+        command = " ".join(converted_components)
         command = command.strip()
+        return command
+
+    def _convert_msvc_command(self, command: str):
+        components = command.split()
+        converted_components = []
+        for i, arg in enumerate(components):
+            if "-std:c++17" in arg:
+                converted_components.append("-std=c++17")
+            else:
+                converted_components.append(arg)
+        command = " ".join(converted_components)
         return command
 
     def _configure_flags(self, path: str, command: str) -> list[list[str]]:
@@ -178,7 +200,8 @@ class ClangTidy:
             "--config-file=" + self.tidy_file,
         ]
         common_args.append("--")
-        command = self.convert_nvcc_command_to_clang(command)
+        command = self._convert_nvcc_command(command)
+        command = self._convert_msvc_command(command)
 
         command_split = command.split()[1:]  # remove clang/c++/g++
         if "-c" in command_split:
@@ -196,11 +219,7 @@ class ClangTidy:
         if path.endswith("cu"):
             copied = common_args.copy()
             if platform.system() == "Windows":
-                cupath = os.path.join(
-                    "c:/", "Program Files", "NVIDIA GPU Computing Toolkit", "CUDA"
-                )
-                version = os.listdir(cupath)[-1]
-                cupath = os.path.join(cupath, version)
+                cupath = find_cupath()
                 copied.append(f"--cuda-path={cupath}")
 
             args = [copied.copy(), copied]

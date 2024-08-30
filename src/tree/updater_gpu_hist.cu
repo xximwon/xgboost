@@ -205,6 +205,7 @@ struct GPUHistMakerDevice {
 
   // Reset values for each update iteration
   [[nodiscard]] DMatrix* Reset(HostDeviceVector<GradientPair>* dh_gpair, DMatrix* p_fmat) {
+    this->monitor.Start(__func__);
     auto const& info = p_fmat->Info();
     this->column_sampler_->Init(ctx_, p_fmat->Info().num_col_, info.feature_weights.HostVector(),
                                 param.colsample_bynode, param.colsample_bylevel,
@@ -257,7 +258,7 @@ struct GPUHistMakerDevice {
     this->histogram_.Reset(ctx_, this->hist_param_->MaxCachedHistNodes(ctx_->Device()),
                            feature_groups->DeviceAccessor(ctx_->Device()), cuts_->TotalBins(),
                            false);
-
+    this->monitor.Stop(__func__);
     return p_fmat;
   }
 
@@ -351,6 +352,33 @@ struct GPUHistMakerDevice {
     monitor.Stop(__func__);
   }
 
+  void ReduceHist(DMatrix* p_fmat, std::vector<GPUExpandEntry> const& candidates,
+                  std::vector<bst_node_t> const& build_nidx,
+                  std::vector<bst_node_t> const& subtraction_nidx) {
+    if (candidates.empty()) {
+      return;
+    }
+    this->monitor.Start(__func__);
+
+    // Reduce all in one go
+    // This gives much better latency in a distributed setting when processing a large batch
+    this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), build_nidx.at(0), build_nidx.size());
+    // Perform subtraction for sibiling nodes
+    auto need_build = this->histogram_.SubtractHist(candidates, build_nidx, subtraction_nidx);
+    // Build the nodes that can not obtain the histogram using subtraction. This is the slow path.
+    std::int32_t k = 0;
+    for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(true))) {
+      for (auto nidx : need_build) {
+        this->BuildHist(page, k, nidx);
+      }
+      ++k;
+    }
+    for (auto nidx : need_build) {
+      this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), nidx, 1);
+    }
+    this->monitor.Stop(__func__);
+  }
+
   void UpdatePositionColumnSplit(EllpackDeviceAccessor d_matrix,
                                  std::vector<NodeSplitData> const& split_data,
                                  std::vector<bst_node_t> const& nidx,
@@ -439,13 +467,18 @@ struct GPUHistMakerDevice {
     }
   };
 
+  // Update position and build histogram.
   void PartitionAndBuildHist(DMatrix* p_fmat, std::vector<GPUExpandEntry> const& expand_set,
                              std::vector<GPUExpandEntry> const& candidates, RegTree const* p_tree) {
     if (expand_set.empty()) {
       return;
     }
     monitor.Start(__func__);
+    CHECK_LE(candidates.size(), expand_set.size());
 
+    // Update all the nodes if working with external memory, this saves us from working
+    // with the finalize position call, which adds an additional iteration and requires
+    // special handling for row index.
     bool const is_single_block = p_fmat->SingleColBlock();
 
     // Prepare for update partition
@@ -478,13 +511,13 @@ struct GPUHistMakerDevice {
       auto go_left = GoLeftOp{d_matrix};
       // Partition histogram.
       monitor.Start("UpdatePositionBatch");
-      partitioners_.at(k)->UpdatePositionBatch(
-          nidx, left_nidx, right_nidx, split_data,
-          [=] __device__(cuda_impl::RowIndexT ridx, int /*nidx_in_batch*/,
-                         const NodeSplitData& data) { return go_left(ridx, data); });
       if (p_fmat->Info().IsColumnSplit()) {
         UpdatePositionColumnSplit(d_matrix, split_data, nidx, left_nidx, right_nidx);
-        return;
+      } else {
+        partitioners_.at(k)->UpdatePositionBatch(
+            nidx, left_nidx, right_nidx, split_data,
+            [=] __device__(cuda_impl::RowIndexT ridx, int /*nidx_in_batch*/,
+                           const NodeSplitData& data) { return go_left(ridx, data); });
       }
       monitor.Stop("UpdatePositionBatch");
 
@@ -505,42 +538,15 @@ struct GPUHistMakerDevice {
     monitor.Stop(__func__);
   }
 
-  void ReduceHist(DMatrix* p_fmat, std::vector<GPUExpandEntry> const& candidates,
-                  std::vector<bst_node_t> const& build_nidx,
-                  std::vector<bst_node_t> const& subtraction_nidx) {
-    if (candidates.empty()) {
-      return;
-    }
-    this->monitor.Start(__func__);
-
-    // Reduce all in one go
-    // This gives much better latency in a distributed setting when processing a large batch
-    this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), build_nidx.at(0), build_nidx.size());
-    // Perform subtraction for sibiling nodes
-    auto need_build = this->histogram_.SubtractHist(candidates, build_nidx, subtraction_nidx);
-    // Build the nodes that can not obtain the histogram using subtraction. This is the slow path.
-    std::int32_t k = 0;
-    for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(true))) {
-      for (auto nidx : need_build) {
-        this->BuildHist(page, k, nidx);
-      }
-      ++k;
-    }
-    for (auto nidx : need_build) {
-      this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), nidx, 1);
-    }
-    this->monitor.Stop(__func__);
-  }
-
   // After tree update is finished, update the position of all training
   // instances to their final leaf. This information is used later to update the
   // prediction cache
-  void FinalisePosition(DMatrix* p_fmat, RegTree const* p_tree, ObjInfo task, bst_idx_t n_samples,
+  void FinalisePosition(DMatrix* p_fmat, RegTree const* p_tree, ObjInfo task,
                         HostDeviceVector<bst_node_t>* p_out_position) {
     if (!p_fmat->SingleColBlock() && task.UpdateTreeLeaf()) {
       LOG(FATAL) << "Current objective function can not be used with external memory.";
     }
-    if (p_fmat->Info().num_row_ != n_samples) {
+    if (static_cast<std::size_t>(p_fmat->NumBatches() + 1) != this->batch_ptr_.size()) {
       // External memory with concatenation. Not supported.
       p_out_position->Resize(0);
       positions_.clear();
@@ -684,8 +690,9 @@ struct GPUHistMakerDevice {
   }
 
   GPUExpandEntry InitRoot(DMatrix* p_fmat, RegTree* p_tree) {
-    constexpr bst_node_t kRootNIdx = 0;
-    dh::XGBCachingDeviceAllocator<char> alloc;
+    this->monitor.Start(__func__);
+
+    constexpr bst_node_t kRootNIdx = RegTree::kRoot;
     auto quantiser = *this->quantiser;
     auto gpair_it = dh::MakeTransformIterator<GradientPairInt64>(
         dh::tbegin(gpair),
@@ -716,6 +723,8 @@ struct GPUHistMakerDevice {
 
     // Generate first split
     auto root_entry = this->EvaluateRootSplit(p_fmat, root_sum_quantised);
+
+    this->monitor.Stop(__func__);
     return root_entry;
   }
 
@@ -724,14 +733,8 @@ struct GPUHistMakerDevice {
     // Process maximum 32 nodes at a time
     Driver<GPUExpandEntry> driver(param, 32);
 
-    auto n_samples = p_fmat->Info().num_row_;
-    monitor.Start("Reset");
     p_fmat = this->Reset(gpair_all, p_fmat);
-    monitor.Stop("Reset");
-
-    monitor.Start("InitRoot");
     driver.Push({this->InitRoot(p_fmat, p_tree)});
-    monitor.Stop("InitRoot");
 
     // The set of leaves that can be expanded asynchronously
     auto expand_set = driver.Pop();
@@ -744,6 +747,7 @@ struct GPUHistMakerDevice {
       std::vector<GPUExpandEntry> valid_candidates;
       std::copy_if(expand_set.begin(), expand_set.end(), std::back_inserter(valid_candidates),
                    [&](auto const& e) { return driver.IsChildValid(e); });
+
       // Allocaate children nodes.
       auto new_candidates =
           pinned.GetSpan<GPUExpandEntry>(valid_candidates.size() * 2, GPUExpandEntry());
@@ -764,7 +768,7 @@ struct GPUHistMakerDevice {
     if (p_fmat->SingleColBlock()) {
       CHECK_GE(p_tree->NumNodes(), this->partitioners_.front()->GetNumNodes());
     }
-    this->FinalisePosition(p_fmat, p_tree, *task, n_samples, p_out_position);
+    this->FinalisePosition(p_fmat, p_tree, *task, p_out_position);
   }
 };
 

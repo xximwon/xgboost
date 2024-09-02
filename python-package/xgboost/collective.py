@@ -5,12 +5,12 @@ import logging
 import os
 import pickle
 from enum import IntEnum, unique
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypeVars
 
 import numpy as np
 
-from ._typing import _T
-from .core import _LIB, _check_call, build_info, c_str, make_jcargs, py_str
+from .core import _LIB, _check_call, build_info, c_str, make_jcargs, py_str, _expect
+from ._typing import c_bst_ulong
 
 LOGGER = logging.getLogger("[xgboost.collective]")
 
@@ -121,13 +121,23 @@ def get_processor_name() -> str:
     return py_str(value)
 
 
+
+_T = TypeVars("_T", bounds=[np.ndarray, bytearray])
+
+
 def broadcast(data: _T, root: int) -> _T:
     """Broadcast object from one node to all other nodes.
 
     Parameters
     ----------
-    data : any type that can be pickled
+    data :
         Input data, if current rank does not equal root, this can be None
+
+      .. versionchanged:: 3.0
+
+          The broadcast function no longer pickles the input data due to security
+          concern. It now accepts byte array as input.
+
     root : int
         Rank of the node to broadcast data from.
 
@@ -135,13 +145,18 @@ def broadcast(data: _T, root: int) -> _T:
     -------
     object : int
         the result of broadcast.
+
     """
     rank = get_rank()
     length = ctypes.c_ulong()
     if root == rank:
-        assert data is not None, "need to pass in data when broadcasting"
-        s = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
-        length.value = len(s)
+        if data is None:
+            raise ValueError("Need to pass in data when broadcasting.")
+        if isinstance(data, (bytearray, np.ndarray)):
+            length.value = len(data)
+        else:
+           _expect((bytearray, np.ndarray), data)
+
     # Run first broadcast
     _check_call(
         _LIB.XGCommunicatorBroadcast(

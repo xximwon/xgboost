@@ -33,7 +33,6 @@
 #include "xgboost/json.h"                   // for Json
 
 namespace xgboost::collective {
-
 Tracker::Tracker(Json const& config)
     : sortby_{static_cast<SortBy>(
           OptionalArg<Integer const>(config, "sortby", static_cast<Integer::Int>(SortBy::kHost)))},
@@ -46,6 +45,8 @@ Tracker::Tracker(Json const& config)
   // Some old configurations in JVM for the scala implementation (removed) use 0 to
   // indicate blocking. We continue that convention here.
   timeout_ = (timeout_ == 0s) ? -1s : timeout_;
+
+  LOG(CONSOLE) << "[tracker] timeout set to:" << this->timeout_.count() << std::endl;
 }
 
 Result Tracker::WaitUntilReady() const {
@@ -106,6 +107,8 @@ RabitTracker::WorkerProxy::WorkerProxy(std::int32_t world, TCPSocket sock, SockA
       auto host = addr.V6().Addr();
       info_ = proto::PeerInfo{host, port, rank};
     }
+    LOG(CONSOLE) << "[tracker] Connection from: " << this->info_.HostPort()
+                 << ". CMD:" << static_cast<std::int32_t>(this->cmd_);
     return Success();
   };
 }

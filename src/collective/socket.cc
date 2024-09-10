@@ -129,10 +129,10 @@ std::size_t TCPSocket::Send(StringView str) {
   }
 
   Result last_error;
-  auto log_failure = [&host, &last_error, port](Result err) {
+  auto log_failure = [&host, &last_error, port, timeout](Result err) {
     last_error = std::move(err);
     LOG(WARNING) << "Failed to connect to:" << host << ":" << port
-                 << " Error:" << last_error.Report();
+                 << " Error:" << last_error.Report() << " Timeout is set to:" << timeout.count();
   };
 
   for (std::int32_t attempt = 0; attempt < std::max(retry, 1); ++attempt) {

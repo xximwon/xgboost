@@ -29,6 +29,7 @@ Comm::Comm(std::string const& host, std::int32_t port, std::chrono::seconds time
 Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, std::int32_t retry,
                           std::string const& task_id, TCPSocket* out, std::int32_t rank,
                           std::int32_t world) {
+  LOG(CONSOLE) << "[comm] Connect tracker:" << info.HostPort();
   // Get information from the tracker
   CHECK(!info.host.empty());
   TCPSocket& tracker = *out;
@@ -62,10 +63,18 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
                                     proto::PeerInfo ninfo, std::chrono::seconds timeout,
                                     std::int32_t retry,
                                     std::vector<std::shared_ptr<TCPSocket>>* out_workers) {
+
+  auto pid = getpid();
+  std::string host;
+  auto rc = GetHostName(&host);
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Connect workers.";
+
   auto next = std::make_shared<TCPSocket>();
   auto prev = std::make_shared<TCPSocket>();
 
-  auto rc = Success() << [&] {
+  rc = Success() << [&] {
+    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+                 << " connect ring next:" << ninfo.host << ":" << ninfo.port;
     auto rc = Connect(ninfo.host, ninfo.port, retry, timeout, next.get());
     if (!rc.OK()) {
       return Fail("Bootstrap failed to connect to ring next.", std::move(rc));
@@ -75,6 +84,8 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return next->NonBlocking(true);
   } << [&] {
     SockAddress addr;
+    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+                 << " wait accept from ring prev.";
     return listener->Accept(prev.get(), &addr);
   } << [&] {
     return prev->NonBlocking(true);
@@ -105,6 +116,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return Success();
   };
 
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather host names.";
   rc = std::move(rc) << [&] {
     return cpu_impl::RingAllgather(comm, s_buffer, HOST_NAME_MAX, 0, prev_ch, next_ch);
   } << [&] { return block(); };
@@ -112,6 +124,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return Fail("Failed to get host names from peers.", std::move(rc));
   }
 
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather ports.";
   std::vector<std::int32_t> peers_port(comm.World(), -1);
   peers_port[comm.Rank()] = ninfo.port;
   rc = std::move(rc) << [&] {
@@ -142,6 +155,8 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
   for (std::int32_t r = (comm.Rank() + 1); r < comm.World(); ++r) {
     auto const& peer = peers[r];
     auto worker = std::make_shared<TCPSocket>();
+    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+                 << " Connect:" << peer.HostPort();
     rc = std::move(rc)
          << [&] { return Connect(peer.host, peer.port, retry, timeout, worker.get()); }
          << [&] { return worker->RecvTimeout(timeout); };
@@ -160,6 +175,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     workers[r] = std::move(worker);
   }
 
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " recv peer connection.";
   for (std::int32_t r = 0; r < comm.Rank(); ++r) {
     auto peer = std::make_shared<TCPSocket>();
     rc = std::move(rc) << [&] {
@@ -189,6 +205,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     CHECK(workers[r]);
   }
 
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Finish connect workers.";
   return Success();
 }
 
@@ -213,6 +230,7 @@ RabitComm::RabitComm(std::string const& tracker_host, std::int32_t tracker_port,
   }
 
   loop_.reset(new Loop{std::chrono::seconds{timeout_}});  // NOLINT
+  LOG(CONSOLE) << "[comm] Bootstrap with timeout:" << timeout_.count();
   auto rc = this->Bootstrap(timeout_, retry_, task_id_);
   if (!rc.OK()) {
     this->ResetState();
@@ -232,8 +250,14 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
                                           std::string task_id) {
   TCPSocket tracker;
   std::int32_t world{-1};
-  auto rc = ConnectTrackerImpl(this->TrackerInfo(), timeout, retry, task_id, &tracker, this->Rank(),
-                               world);
+
+  auto pid = getpid();
+  std::string host;
+  auto rc = GetHostName(&host);
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host;
+
+  rc = ConnectTrackerImpl(this->TrackerInfo(), timeout, retry, task_id, &tracker, this->Rank(),
+                          world);
   if (!rc.OK()) {
     return Fail("Bootstrap failed.", std::move(rc));
   }
@@ -251,6 +275,7 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
   if (!rc.OK()) {
     return rc;
   }
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " listening on:" << lport;
 
   // create worker for listening to error notice.
   auto domain = tracker.Domain();
@@ -304,12 +329,14 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
   error_worker_.detach();
 
   proto::Start start;
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " send start.";
   rc = std::move(rc) << [&] { return start.WorkerSend(lport, &tracker, eport); }
                      << [&] { return start.WorkerRecv(&tracker, &world); };
   if (!rc.OK()) {
     return rc;
   }
   this->world_ = world;
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got world size:" << this->world_;
 
   // get ring neighbors
   std::string snext;
@@ -318,10 +345,12 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
     return Fail("Failed to receive the rank for the next worker.", std::move(rc));
   }
   auto jnext = Json::Load(StringView{snext});
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got next peer:" << snext;
 
   proto::PeerInfo ninfo{jnext};
   // get the rank of this worker
   this->rank_ = BootstrapPrev(ninfo.rank, world);
+  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got rank:" << this->rank_;
   this->tracker_.rank = rank_;
 
   std::vector<std::shared_ptr<TCPSocket>> workers;

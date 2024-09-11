@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 CUDA_VERSION=12.4.1
 NCCL_VERSION=2.22.3-1
 RAPIDS_VERSION=24.08

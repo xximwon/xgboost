@@ -45,11 +45,14 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
   } << [&] {
     return tracker.RecvTimeout(timeout);
   } << [&] {
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] verify.";
     return proto::Magic{}.Verify(&tracker);
   } << [&] {
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] connect.";
     return proto::Connect{}.WorkerSend(&tracker, world, rank, task_id);
   } << [&] {
     LOG(INFO) << "Task " << task_id << " connected to the tracker";
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] Connected to the tracker.";
     return Success();
   };
 }
@@ -81,6 +84,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     }
     return rc;
   } << [&] {
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] non-blocking.";
     return next->NonBlocking(true);
   } << [&] {
     SockAddress addr;
@@ -88,6 +92,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
                  << " wait accept from ring prev.";
     return listener->Accept(prev.get(), &addr);
   } << [&] {
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] non-blocking-1.";
     return prev->NonBlocking(true);
   };
   if (!rc.OK()) {

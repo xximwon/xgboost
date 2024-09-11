@@ -29,7 +29,7 @@ Comm::Comm(std::string const& host, std::int32_t port, std::chrono::seconds time
 Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, std::int32_t retry,
                           std::string const& task_id, TCPSocket* out, std::int32_t rank,
                           std::int32_t world) {
-  LOG(CONSOLE) << "[comm] Connect tracker:" << info.HostPort();
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] Connect tracker:" << info.HostPort();
   // Get information from the tracker
   CHECK(!info.host.empty());
   TCPSocket& tracker = *out;
@@ -64,16 +64,16 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
                                     std::int32_t retry,
                                     std::vector<std::shared_ptr<TCPSocket>>* out_workers) {
 
-  auto pid = getpid();
-  std::string host;
+  auto pid = getpid();  std::string host;
   auto rc = GetHostName(&host);
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Connect workers.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host
+            << " Connect workers.";
 
   auto next = std::make_shared<TCPSocket>();
   auto prev = std::make_shared<TCPSocket>();
 
   rc = Success() << [&] {
-    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host
                  << " connect ring next:" << ninfo.host << ":" << ninfo.port;
     auto rc = Connect(ninfo.host, ninfo.port, retry, timeout, next.get());
     if (!rc.OK()) {
@@ -84,7 +84,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return next->NonBlocking(true);
   } << [&] {
     SockAddress addr;
-    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host
                  << " wait accept from ring prev.";
     return listener->Accept(prev.get(), &addr);
   } << [&] {
@@ -116,7 +116,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return Success();
   };
 
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather host names.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather host names.";
   rc = std::move(rc) << [&] {
     return cpu_impl::RingAllgather(comm, s_buffer, HOST_NAME_MAX, 0, prev_ch, next_ch);
   } << [&] { return block(); };
@@ -124,7 +124,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     return Fail("Failed to get host names from peers.", std::move(rc));
   }
 
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather ports.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " gather ports.";
   std::vector<std::int32_t> peers_port(comm.World(), -1);
   peers_port[comm.Rank()] = ninfo.port;
   rc = std::move(rc) << [&] {
@@ -155,7 +155,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
   for (std::int32_t r = (comm.Rank() + 1); r < comm.World(); ++r) {
     auto const& peer = peers[r];
     auto worker = std::make_shared<TCPSocket>();
-    LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host
+    std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host
                  << " Connect:" << peer.HostPort();
     rc = std::move(rc)
          << [&] { return Connect(peer.host, peer.port, retry, timeout, worker.get()); }
@@ -175,7 +175,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     workers[r] = std::move(worker);
   }
 
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " recv peer connection.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " recv peer connection.";
   for (std::int32_t r = 0; r < comm.Rank(); ++r) {
     auto peer = std::make_shared<TCPSocket>();
     rc = std::move(rc) << [&] {
@@ -205,7 +205,7 @@ Result ConnectTrackerImpl(proto::PeerInfo info, std::chrono::seconds timeout, st
     CHECK(workers[r]);
   }
 
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Finish connect workers.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " Finish connect workers.";
   return Success();
 }
 
@@ -225,12 +225,12 @@ RabitComm::RabitComm(std::string const& tracker_host, std::int32_t tracker_port,
       nccl_path_{std::move(nccl_path)} {
   if (this->TrackerInfo().host.empty()) {
     // Not in a distributed environment.
-    LOG(CONSOLE) << InitLog(task_id_, rank_);
+    std::cerr << dmlc::DateLogger().HumanDate() << InitLog(task_id_, rank_);
     return;
   }
 
   loop_.reset(new Loop{std::chrono::seconds{timeout_}});  // NOLINT
-  LOG(CONSOLE) << "[comm] Bootstrap with timeout:" << timeout_.count();
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] Bootstrap with timeout:" << timeout_.count();
   auto rc = this->Bootstrap(timeout_, retry_, task_id_);
   if (!rc.OK()) {
     this->ResetState();
@@ -254,7 +254,7 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
   auto pid = getpid();
   std::string host;
   auto rc = GetHostName(&host);
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host;
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host;
 
   rc = ConnectTrackerImpl(this->TrackerInfo(), timeout, retry, task_id, &tracker, this->Rank(),
                           world);
@@ -275,7 +275,7 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
   if (!rc.OK()) {
     return rc;
   }
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " listening on:" << lport;
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " listening on:" << lport;
 
   // create worker for listening to error notice.
   auto domain = tracker.Domain();
@@ -329,14 +329,14 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
   error_worker_.detach();
 
   proto::Start start;
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " send start.";
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " send start.";
   rc = std::move(rc) << [&] { return start.WorkerSend(lport, &tracker, eport); }
                      << [&] { return start.WorkerRecv(&tracker, &world); };
   if (!rc.OK()) {
     return rc;
   }
   this->world_ = world;
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got world size:" << this->world_;
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got world size:" << this->world_;
 
   // get ring neighbors
   std::string snext;
@@ -345,12 +345,12 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
     return Fail("Failed to receive the rank for the next worker.", std::move(rc));
   }
   auto jnext = Json::Load(StringView{snext});
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got next peer:" << snext;
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got next peer:" << snext;
 
   proto::PeerInfo ninfo{jnext};
   // get the rank of this worker
   this->rank_ = BootstrapPrev(ninfo.rank, world);
-  LOG(CONSOLE) << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got rank:" << this->rank_;
+  std::cerr << dmlc::DateLogger().HumanDate() << "[comm] bootstrap. PID:" << pid << " host:" << host << " Got rank:" << this->rank_;
   this->tracker_.rank = rank_;
 
   std::vector<std::shared_ptr<TCPSocket>> workers;
@@ -376,7 +376,7 @@ Comm* RabitComm::MakeCUDAVar(Context const*, std::shared_ptr<Coll>) const {
     this->channels_.emplace_back(std::make_shared<Channel>(*this, w));
   }
 
-  LOG(CONSOLE) << InitLog(task_id_, rank_);
+  std::cerr << dmlc::DateLogger().HumanDate() << InitLog(task_id_, rank_);
   return rc;
 }
 
@@ -440,7 +440,7 @@ RabitComm::~RabitComm() noexcept(false) {
 
 [[nodiscard]] Result RabitComm::LogTracker(std::string msg) const {
   if (!this->IsDistributed()) {
-    LOG(CONSOLE) << msg;
+    std::cerr << dmlc::DateLogger().HumanDate() << msg;
     return Success();
   }
   TCPSocket out;

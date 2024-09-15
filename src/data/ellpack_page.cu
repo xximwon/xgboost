@@ -1,14 +1,15 @@
 /**
  * Copyright 2019-2024, XGBoost contributors
  */
-#include <cuda/functional>  // for proclaim_return_type
 #include <thrust/iterator/discard_iterator.h>
 #include <thrust/iterator/transform_output_iterator.h>
 
 #include <algorithm>        // for copy
+#include <cuda/functional>  // for proclaim_return_type
 #include <utility>          // for move
 #include <vector>           // for vector
 
+#include "../common/algorithm.cuh"  // for InclusiveScan
 #include "../common/categorical.h"
 #include "../common/cuda_context.cuh"
 #include "../common/cuda_rt_utils.h"        // for SetDevice
@@ -92,10 +93,31 @@ __global__ void CompressBinEllpackKernel(
   wr.AtomicWriteSymbol(buffer, bin, (irow + base_row) * row_stride + ifeature);
 }
 
-[[nodiscard]] std::size_t CalcNumSymbols(Context const*, bool /*is_dense*/,
+[[nodiscard]] std::size_t CalcNumSymbols(Context const* ctx, bool is_dense,
                                          std::shared_ptr<common::HistogramCuts const> cuts) {
-  // Return the total number of symbols (total number of bins plus 1 for not found)
-  return cuts->cut_values_.Size() + 1;
+  if (!is_dense) {
+    // Return the total number of symbols (total number of bins plus 1 for not found)
+    return cuts->cut_values_.Size() + 1;
+  }
+
+  cuts->cut_ptrs_.SetDevice(ctx->Device());
+  common::Span<std::uint32_t const> dptrs = cuts->cut_ptrs_.ConstDeviceSpan();
+  auto cuctx = ctx->CUDACtx();
+  using PtrT = typename decltype(dptrs)::value_type;
+  auto it = dh::MakeTransformIterator<PtrT>(
+      thrust::make_counting_iterator(1ul),
+      [=] XGBOOST_DEVICE(std::size_t i) { return dptrs[i] - dptrs[i - 1]; });
+  CHECK_GE(dptrs.size(), 2);
+  auto max_it = thrust::max_element(cuctx->CTP(), it, it + dptrs.size() - 1);
+  dh::TemporaryArray<PtrT> max_element(1);
+  auto d_me = max_element.data();
+  dh::LaunchN(1, cuctx->Stream(), [=] XGBOOST_DEVICE(std::size_t i) { d_me[i] = *max_it; });
+  PtrT h_me{0};
+  dh::safe_cuda(
+      cudaMemcpyAsync(&h_me, d_me.get(), sizeof(PtrT), cudaMemcpyDeviceToHost, cuctx->Stream()));
+  cuctx->Stream().Sync();
+  // No missing, hence no null value, hence no + 1 symbol.
+  return h_me;
 }
 
 // Construct an ELLPACK matrix with the given number of empty rows.
@@ -122,6 +144,9 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx,
       n_rows(page.Size()),
       row_stride(row_stride),
       n_symbols_(CalcNumSymbols(ctx, this->is_dense, this->cuts_)) {
+  monitor_.Init("ellpack_page");
+  common::SetDevice(ctx->Ordinal());
+
   this->InitCompressedData(ctx);
   this->CreateHistIndices(ctx, page, feature_types);
 }
@@ -185,6 +210,9 @@ struct WriteCompressedEllpackFunctor {
         bin_idx = accessor.SearchBin<true>(e.value, e.column_idx);
       } else {
         bin_idx = accessor.SearchBin<false>(e.value, e.column_idx);
+      }
+      if (kIsDense) {
+        bin_idx -= accessor.feature_segments[e.column_idx];
       }
       writer.AtomicWriteSymbol(d_buffer, bin_idx, output_position);
     }
@@ -308,15 +336,13 @@ void CopyGHistToEllpack(Context const* ctx, GHistIndexMatrix const& page,
   dh::device_vector<uint8_t> data(page.index.begin(), page.index.end());
   auto d_data = dh::ToSpan(data);
 
-  dh::device_vector<size_t> csc_indptr(page.index.Offset(),
-                                       page.index.Offset() + page.index.OffsetSize());
-  auto d_csc_indptr = dh::ToSpan(csc_indptr);
-
+  // GPU employs the same dense compression as CPU, no need to handle page.index.Offset()
   auto bin_type = page.index.GetBinTypeSize();
   common::CompressedBufferWriter writer{page.cut.TotalBins() +
                                         static_cast<std::size_t>(1)};  // +1 for null value
 
   auto cuctx = ctx->CUDACtx();
+  bool is_dense = page.IsDense();
   dh::LaunchN(row_stride * page.Size(), cuctx->Stream(), [=] __device__(bst_idx_t idx) mutable {
     auto ridx = idx / row_stride;
     auto ifeature = idx % row_stride;
@@ -330,15 +356,10 @@ void CopyGHistToEllpack(Context const* ctx, GHistIndexMatrix const& page,
       return;
     }
 
-    bst_idx_t offset = 0;
-    if (!d_csc_indptr.empty()) {
-      // is dense, ifeature is the actual feature index.
-      offset = d_csc_indptr[ifeature];
-    }
     common::cuda::DispatchBinType(bin_type, [&](auto t) {
       using T = decltype(t);
       auto ptr = reinterpret_cast<T const*>(d_data.data());
-      auto bin_idx = ptr[r_begin + ifeature] + offset;
+      auto bin_idx = ptr[r_begin + ifeature];
       writer.AtomicWriteSymbol(d_compressed_buffer, bin_idx, idx);
     });
   });
@@ -372,6 +393,8 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, GHistIndexMatrix const& pag
   CopyGHistToEllpack(ctx, page, d_row_ptr, row_stride, d_compressed_buffer, null);
   this->monitor_.Stop("CopyGHistToEllpack");
 }
+
+EllpackPageImpl::~EllpackPageImpl() noexcept(false) { dh::DefaultStream().Sync(); }
 
 // A functor that copies the data from one EllpackPage to another.
 struct CopyPage {

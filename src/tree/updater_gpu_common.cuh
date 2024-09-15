@@ -119,10 +119,12 @@ struct DeviceSplitCandidate {
 };
 
 namespace cuda_impl {
+constexpr auto DftPrefetchBatches() { return 2; }
+
 inline BatchParam HistBatch(TrainParam const& param) {
   auto p = BatchParam{param.max_bin, TrainParam::DftSparseThreshold()};
   p.prefetch_copy = true;
-  p.n_prefetch_batches = 1;
+  p.n_prefetch_batches = DftPrefetchBatches();
   return p;
 }
 
@@ -139,7 +141,7 @@ inline BatchParam ApproxBatch(TrainParam const& p, common::Span<float const> hes
 inline BatchParam StaticBatch(bool prefetch_copy) {
   BatchParam p;
   p.prefetch_copy = prefetch_copy;
-  p.n_prefetch_batches = 1;
+  p.n_prefetch_batches = DftPrefetchBatches();
   return p;
 }
 }  // namespace cuda_impl

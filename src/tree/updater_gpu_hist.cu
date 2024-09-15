@@ -70,7 +70,6 @@ void AssignNodes(RegTree const* p_tree, GradientQuantiser const* quantizer,
                  common::Span<bst_node_t> nodes_to_build, common::Span<bst_node_t> nodes_to_sub) {
   auto const& tree = *p_tree;
   std::size_t nidx_in_set{0};
-  double total{0.0}, smaller{0.0};
   auto p_build_nidx = nodes_to_build.data();
   auto p_sub_nidx = nodes_to_sub.data();
   for (auto& e : candidates) {
@@ -81,15 +80,12 @@ void AssignNodes(RegTree const* p_tree, GradientQuantiser const* quantizer,
     auto left_sum = quantizer->ToFloatingPoint(e.split.left_sum);
     auto right_sum = quantizer->ToFloatingPoint(e.split.right_sum);
     bool fewer_right = right_sum.GetHess() < left_sum.GetHess();
-    total += left_sum.GetHess() + right_sum.GetHess();
     if (fewer_right) {
       p_build_nidx[nidx_in_set] = tree[e.nid].RightChild();
       p_sub_nidx[nidx_in_set] = tree[e.nid].LeftChild();
-      smaller += right_sum.GetHess();
     } else {
       p_build_nidx[nidx_in_set] = tree[e.nid].LeftChild();
       p_sub_nidx[nidx_in_set] = tree[e.nid].RightChild();
-      smaller += left_sum.GetHess();
     }
     ++nidx_in_set;
   }
@@ -348,7 +344,7 @@ struct GPUHistMakerDevice {
     // This gives much better latency in a distributed setting when processing a large batch
     this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), build_nidx.at(0), build_nidx.size());
     // Perform subtraction for sibiling nodes
-    auto need_build = this->histogram_.SubtractHist(candidates, build_nidx, subtraction_nidx);
+    auto need_build = this->histogram_.SubtractHist(ctx_, candidates, build_nidx, subtraction_nidx);
     if (need_build.empty()) {
       this->monitor.Stop(__func__);
       return;
@@ -383,12 +379,14 @@ struct GPUHistMakerDevice {
     BitVector decision_bits{dh::ToSpan(decision_storage)};
     BitVector missing_bits{dh::ToSpan(missing_storage)};
 
+    auto cuctx = this->ctx_->CUDACtx();
     dh::TemporaryArray<NodeSplitData> split_data_storage(num_candidates);
     dh::safe_cuda(cudaMemcpyAsync(split_data_storage.data().get(), split_data.data(),
-                                  num_candidates * sizeof(NodeSplitData), cudaMemcpyDefault));
+                                  num_candidates * sizeof(NodeSplitData), cudaMemcpyDefault,
+                                  cuctx->Stream()));
     auto d_split_data = dh::ToSpan(split_data_storage);
 
-    dh::LaunchN(d_matrix.n_rows, [=] __device__(std::size_t ridx) mutable {
+    dh::LaunchN(d_matrix.n_rows, cuctx->Stream(), [=] __device__(std::size_t ridx) mutable {
       for (auto i = 0; i < num_candidates; i++) {
         auto const& data = d_split_data[i];
         auto const cut_value = d_matrix.GetFvalue(ridx, data.split_node.SplitIndex());
@@ -421,7 +419,7 @@ struct GPUHistMakerDevice {
 
     CHECK_EQ(partitioners_.size(), 1) << "External memory with column split is not yet supported.";
     partitioners_.front()->UpdatePositionBatch(
-        nidx, left_nidx, right_nidx, split_data,
+        ctx_, nidx, left_nidx, right_nidx, split_data,
         [=] __device__(bst_uint ridx, int nidx_in_batch, NodeSplitData const& data) {
           auto const index = ridx * num_candidates + nidx_in_batch;
           bool go_left;
@@ -495,10 +493,11 @@ struct GPUHistMakerDevice {
         UpdatePositionColumnSplit(d_matrix, split_data, nidx, left_nidx, right_nidx);
       } else {
         partitioners_.at(k)->UpdatePositionBatch(
-            nidx, left_nidx, right_nidx, split_data,
+            ctx_, nidx, left_nidx, right_nidx, split_data,
             [=] __device__(cuda_impl::RowIndexT ridx, int /*nidx_in_batch*/,
                            const NodeSplitData& data) { return go_left(ridx, data); });
       }
+
       monitor.Stop("UpdatePositionBatch");
 
       for (auto nidx : build_nidx) {

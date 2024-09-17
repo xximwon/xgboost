@@ -484,6 +484,7 @@ struct GPUHistMakerDevice {
 
     std::int32_t k{0};
     for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(prefetch_copy))) {
+      monitor.Start("UpdatePage:" + std::to_string(k));
       auto d_matrix = page.Impl()->GetDeviceAccessor(ctx_);
       auto go_left = GoLeftOp{d_matrix};
 
@@ -504,6 +505,7 @@ struct GPUHistMakerDevice {
         this->BuildHist(page, k, nidx);
       }
 
+      monitor.Stop("UpdatePage:" + std::to_string(k));
       ++k;
     }
 

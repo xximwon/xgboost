@@ -95,6 +95,10 @@ __global__ void CompressBinEllpackKernel(
   wr.AtomicWriteSymbol(buffer, bin, (irow + base_row) * row_stride + ifeature);
 }
 
+namespace {
+// Calculate the number of symbols for the compressed ellpack. Similar to what the CPU
+// implementation does, we compress the dense data by subtracting the bin values with the
+// starting bin of its feature.
 [[nodiscard]] std::size_t CalcNumSymbols(Context const* ctx, bool is_dense,
                                          std::shared_ptr<common::HistogramCuts const> cuts) {
   if (!is_dense) {
@@ -121,13 +125,14 @@ __global__ void CompressBinEllpackKernel(
   // No missing, hence no null value, hence no + 1 symbol.
   return h_me;
 }
+}  // namespace
 
 // Construct an ELLPACK matrix with the given number of empty rows.
 EllpackPageImpl::EllpackPageImpl(Context const* ctx,
                                  std::shared_ptr<common::HistogramCuts const> cuts, bool is_dense,
                                  bst_idx_t row_stride, bst_idx_t n_rows)
-    : is_dense(is_dense),
-      cuts_(std::move(cuts)),
+    : is_dense{is_dense},
+      cuts_{std::move(cuts)},
       row_stride{row_stride},
       n_rows{n_rows},
       n_symbols_{CalcNumSymbols(ctx, this->is_dense, this->cuts_)} {

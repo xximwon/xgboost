@@ -11,7 +11,6 @@
 
 #include "../common/common.h"               // for safe_cuda
 #include "../common/cuda_rt_utils.h"        // for SetDevice
-#include "../common/cuda_rt_utils.h"        // for SupportsPageableMem
 #include "../common/device_helpers.cuh"     // for CUDAStreamView, DefaultStream
 #include "../common/ref_resource_view.cuh"  // for MakeFixedVecWithCudaMalloc
 #include "../common/resource.cuh"           // for PrivateCudaMmapConstStream
@@ -87,11 +86,6 @@ class EllpackHostCacheStreamImpl {
 
     dh::safe_cuda(cudaMemcpyAsync(new_impl->gidx_buffer.data(), impl->gidx_buffer.data(),
                                   impl->gidx_buffer.size_bytes(), cudaMemcpyDefault));
-    // Device argument is ignored for this advice.
-    if (common::SupportsPageableMem()) {
-      dh::safe_cuda(cudaMemAdvise(new_impl->gidx_buffer.data(), new_impl->gidx_buffer.size_bytes(),
-                                  cudaMemAdviseSetReadMostly, cudaCpuDeviceId));
-    }
 
     this->cache_->Push(std::move(new_impl));
     ptr_ += 1;

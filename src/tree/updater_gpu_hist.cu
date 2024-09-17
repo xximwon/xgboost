@@ -674,7 +674,7 @@ struct GPUHistMakerDevice {
 
   GPUExpandEntry InitRoot(DMatrix* p_fmat, RegTree* p_tree) {
     this->monitor.Start(__func__);
-
+    std::cout << "init root" << std::endl;
     constexpr bst_node_t kRootNIdx = RegTree::kRoot;
     auto quantiser = *this->quantiser;
     auto gpair_it = dh::MakeTransformIterator<GradientPairInt64>(
@@ -689,12 +689,15 @@ struct GPUHistMakerDevice {
     collective::SafeColl(rc);
 
     histogram_.AllocateHistograms(ctx_, {kRootNIdx});
+    std::cout << "build hist" << std::endl;
     std::int32_t k = 0;
     CHECK_EQ(p_fmat->NumBatches(), this->partitioners_.size());
     for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(true))) {
+      std::cout << "k:" << k << std::endl;
       this->BuildHist(page, k, kRootNIdx);
       ++k;
     }
+    std::cout << "done build hist" << std::endl;
     this->histogram_.AllReduceHist(ctx_, p_fmat->Info(), kRootNIdx, 1);
 
     // Remember root stats
@@ -708,6 +711,7 @@ struct GPUHistMakerDevice {
     auto root_entry = this->EvaluateRootSplit(p_fmat, root_sum_quantised);
 
     this->monitor.Stop(__func__);
+    std::cout << "done init root" << std::endl;
     return root_entry;
   }
 
@@ -762,11 +766,16 @@ std::shared_ptr<common::HistogramCuts const> InitBatchCuts(Context const* ctx, D
   batch_ptr = {0};
   std::shared_ptr<common::HistogramCuts const> cuts;
 
+  std::cout << __func__ << std::endl;
+  std::int32_t k {0};
   for (auto const& page : p_fmat->GetBatches<EllpackPage>(ctx, batch)) {
+    std::cout << "k:" << k << std::endl;
     batch_ptr.push_back(page.Size());
     cuts = page.Impl()->CutsShared();
     CHECK(cuts->cut_values_.DeviceCanRead());
+    ++k;
   }
+  std::cout << "stop:" << __func__ << std::endl;
   CHECK(cuts);
   CHECK_EQ(p_fmat->NumBatches(), batch_ptr.size() - 1);
   std::partial_sum(batch_ptr.cbegin(), batch_ptr.cend(), batch_ptr.begin());
@@ -819,6 +828,7 @@ class GPUHistMaker : public TreeUpdater {
   }
 
   void InitDataOnce(TrainParam const* param, DMatrix* p_fmat) {
+    monitor_.Start(__func__);
     CHECK_GE(ctx_->Ordinal(), 0) << "Must have at least one device";
 
     // Synchronise the column sampling seed
@@ -839,24 +849,22 @@ class GPUHistMaker : public TreeUpdater {
 
     p_last_fmat_ = p_fmat;
     initialised_ = true;
+    monitor_.Stop(__func__);
   }
 
   void InitData(TrainParam const* param, DMatrix* dmat, RegTree const* p_tree) {
+    monitor_.Start(__func__);
     if (!initialised_) {
-      monitor_.Start("InitDataOnce");
       this->InitDataOnce(param, dmat);
-      monitor_.Stop("InitDataOnce");
     }
     p_last_tree_ = p_tree;
     CHECK(hist_maker_param_.GetInitialised());
+    monitor_.Stop(__func__);
   }
 
   void UpdateTree(TrainParam const* param, HostDeviceVector<GradientPair>* gpair, DMatrix* p_fmat,
                   RegTree* p_tree, HostDeviceVector<bst_node_t>* p_out_position) {
-    monitor_.Start("InitData");
     this->InitData(param, p_fmat, p_tree);
-    monitor_.Stop("InitData");
-
     gpair->SetDevice(ctx_->Device());
     maker->UpdateTree(gpair, p_fmat, task_, p_tree, p_out_position);
   }

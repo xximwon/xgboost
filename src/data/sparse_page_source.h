@@ -290,7 +290,9 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
       if (restart) {
         this->param_.prefetch_copy = true;
       }
+      std::cout << "fetch:" << fetch_it << std::endl;
       ring_->at(fetch_it) = this->workers_.Submit([fetch_it, self, this] {
+        common::NvtxScopedRange scoped_range{"fetch-" + std::to_string(fetch_it)};
         auto page = std::make_shared<S>();
         this->exce_.Run([&] {
           std::unique_ptr<typename FormatStreamPolicy::FormatT> fmt{

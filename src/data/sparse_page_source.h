@@ -278,6 +278,8 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
 
     exce_.Rethrow();
 
+    page_.reset();
+
     for (std::int32_t i = 0; i < n_prefetch_batches; ++i, ++fetch_it) {
       bool restart = fetch_it == n_batches_;
       fetch_it %= n_batches_;  // ring
@@ -311,11 +313,11 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
              n_prefetch_batches)
         << "Sparse DMatrix assumes forward iteration.";
 
-    monitor_.Start("Wait");
+    monitor_.Start("Wait-" + std::to_string(count_));
     CHECK((*ring_)[count_].valid());
     page_ = (*ring_)[count_].get();
     CHECK(!(*ring_)[count_].valid());
-    monitor_.Stop("Wait");
+    monitor_.Stop("Wait-" + std::to_string(count_));
 
     exce_.Rethrow();
 

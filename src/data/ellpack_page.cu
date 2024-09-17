@@ -46,6 +46,7 @@ void EllpackPage::SetBaseRowId(std::size_t row_id) { impl_->SetBaseRowId(row_id)
 [[nodiscard]] bool EllpackPage::IsDense() const { return this->Impl()->IsDense(); }
 
 // Bin each input data entry, store the bin indices in compressed form.
+template <bool is_dense>
 __global__ void CompressBinEllpackKernel(
     common::CompressedBufferWriter wr,
     common::CompressedByteT* __restrict__ buffer,  // gidx_buffer
@@ -74,12 +75,11 @@ __global__ void CompressBinEllpackKernel(
     // Assigning the bin in current entry.
     // S.t.: fvalue < feature_cuts[bin]
     if (is_cat) {
-      auto it = dh::MakeTransformIterator<int>(
-          feature_cuts, [](float v) { return common::AsCat(v); });
+      auto it =
+          dh::MakeTransformIterator<int>(feature_cuts, [](float v) { return common::AsCat(v); });
       bin = thrust::lower_bound(thrust::seq, it, it + ncuts, common::AsCat(fvalue)) - it;
     } else {
-      bin = thrust::upper_bound(thrust::seq, feature_cuts, feature_cuts + ncuts,
-                                fvalue) -
+      bin = thrust::upper_bound(thrust::seq, feature_cuts, feature_cuts + ncuts, fvalue) -
             feature_cuts;
     }
 
@@ -87,7 +87,9 @@ __global__ void CompressBinEllpackKernel(
       bin = ncuts - 1;
     }
     // Add the number of bins in previous features.
-    bin += cut_ptrs[feature];
+    if (!is_dense) {
+      bin += cut_ptrs[feature];
+    }
   }
   // Write to gidx buffer.
   wr.AtomicWriteSymbol(buffer, bin, (irow + base_row) * row_stride + ifeature);
@@ -139,11 +141,11 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx,
                                  std::shared_ptr<common::HistogramCuts const> cuts,
                                  const SparsePage& page, bool is_dense, size_t row_stride,
                                  common::Span<FeatureType const> feature_types)
-    : cuts_(std::move(cuts)),
-      is_dense(is_dense),
-      n_rows(page.Size()),
-      row_stride(row_stride),
-      n_symbols_(CalcNumSymbols(ctx, this->is_dense, this->cuts_)) {
+    : cuts_{std::move(cuts)},
+      is_dense{is_dense},
+      n_rows{page.Size()},
+      row_stride{row_stride},
+      n_symbols_{CalcNumSymbols(ctx, this->is_dense, this->cuts_)} {
   monitor_.Init("ellpack_page");
   common::SetDevice(ctx->Ordinal());
 
@@ -285,7 +287,8 @@ void CopyDataToEllpack(Context const* ctx, const AdapterBatchT& batch,
   common::InclusiveScan(ctx, key_value_index_iter, out, TupleScanOp<Tuple>{}, batch.Size());
 }
 
-void WriteNullValues(Context const* ctx, EllpackPageImpl* dst, common::Span<size_t> row_counts) {
+void WriteNullValues(Context const* ctx, EllpackPageImpl* dst,
+                     common::Span<size_t const> row_counts) {
   // Write the null values
   auto device_accessor = dst->GetDeviceAccessor(ctx);
   common::CompressedBufferWriter writer(dst->NumSymbols());
@@ -304,7 +307,7 @@ void WriteNullValues(Context const* ctx, EllpackPageImpl* dst, common::Span<size
 
 template <typename AdapterBatch>
 EllpackPageImpl::EllpackPageImpl(Context const* ctx, AdapterBatch batch, float missing,
-                                 bool is_dense, common::Span<size_t> row_counts_span,
+                                 bool is_dense, common::Span<size_t const> row_counts_span,
                                  common::Span<FeatureType const> feature_types, size_t row_stride,
                                  bst_idx_t n_rows,
                                  std::shared_ptr<common::HistogramCuts const> cuts)
@@ -320,10 +323,10 @@ EllpackPageImpl::EllpackPageImpl(Context const* ctx, AdapterBatch batch, float m
   WriteNullValues(ctx, this, row_counts_span);
 }
 
-#define ELLPACK_BATCH_SPECIALIZE(__BATCH_T)                                                \
-  template EllpackPageImpl::EllpackPageImpl(                                               \
-      Context const* ctx, __BATCH_T batch, float missing, bool is_dense,                   \
-      common::Span<size_t> row_counts_span, common::Span<FeatureType const> feature_types, \
+#define ELLPACK_BATCH_SPECIALIZE(__BATCH_T)                                                      \
+  template EllpackPageImpl::EllpackPageImpl(                                                     \
+      Context const* ctx, __BATCH_T batch, float missing, bool is_dense,                         \
+      common::Span<size_t const> row_counts_span, common::Span<FeatureType const> feature_types, \
       size_t row_stride, size_t n_rows, std::shared_ptr<common::HistogramCuts const> cuts);
 
 ELLPACK_BATCH_SPECIALIZE(data::CudfAdapterBatch)
@@ -505,8 +508,11 @@ void EllpackPageImpl::InitCompressedData(Context const* ctx) {
 void EllpackPageImpl::CreateHistIndices(Context const* ctx,
                                         const SparsePage& row_batch,
                                         common::Span<FeatureType const> feature_types) {
-  if (row_batch.Size() == 0) return;
-  std::uint32_t null_gidx_value = NumSymbols() - 1;
+  if (row_batch.Size() == 0) {
+    return;
+  }
+  auto d_acc = this->GetDeviceAccessor(ctx, feature_types);
+  std::uint32_t null_gidx_value = d_acc.NullValue();
 
   const auto& offset_vec = row_batch.offset.ConstHostVector();
 
@@ -551,11 +557,18 @@ void EllpackPageImpl::CreateHistIndices(Context const* ctx,
     const dim3 grid3(common::DivRoundUp(batch_nrows, block3.x),
                      common::DivRoundUp(row_stride, block3.y), 1);
     auto device_accessor = this->GetDeviceAccessor(ctx);
-    dh::LaunchKernel{grid3, block3}(  // NOLINT
-        CompressBinEllpackKernel, common::CompressedBufferWriter(NumSymbols()), gidx_buffer.data(),
-        row_ptrs.data().get(), entries_d.data().get(), device_accessor.gidx_fvalue_map.data(),
-        device_accessor.feature_segments.data(), feature_types, batch_row_begin, batch_nrows,
-        row_stride, null_gidx_value);
+    auto launcher = [&](auto kernel) {
+      dh::LaunchKernel{grid3, block3}(
+          kernel, common::CompressedBufferWriter(NumSymbols()), gidx_buffer.data(),
+          row_ptrs.data().get(), entries_d.data().get(), device_accessor.gidx_fvalue_map.data(),
+          device_accessor.feature_segments.data(), feature_types, batch_row_begin, batch_nrows,
+          row_stride, null_gidx_value);
+    };
+    if (this->IsDense()){
+      launcher(CompressBinEllpackKernel<true>);
+    } else {
+      launcher(CompressBinEllpackKernel<false>);
+    }
   }
 }
 

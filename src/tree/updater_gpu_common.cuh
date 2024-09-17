@@ -128,10 +128,6 @@ inline BatchParam HistBatch(TrainParam const& param) {
   return p;
 }
 
-inline BatchParam HistBatch(bst_bin_t max_bin) {
-  return {max_bin, TrainParam::DftSparseThreshold()};
-}
-
 inline BatchParam ApproxBatch(TrainParam const& p, common::Span<float const> hess,
                               ObjInfo const& task) {
   return BatchParam{p.max_bin, hess, !task.const_hess};

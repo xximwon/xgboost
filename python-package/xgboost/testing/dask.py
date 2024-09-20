@@ -1,12 +1,12 @@
 """Tests for dask shared by different test modules."""
 
-from typing import Literal
+from typing import List, Literal
 
 import numpy as np
 import pandas as pd
 from dask import array as da
 from dask import dataframe as dd
-from distributed import Client
+from distributed import Client, LocalCluster
 
 import xgboost as xgb
 from xgboost.testing.updater import get_basescore
@@ -91,3 +91,48 @@ def check_uneven_nan(
             dd.from_pandas(X, npartitions=n_workers),
             dd.from_pandas(y, npartitions=n_workers),
         )
+
+
+def check_rabit_bootstrap(scheduler: str) -> None:
+    from functools import partial, update_wrapper
+
+    import numpy as np
+
+    from xgboost import collective
+    from xgboost.dask import CommunicatorContext, _get_dask_config, _get_rabit_args
+
+    def local_test(worker_id: int, rabit_args: dict) -> int:
+        with CommunicatorContext(**rabit_args):
+            a = 1
+            assert collective.is_distributed()
+            arr = np.array([a])
+            reduced = collective.allreduce(arr, collective.Op.SUM)
+            assert reduced[0] == n_workers
+
+            arr = np.array([worker_id])
+            reduced = collective.allreduce(arr, collective.Op.MAX)
+            assert reduced == n_workers - 1
+
+            return 1
+
+    def get_client_workers(client: Client) -> List[str]:
+        "Get workers from a dask client."
+        workers = client.scheduler_info()["workers"]
+        return list(workers.keys())
+
+    with Client(address=scheduler) as client:
+        workers = get_client_workers(client)
+        args = client.sync(_get_rabit_args, len(workers), _get_dask_config(), client)
+        assert not collective.is_distributed()
+        n_workers = len(workers)
+
+        fn = update_wrapper(partial(local_test, rabit_args=args), local_test)
+
+        futures = client.map(fn, range(len(workers)), workers=workers)
+        results = client.gather(futures)
+        assert sum(results) == n_workers
+
+
+def check_rabit_bootstrap_local() -> None:
+    with LocalCluster(n_workers=16) as cluster:
+        check_rabit_bootstrap(cluster)

@@ -287,6 +287,7 @@ class ResourceHandler {
     kCudaMalloc = 2,
     kCudaMmap = 3,
     kCudaHostCache = 4,
+    kCudaGrowOnly = 5,
   };
 
  private:
@@ -313,6 +314,8 @@ class ResourceHandler {
         return "CudaMmap";
       case kCudaHostCache:
         return "CudaHostCache";
+      case kCudaGrowOnly:
+        return "CudaGrowOnly";
     }
     LOG(FATAL) << "Unreachable.";
     return {};

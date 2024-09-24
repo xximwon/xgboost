@@ -35,6 +35,8 @@ CuDriverApi::CuDriverApi() {
   safe_load("cuMemUnmap", &this->cuMemUnmap);
   safe_load("cuMemRelease", &this->cuMemRelease);
   safe_load("cuMemAddressFree", &this->cuMemAddressFree);
+  safe_load("cuMemGetAllocationPropertiesFromHandle",
+            &this->cuMemGetAllocationPropertiesFromHandle);
   safe_load("cuGetErrorString", &this->cuGetErrorString);
   safe_load("cuGetErrorName", &this->cuGetErrorName);
   safe_load("cuDeviceGetAttribute", &this->cuDeviceGetAttribute);

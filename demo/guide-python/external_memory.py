@@ -22,9 +22,8 @@ import tempfile
 from typing import Callable, List, Tuple
 
 import numpy as np
-from sklearn.datasets import make_regression
-
 import xgboost
+from sklearn.datasets import make_regression
 
 
 def make_batches(
@@ -142,21 +141,41 @@ def main(tmpdir: str, args: argparse.Namespace) -> None:
     approx_train(it)
 
 
+def setup_rmm():
+    """Setup RMM for GPU-based external memory training. We use a large initial pool
+    size to avoid blocking calls.
+
+    """
+    import rmm
+    from cuda import cudart
+    from rmm.allocators.cupy import rmm_cupy_allocator
+
+    status, free, total = cudart.cudaMemGetInfo()
+    assert status == cudart.cudaError_t.cudaSuccess
+    use = int(free * 0.9)  # Use at least 90% of the memory for the pool
+
+    if not xgboost.build_info()["USE_RMM"]:
+        return
+
+    mr = rmm.mr.CudaAsyncMemoryResource(
+        initial_pool_size=use, release_threshold=use, enable_ipc=False
+    )
+    rmm.mr.set_current_device_resource(mr)
+    # Set the allocator for cupy as well.
+    cp.cuda.set_allocator(rmm_cupy_allocator)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
     if args.device == "cuda":
         import cupy as cp
-        import rmm
-        from rmm.allocators.cupy import rmm_cupy_allocator
 
-        # It's important to use RMM for GPU-based external memory to improve performance.
-        # If XGBoost is not built with RMM support, a warning will be raised.
-        mr = rmm.mr.CudaAsyncMemoryResource()
-        rmm.mr.set_current_device_resource(mr)
-        # Set the allocator for cupy as well.
-        cp.cuda.set_allocator(rmm_cupy_allocator)
+        # It's important to use RMM with `CudaAsyncMemoryResource`. for GPU-based
+        # external memory to improve performance. If XGBoost is not built with RMM
+        # support, a warning is raised when constructing the `DMatrix`.
+        setup_rmm()
         # Make sure XGBoost is using RMM for all allocations.
         with xgboost.config_context(use_rmm=True):
             with tempfile.TemporaryDirectory() as tmpdir:

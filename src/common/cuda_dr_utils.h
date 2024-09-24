@@ -30,13 +30,16 @@ struct CuDriverApi {
                                const CUmemAllocationProp *prop, Flags flags);
   using MemMapFn = CUresult(CUdeviceptr ptr, size_t size, size_t offset,
                             CUmemGenericAllocationHandle handle, Flags flags);
-  using MemAddressReserveFn = CUresult(CUdeviceptr *ptr, size_t size, size_t alignment,
-                                       CUdeviceptr addr, Flags flags);
-  using MemSetAccessFn = CUresult(CUdeviceptr ptr, size_t size, const CUmemAccessDesc *desc,
-                                  size_t count);
-  using MemUnmapFn = CUresult(CUdeviceptr ptr, size_t size);
-  using MemReleaseFn = CUresult(CUmemGenericAllocationHandle handle);
-  using MemAddressFreeFn = CUresult(CUdeviceptr ptr, size_t size);
+  using MemAddressReserve = CUresult(CUdeviceptr *ptr, size_t size, size_t alignment,
+                                     CUdeviceptr addr, Flags flags);
+  using MemSetAccess = CUresult(CUdeviceptr ptr, size_t size, const CUmemAccessDesc *desc,
+                                size_t count);
+  using MemUnmap = CUresult(CUdeviceptr ptr, size_t size);
+  using MemRelease = CUresult(CUmemGenericAllocationHandle handle);
+  using MemAddressFree = CUresult(CUdeviceptr ptr, size_t size);
+  // Properties
+  using MemGetAllocationPropertiesFromHandle = CUresult(CUmemAllocationProp *prop,
+                                                        CUmemGenericAllocationHandle handle);
   // Error handling
   using GetErrorString = CUresult(CUresult error, const char **pStr);
   using GetErrorName = CUresult(CUresult error, const char **pStr);
@@ -49,7 +52,7 @@ struct CuDriverApi {
   /**
    * @param[in] offset - Must be zero.
    */
-  MemMapFn *cuMemMap{nullptr};                                            // NOLINT
+  MemMapFn *cuMemMap{nullptr};  // NOLINT
   /**
    * @param[out] ptr       - Resulting pointer to start of virtual address range allocated
    * @param[in]  size      - Size of the reserved virtual address range requested
@@ -57,15 +60,16 @@ struct CuDriverApi {
    * @param[in]  addr      - Fixed starting address range requested
    * @param[in]  flags     - Currently unused, must be zero
    */
-  MemAddressReserveFn *cuMemAddressReserve{nullptr};  // NOLINT
-  MemSetAccessFn *cuMemSetAccess{nullptr};            // NOLINT
-  MemUnmapFn *cuMemUnmap{nullptr};                    // NOLINT
-  MemReleaseFn *cuMemRelease{nullptr};                // NOLINT
-  MemAddressFreeFn *cuMemAddressFree{nullptr};        // NOLINT
-  GetErrorString *cuGetErrorString{nullptr};          // NOLINT
-  GetErrorName *cuGetErrorName{nullptr};              // NOLINT
-  DeviceGetAttribute *cuDeviceGetAttribute{nullptr};  // NOLINT
-  DeviceGet *cuDeviceGet{nullptr};                    // NOLINT
+  MemAddressReserve *cuMemAddressReserve{nullptr};                                        // NOLINT
+  MemSetAccess *cuMemSetAccess{nullptr};                                                  // NOLINT
+  MemUnmap *cuMemUnmap{nullptr};                                                          // NOLINT
+  MemRelease *cuMemRelease{nullptr};                                                      // NOLINT
+  MemAddressFree *cuMemAddressFree{nullptr};                                              // NOLINT
+  MemGetAllocationPropertiesFromHandle *cuMemGetAllocationPropertiesFromHandle{nullptr};  // NOLINT
+  GetErrorString *cuGetErrorString{nullptr};                                              // NOLINT
+  GetErrorName *cuGetErrorName{nullptr};                                                  // NOLINT
+  DeviceGetAttribute *cuDeviceGetAttribute{nullptr};                                      // NOLINT
+  DeviceGet *cuDeviceGet{nullptr};                                                        // NOLINT
 
   CuDriverApi();
 
@@ -96,7 +100,7 @@ inline auto GetAllocGranularity(CUmemAllocationProp const *prop) {
 /**
  * @brief Obtain appropriate device ordinal for `CUmemLocation`.
  */
-void MakeCuMemLocation(CUmemLocationType type, CUmemLocation* loc);
+void MakeCuMemLocation(CUmemLocationType type, CUmemLocation *loc);
 
 /**
  * @brief Construct a `CUmemAllocationProp`.

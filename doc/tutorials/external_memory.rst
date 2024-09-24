@@ -159,9 +159,8 @@ the GPU. This is a current limitation we aim to address in the future.
 
 It's crucial to use `RAPIDS Memory Manager (RMM) <https://github.com/rapidsai/rmm>`__ for
 all memory allocation when training with external memory. XGBoost relies on the memory
-pool to reduce the overhead for data fetching. The size of each batch should be slightly
-smaller than a quarter of the available GPU memory. In addition, the open source `NVIDIA
-Linux driver
+pool to reduce the overhead for data fetching. In addition, the open source `NVIDIA Linux
+driver
 <https://developer.nvidia.com/blog/nvidia-transitions-fully-towards-open-source-gpu-kernel-modules/>`__
 is required for ``Heterogeneous memory management (HMM)`` support.
 

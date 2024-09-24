@@ -1,6 +1,8 @@
 /**
  * Copyright 2019-2024, XGBoost contributors
  */
+#include <sys/sysinfo.h>         // for sysinfo
+
 #include <cstddef>  // for size_t
 #include <cstdint>  // for int8_t, uint64_t, uint32_t
 #include <memory>   // for shared_ptr, make_unique, make_shared
@@ -8,6 +10,7 @@
 #include <utility>  // for move
 
 #include "../common/common.h"               // for safe_cuda
+#include "../common/common.h"               // for HumanMemUnit
 #include "../common/cuda_rt_utils.h"        // for SetDevice
 #include "../common/device_helpers.cuh"     // for CUDAStreamView, DefaultStream
 #include "../common/ref_resource_view.cuh"  // for MakeFixedVecWithCudaMalloc
@@ -16,26 +19,51 @@
 #include "ellpack_page.cuh"                 // for EllpackPageImpl
 #include "ellpack_page.h"                   // for EllpackPage
 #include "ellpack_page_source.h"
-#include "proxy_dmatrix.cuh"  // for Dispatch
-#include "xgboost/base.h"     // for bst_idx_t
+#include "proxy_dmatrix.cuh"            // for Dispatch
+#include "xgboost/base.h"               // for bst_idx_t
+#include "xgboost/collective/socket.h"  // fixme
 
 namespace xgboost::data {
+
+#if !defined(xgboost_CHECK_SYS_CALL)
+#define xgboost_CHECK_SYS_CALL(exp, expected)         \
+  do {                                                \
+    if (XGBOOST_EXPECT((exp) != (expected), false)) { \
+      ::xgboost::system::ThrowAtError(#exp);          \
+    }                                                 \
+  } while (false)
+#endif  // !defined(xgboost_CHECK_SYS_CALL)
+
+[[nodiscard]] std::size_t AvailableHostMemory() {
+  struct sysinfo info;
+  xgboost_CHECK_SYS_CALL(sysinfo(&info), 0);
+  return info.freeram;
+}
+
 /**
  * Cache
  */
-EllpackHostCache::EllpackHostCache() = default;
+EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
+                                   double max_cache_ratio)
+    : total_available_mem{dh::TotalMemory(curt::CurrentDevice())},
+      max_cache_page_ratio{ratio},
+      n_batches_orig{n_batches},
+      prefer_device{prefer_device},
+      max_cache_ratio{max_cache_ratio} {};
 EllpackHostCache::~EllpackHostCache() = default;
 
-[[nodiscard]] std::size_t EllpackHostCache::Size() const {
+[[nodiscard]] std::size_t EllpackHostCache::SizeBytes() const {
   auto it = common::MakeIndexTransformIter([&](auto i) { return pages.at(i)->MemCostBytes(); });
-  return std::accumulate(it, it + pages.size(), 0l);
+  return std::accumulate(it, it + pages.size(), 0ul);
 }
 
-void EllpackHostCache::Push(std::unique_ptr<EllpackPageImpl> page) {
-  this->pages.emplace_back(std::move(page));
+[[nodiscard]] std::size_t EllpackHostCache::DeviceSizeBytes() const {
+  auto it = common::MakeIndexTransformIter(
+      [&](auto i) -> bst_idx_t { return this->on_host.at(i) ? 0ul : pages.at(i)->MemCostBytes(); });
+  return std::accumulate(it, it + pages.size(), 0ul);
 }
 
-EllpackPageImpl const* EllpackHostCache::Get(std::int32_t k) {
+EllpackPageImpl const* EllpackHostCache::At(std::int32_t k) {
   return this->pages.at(k).get();
 }
 
@@ -60,7 +88,11 @@ class EllpackHostCacheStreamImpl {
         k = i;
         break;
       }
-      n_bytes += cache_->pages[i]->MemCostBytes();
+      if (this->cache_->sizes_orig.empty()) {
+        n_bytes += cache_->pages[i]->MemCostBytes();
+      } else {
+        n_bytes += cache_->sizes_orig[i];
+      }
     }
     if (offset_bytes == n_bytes && k == -1) {
       k = this->cache_->pages.size();  // seek end
@@ -68,34 +100,106 @@ class EllpackHostCacheStreamImpl {
     CHECK_NE(k, -1) << "Invalid offset:" << offset_bytes;
     ptr_ = k;
   }
-
-  void Write(EllpackPage const& page) {
+  // Whether we should copy the cache page during commit.
+  [[nodiscard]] bool KeepCache() const {
+    bool is_on_host = this->cache_->on_host.back();
+    if (is_on_host) {
+      return true;  // Don't copy
+    }
+    if (this->cache_->prefer_device) {
+      auto avail = dh::AvailableMemory(dh::CurrentDevice());
+      return this->cache_->DeviceSizeBytes() < (this->cache_->max_cache_ratio * avail);
+    }
+    return false;
+  }
+  [[nodiscard]] bool Write(EllpackPage const& page) {
     auto impl = page.Impl();
 
+    // Have a new page
     auto new_impl = std::make_unique<EllpackPageImpl>();
-    auto new_cache = std::make_shared<EllpackHostCache>();
-    new_impl->gidx_buffer =
-        common::MakeFixedVecWithPinnedMalloc<common::CompressedByteT>(impl->gidx_buffer.size());
-    new_impl->n_rows = impl->Size();
-    new_impl->is_dense = impl->IsDense();
-    new_impl->info.row_stride = impl->info.row_stride;
-    new_impl->base_rowid = impl->base_rowid;
-    new_impl->SetNumSymbols(impl->NumSymbols());
+    new_impl->CopyInfo(impl);
 
-    dh::safe_cuda(cudaMemcpyAsync(new_impl->gidx_buffer.data(), impl->gidx_buffer.data(),
-                                  impl->gidx_buffer.size_bytes(), cudaMemcpyDefault));
+    auto ctx = Context{}.MakeCUDA(dh::CurrentDevice());
 
-    this->cache_->Push(std::move(new_impl));
-    ptr_ += 1;
+    if (this->cache_->pages.empty() || this->cache_->written.back()) {
+      // First page, use host memory if there's no concatenation.
+      if (this->cache_->max_cache_page_ratio == 0.0) {
+        new_impl->gidx_buffer =
+            common::MakeFixedVecWithPinnedMalloc<common::CompressedByteT>(impl->gidx_buffer.size());
+        this->cache_->on_host.push_back(true);
+      } else {
+#if defined(XGBOOST_USE_RMM)
+        new_impl->gidx_buffer =
+            common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(impl->gidx_buffer.size());
+#else
+        new_impl->gidx_buffer =
+            common::MakeCudaGrowOnly<common::CompressedByteT>(impl->gidx_buffer.size());
+#endif
+        this->cache_->on_host.push_back(false);
+      }
+
+      dh::safe_cuda(cudaMemcpyAsync(new_impl->gidx_buffer.data(), impl->gidx_buffer.data(),
+                                    impl->gidx_buffer.size_bytes(), cudaMemcpyDefault));
+      this->cache_->pages.emplace_back(std::move(new_impl));
+      this->cache_->written.push_back(false);
+    } else {
+      CHECK(!this->cache_->on_host.back());
+      CHECK(!this->cache_->written.back());
+      this->cache_->pages.back()->Extend(&ctx, impl);
+    }
+    this->cache_->sizes_orig.push_back(impl->MemCostBytes());
+
+    auto AtEnd = [this] {
+      return this->cache_->sizes_orig.size() == this->cache_->n_batches_orig;
+    };
+    auto ShouldCommit = [this, AtEnd] {
+      auto max_page_size = this->cache_->total_available_mem * this->cache_->max_cache_page_ratio;
+      bool page_full = this->cache_->pages.back()->MemCostBytes() >= max_page_size;
+      bool at_end = AtEnd();
+      return page_full || at_end;
+    };
+
+    // Move the page to the host memory if it's large enough
+    auto at_end = AtEnd();
+    bool commit = ShouldCommit();
+    if (commit && !this->KeepCache()) {
+      auto& orig = this->cache_->pages.back();
+
+      auto full_page = std::make_unique<EllpackPageImpl>();
+      full_page->CopyInfo(orig.get());
+      full_page->gidx_buffer =
+          common::MakeFixedVecWithPinnedMalloc<common::CompressedByteT>(orig->gidx_buffer.size());
+      dh::safe_cuda(cudaMemcpyAsync(full_page->gidx_buffer.data(), orig->gidx_buffer.data(),
+                                    orig->gidx_buffer.size_bytes(), cudaMemcpyDefault));
+      this->cache_->pages.back().reset();
+      this->cache_->pages.back() = std::move(full_page);
+      this->cache_->on_host.back() = true;
+    }
+    if (commit) {
+      this->cache_->written.back() = true;
+    }
+    if (at_end) {
+      this->cache_->sizes_orig.clear();
+    }
+
+    CHECK_EQ(this->cache_->pages.size(), this->cache_->on_host.size());
+    CHECK_EQ(this->cache_->pages.size(), this->cache_->written.size());
+    return commit;
   }
 
   void Read(EllpackPage* out, bool prefetch_copy) const {
-    auto page = this->cache_->Get(ptr_);
+    auto page = this->cache_->At(ptr_);
 
     auto impl = out->Impl();
-    if (prefetch_copy) {
+    CHECK(this->cache_->written.at(this->ptr_));
+    if (prefetch_copy && this->cache_->on_host.at(this->ptr_)) {
+#if defined(XGBOOST_USE_RMM)
       impl->gidx_buffer =
           common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(page->gidx_buffer.size());
+#else
+      impl->gidx_buffer =
+          common::MakeCudaGrowOnly<common::CompressedByteT>(page->gidx_buffer.size());
+#endif
       dh::safe_cuda(cudaMemcpyAsync(impl->gidx_buffer.data(), page->gidx_buffer.data(),
                                     page->gidx_buffer.size_bytes(), cudaMemcpyDefault));
     } else {
@@ -104,18 +208,13 @@ class EllpackHostCacheStreamImpl {
           res->DataAs<common::CompressedByteT>(), page->gidx_buffer.size(), res};
     }
 
-    impl->n_rows = page->Size();
-    impl->is_dense = page->IsDense();
-    impl->info.row_stride = page->info.row_stride;
-    impl->base_rowid = page->base_rowid;
-    impl->SetNumSymbols(page->NumSymbols());
+    impl->CopyInfo(page);
   }
 };
 
 /**
  * EllpackHostCacheStream
  */
-
 EllpackHostCacheStream::EllpackHostCacheStream(std::shared_ptr<EllpackHostCache> cache)
     : p_impl_{std::make_unique<EllpackHostCacheStreamImpl>(std::move(cache))} {}
 
@@ -129,24 +228,26 @@ void EllpackHostCacheStream::Read(EllpackPage* page, bool prefetch_copy) const {
   this->p_impl_->Read(page, prefetch_copy);
 }
 
-void EllpackHostCacheStream::Write(EllpackPage const& page) { this->p_impl_->Write(page); }
+[[nodiscard]] bool EllpackHostCacheStream::Write(EllpackPage const& page) {
+  return this->p_impl_->Write(page);
+}
 
 /**
  * EllpackCacheStreamPolicy
  */
-
-template <typename S, template <typename> typename F>
-EllpackCacheStreamPolicy<S, F>::EllpackCacheStreamPolicy()
-    : p_cache_{std::make_shared<EllpackHostCache>()} {}
-
 template <typename S, template <typename> typename F>
 [[nodiscard]] std::unique_ptr<typename EllpackCacheStreamPolicy<S, F>::WriterT>
 EllpackCacheStreamPolicy<S, F>::CreateWriter(StringView, std::uint32_t iter) {
+  if (!this->p_cache_) {
+    this->p_cache_ =
+        std::make_shared<EllpackHostCache>(this->OrigBatches(), this->MaxCachePageRatio(),
+                                           this->PreferDevice(), this->MaxCacheRatio());
+  }
   auto fo = std::make_unique<EllpackHostCacheStream>(this->p_cache_);
   if (iter == 0) {
     CHECK(this->p_cache_->Empty());
   } else {
-    fo->Seek(this->p_cache_->Size());
+    fo->Seek(this->p_cache_->SizeBytes());
   }
   return fo;
 }
@@ -160,8 +261,6 @@ EllpackCacheStreamPolicy<S, F>::CreateReader(StringView, bst_idx_t offset, bst_i
 }
 
 // Instantiation
-template EllpackCacheStreamPolicy<EllpackPage, EllpackFormatPolicy>::EllpackCacheStreamPolicy();
-
 template std::unique_ptr<
     typename EllpackCacheStreamPolicy<EllpackPage, EllpackFormatPolicy>::WriterT>
 EllpackCacheStreamPolicy<EllpackPage, EllpackFormatPolicy>::CreateWriter(StringView name,

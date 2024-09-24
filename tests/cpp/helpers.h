@@ -240,6 +240,8 @@ class RandomDataGenerator {
   std::vector<FeatureType> ft_;
   bst_cat_t max_cat_{32};
   bool on_host_{false};
+  double max_page_cache_ratio_{0.0};
+  double max_cache_ratio_{0.0};
 
   Json ArrayInterfaceImpl(HostDeviceVector<float>* storage, size_t rows, size_t cols) const;
 
@@ -267,6 +269,14 @@ class RandomDataGenerator {
   }
   RandomDataGenerator& OnHost(bool on_host) {
     on_host_ = on_host;
+    return *this;
+  }
+  RandomDataGenerator& MaxPageCache(double max_cache) {
+    this->max_page_cache_ratio_ = max_cache;
+    return *this;
+  }
+  RandomDataGenerator& MaxCache(double max_cache) {
+    this->max_cache_ratio_ = max_cache;
     return *this;
   }
   RandomDataGenerator& Seed(uint64_t s) {

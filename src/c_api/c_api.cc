@@ -3,47 +3,48 @@
  */
 #include "xgboost/c_api.h"
 
-#include <algorithm>                         // for copy, transform
-#include <cinttypes>                         // for strtoimax
-#include <cmath>                             // for nan
-#include <cstring>                           // for strcmp
-#include <limits>                            // for numeric_limits
-#include <map>                               // for operator!=, _Rb_tree_const_iterator, _Rb_tre...
-#include <memory>                            // for shared_ptr, allocator, __shared_ptr_access
-#include <string>                            // for char_traits, basic_string, operator==, string
-#include <system_error>                      // for errc
-#include <utility>                           // for pair
-#include <vector>                            // for vector
+#include <algorithm>     // for copy, transform
+#include <cinttypes>     // for strtoimax
+#include <cmath>         // for nan
+#include <cstring>       // for strcmp
+#include <limits>        // for numeric_limits
+#include <map>           // for operator!=, _Rb_tree_const_iterator, _Rb_tre...
+#include <memory>        // for shared_ptr, allocator, __shared_ptr_access
+#include <string>        // for char_traits, basic_string, operator==, string
+#include <system_error>  // for errc
+#include <utility>       // for pair
+#include <vector>        // for vector
 
-#include "../common/api_entry.h"             // for XGBAPIThreadLocalEntry
-#include "../common/charconv.h"              // for from_chars, to_chars, NumericLimits, from_ch...
-#include "../common/error_msg.h"             // for NoFederated
-#include "../common/hist_util.h"             // for HistogramCuts
-#include "../common/io.h"                    // for FileExtension, LoadSequentialFile, MemoryBuf...
-#include "../common/threading_utils.h"       // for OmpGetNumThreads, ParallelFor
-#include "../data/adapter.h"                 // for ArrayAdapter, DenseAdapter, RecordBatchesIte...
-#include "../data/ellpack_page.h"            // for EllpackPage
-#include "../data/proxy_dmatrix.h"           // for DMatrixProxy
-#include "../data/simple_dmatrix.h"          // for SimpleDMatrix
-#include "c_api_error.h"                     // for xgboost_CHECK_C_ARG_PTR, API_END, API_BEGIN
-#include "c_api_utils.h"                     // for RequiredArg, OptionalArg, GetMissing, CastDM...
-#include "dmlc/base.h"                       // for BeginPtr
-#include "dmlc/io.h"                         // for Stream
-#include "dmlc/parameter.h"                  // for FieldAccessEntry, FieldEntry, ParamManager
-#include "dmlc/thread_local.h"               // for ThreadLocalStore
-#include "xgboost/base.h"                    // for bst_ulong, bst_float, GradientPair, bst_feat...
-#include "xgboost/context.h"                 // for Context
-#include "xgboost/data.h"                    // for DMatrix, MetaInfo, DataType, ExtSparsePage
-#include "xgboost/feature_map.h"             // for FeatureMap
-#include "xgboost/global_config.h"           // for GlobalConfiguration, GlobalConfigThreadLocal...
-#include "xgboost/host_device_vector.h"      // for HostDeviceVector
-#include "xgboost/json.h"                    // for Json, get, Integer, IsA, Boolean, String
-#include "xgboost/learner.h"                 // for Learner, PredictionType
-#include "xgboost/logging.h"                 // for LOG_FATAL, LogMessageFatal, CHECK, LogCheck_EQ
-#include "xgboost/predictor.h"               // for PredictionCacheEntry
-#include "xgboost/span.h"                    // for Span
-#include "xgboost/string_view.h"             // for StringView, operator<<
-#include "xgboost/version_config.h"          // for XGBOOST_VER_MAJOR, XGBOOST_VER_MINOR, XGBOOS...
+#include "../common/api_entry.h"         // for XGBAPIThreadLocalEntry
+#include "../common/charconv.h"          // for from_chars, to_chars, NumericLimits, from_ch...
+#include "../common/error_msg.h"         // for NoFederated
+#include "../common/hist_util.h"         // for HistogramCuts
+#include "../common/io.h"                // for FileExtension, LoadSequentialFile, MemoryBuf...
+#include "../common/threading_utils.h"   // for OmpGetNumThreads, ParallelFor
+#include "../data/adapter.h"             // for ArrayAdapter, DenseAdapter, RecordBatchesIte...
+#include "../data/batch_utils.h"         // for CachePageRatio
+#include "../data/ellpack_page.h"        // for EllpackPage
+#include "../data/proxy_dmatrix.h"       // for DMatrixProxy
+#include "../data/simple_dmatrix.h"      // for SimpleDMatrix
+#include "c_api_error.h"                 // for xgboost_CHECK_C_ARG_PTR, API_END, API_BEGIN
+#include "c_api_utils.h"                 // for RequiredArg, OptionalArg, GetMissing, CastDM...
+#include "dmlc/base.h"                   // for BeginPtr
+#include "dmlc/io.h"                     // for Stream
+#include "dmlc/parameter.h"              // for FieldAccessEntry, FieldEntry, ParamManager
+#include "dmlc/thread_local.h"           // for ThreadLocalStore
+#include "xgboost/base.h"                // for bst_ulong, bst_float, GradientPair, bst_feat...
+#include "xgboost/context.h"             // for Context
+#include "xgboost/data.h"                // for DMatrix, MetaInfo, DataType, ExtSparsePage
+#include "xgboost/feature_map.h"         // for FeatureMap
+#include "xgboost/global_config.h"       // for GlobalConfiguration, GlobalConfigThreadLocal...
+#include "xgboost/host_device_vector.h"  // for HostDeviceVector
+#include "xgboost/json.h"                // for Json, get, Integer, IsA, Boolean, String
+#include "xgboost/learner.h"             // for Learner, PredictionType
+#include "xgboost/logging.h"             // for LOG_FATAL, LogMessageFatal, CHECK, LogCheck_EQ
+#include "xgboost/predictor.h"           // for PredictionCacheEntry
+#include "xgboost/span.h"                // for Span
+#include "xgboost/string_view.h"         // for StringView, operator<<
+#include "xgboost/version_config.h"      // for XGBOOST_VER_MAJOR, XGBOOST_VER_MINOR, XGBOOS...
 
 using namespace xgboost; // NOLINT(*);
 
@@ -372,13 +373,22 @@ XGB_DLL int XGExtMemQuantileDMatrixCreateFromCallback(DataIterHandle iter, DMatr
   auto max_bin = OptionalArg<Integer, std::int64_t>(jconfig, "max_bin", 256);
   auto on_host = OptionalArg<Boolean>(jconfig, "on_host", false);
   std::string cache = RequiredArg<String>(jconfig, "cache_prefix", __func__);
+  // Set to 0 if it should match the user input size.
+  // FIXME: This should be called min instead since we have to reach at least this ratio.
+  // FIXME: Maybe we should use a precise number instead of ratio.
+  auto max_cache_size_ratio = OptionalArg<Number, float>(jconfig, "max_cache_page_ratio",
+                                                         data::cuda_impl::CachePageRatio());
+  // Set to 0 if it should never be cached to device.
+  auto max_cache_ratio =
+      OptionalArg<Number, float>(jconfig, "max_cache_ratio", data::cuda_impl::CacheDeviceRatio());
 
   xgboost_CHECK_C_ARG_PTR(next);
   xgboost_CHECK_C_ARG_PTR(reset);
   xgboost_CHECK_C_ARG_PTR(out);
 
-  *out = new std::shared_ptr<xgboost::DMatrix>{xgboost::DMatrix::Create(
-      iter, proxy, p_ref, reset, next, missing, n_threads, max_bin, cache, on_host)};
+  *out = new std::shared_ptr<xgboost::DMatrix>{
+      xgboost::DMatrix::Create(iter, proxy, p_ref, reset, next, missing, n_threads, max_bin, cache,
+                               on_host, max_cache_size_ratio, max_cache_ratio)};
   API_END();
 }
 

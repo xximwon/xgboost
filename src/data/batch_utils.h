@@ -35,4 +35,9 @@ inline bool RegenGHist(BatchParam old, BatchParam p) {
  */
 void CheckParam(BatchParam const& init, BatchParam const& param);
 }  // namespace xgboost::data::detail
+
+namespace xgboost::data::cuda_impl {
+constexpr double CachePageRatio() { return 0.125; }
+constexpr double CacheDeviceRatio() { return 0.3; }
+}  // namespace xgboost::data::cuda_impl
 #endif  // XGBOOST_DATA_BATCH_UTILS_H_

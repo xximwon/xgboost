@@ -7,7 +7,7 @@
 
 #include "../common/hist_util.cuh"
 #include "../common/hist_util.h"  // for HistogramCuts
-#include "batch_utils.h"          // for CheckEmpty, RegenGHist
+#include "batch_utils.h"          // for CheckEmpty, RegenGHist, CachePageRatio
 #include "ellpack_page.cuh"
 #include "sparse_page_dmatrix.h"
 #include "xgboost/context.h"  // for Context
@@ -53,10 +53,15 @@ BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
         [&](auto&& ptr) {
           ptr.reset();  // make sure resource is released before making new ones.
           using SourceT = typename std::remove_reference_t<decltype(ptr)>::element_type;
-          ptr = std::make_shared<SourceT>(this->missing_, ctx->Threads(), this->Info().num_col_,
-                                          this->n_batches_, cache_info_.at(id), param,
-                                          std::move(cuts), this->IsDense(), row_stride, ft,
-                                          this->sparse_page_source_, ctx->Device());
+          auto config = EllpackSourceConfig{.param = param,
+                                            .prefer_device = false,  // no reference for sparse page
+                                            .missing = this->missing_,
+                                            .max_cache_page_ratio = cuda_impl::CachePageRatio(),
+                                            .max_cache_ratio = cuda_impl::CacheDeviceRatio()};
+          ptr = std::make_shared<SourceT>(ctx->Threads(), this->Info().num_col_, this->n_batches_,
+                                          cache_info_.at(id), std::move(cuts), this->IsDense(),
+                                          row_stride, ft, this->sparse_page_source_, ctx->Device(),
+                                          config);
         },
         ellpack_page_source_);
   } else {

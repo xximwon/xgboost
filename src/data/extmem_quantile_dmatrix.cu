@@ -43,25 +43,43 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   std::visit(
       [&](auto &&ptr) {
         using SourceT = typename std::remove_reference_t<decltype(ptr)>::element_type;
-        ptr = std::make_shared<SourceT>(ctx, missing, &this->Info(), ext_info, cache_info_.at(id),
-                                        p, cuts, iter, proxy);
+        // We can't hide the data load overhead for inference. Prefer device cache for
+        // validation datasets.
+        auto config = EllpackSourceConfig{.param = p,
+                                          .prefer_device = (ref != nullptr),
+                                          .missing = missing,
+                                          .max_cache_page_ratio = this->max_cache_page_ratio_,
+                                          .max_cache_ratio = this->max_device_cache_ratio_};
+        ptr = std::make_shared<SourceT>(ctx, &this->Info(), ext_info, cache_info_.at(id), cuts,
+                                        iter, proxy, config);
       },
       ellpack_page_source_);
 
   /**
    * Force initialize the cache and do some sanity checks along the way
    */
-  bst_idx_t batch_cnt = 0, k = 0;
+  bst_idx_t batch_cnt = 0;
   bst_idx_t n_total_samples = 0;
+  std::int32_t last_baserid_idx = -1;
   for (auto const &page : this->GetEllpackPageImpl()) {
     n_total_samples += page.Size();
-    CHECK_EQ(page.Impl()->base_rowid, ext_info.base_rows[k]);
+    auto it = std::lower_bound(ext_info.base_rows.cbegin(), ext_info.base_rows.cend(),
+                               page.Impl()->base_rowid);
+    CHECK(it != ext_info.base_rows.cend());
+    auto idx = std::distance(ext_info.base_rows.cbegin(), it);
+    CHECK_GT(idx, last_baserid_idx);
+    last_baserid_idx = idx;
+
     CHECK_EQ(page.Impl()->info.row_stride, ext_info.row_stride);
-    ++k, ++batch_cnt;
+    ++batch_cnt;
   }
-  CHECK_EQ(batch_cnt, ext_info.n_batches);
+  if (this->max_cache_page_ratio_ == 0.0) {
+    CHECK_EQ(batch_cnt, ext_info.n_batches);
+  } else {
+    CHECK_LE(batch_cnt, ext_info.n_batches);
+  }
   CHECK_EQ(n_total_samples, ext_info.accumulated_rows);
-  this->n_batches_ = ext_info.n_batches;
+  this->n_batches_ = batch_cnt;
 }
 
 [[nodiscard]] BatchSet<EllpackPage> ExtMemQuantileDMatrix::GetEllpackPageImpl() {

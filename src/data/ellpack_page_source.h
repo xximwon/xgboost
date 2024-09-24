@@ -25,36 +25,75 @@ namespace xgboost::data {
 // concurrent read. As a result, there are two classes, one for cache storage, another one
 // for stream.
 struct EllpackHostCache {
-  std::vector<std::shared_ptr<EllpackPageImpl>> pages;
+  std::size_t const total_available_mem;
+  double const max_cache_page_ratio;
+  bool const prefer_device;
+  double const max_cache_ratio;
 
-  EllpackHostCache();
+  std::vector<std::unique_ptr<EllpackPageImpl>> pages;
+  // Whether the page is cached on the host memory.
+  std::vector<bool> on_host;
+  std::vector<bool> written;
+  // Number of batches before concatenation.
+  bst_idx_t const n_batches_orig;
+  // Size of each batch before concatenation.
+  std::vector<bst_idx_t> sizes_orig;
+
+  explicit EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
+                            double max_cache_ratio);
   ~EllpackHostCache();
 
-  [[nodiscard]] std::size_t Size() const;
+  // The number of bytes for the entire cache.
+  [[nodiscard]] std::size_t SizeBytes() const;
+  // The number of bytes for device cache.
+  [[nodiscard]] std::size_t DeviceSizeBytes() const;
 
-  bool Empty() const { return this->Size() == 0; }
+  bool Empty() const { return this->SizeBytes() == 0; }
 
-  void Push(std::unique_ptr<EllpackPageImpl> page);
-  EllpackPageImpl const* Get(std::int32_t k);
+  EllpackPageImpl const* At(std::int32_t k);
 };
 
 // Pimpl to hide CUDA calls from the host compiler.
 class EllpackHostCacheStreamImpl;
 
-// A view onto the actual cache implemented by `EllpackHostCache`.
+/**
+ * @brief A view of the actual cache implemented by `EllpackHostCache`.
+ */
 class EllpackHostCacheStream {
   std::unique_ptr<EllpackHostCacheStreamImpl> p_impl_;
 
  public:
   explicit EllpackHostCacheStream(std::shared_ptr<EllpackHostCache> cache);
   ~EllpackHostCacheStream();
-
+  /**
+   * @brief Get a shared handler to the cache.
+   */
   std::shared_ptr<EllpackHostCache> Share();
-
+  /**
+   * @brief Stream seek.
+   *
+   * @param offset_bytes This must align to the actual cached page size.
+   */
   void Seek(bst_idx_t offset_bytes);
-
+  /**
+   * @brief Read a page from the cache.
+   *
+   * The read page might be concatenated during page write.
+   *
+   * @param page[out] The returned page.
+   * @param prefetch_copy[in] Does the stream need to copy the page?
+   */
   void Read(EllpackPage* page, bool prefetch_copy) const;
-  void Write(EllpackPage const& page);
+  /**
+   * @brief Add a new page to the host cache.
+   *
+   * This method might append the input page to a previously stored page to increase
+   * individual page size.
+   *
+   * @return Whether a new cache page is create. False if the new page is appended to the
+   * previous one.
+   */
+  [[nodiscard]] bool Write(EllpackPage const& page);
 };
 
 template <typename S>
@@ -62,6 +101,11 @@ class EllpackFormatPolicy {
   std::shared_ptr<common::HistogramCuts const> cuts_{nullptr};
   DeviceOrd device_;
   bool has_hmm_{curt::SupportsPageableMem()};
+  bst_idx_t n_orig_batches_{0};
+  double max_cache_page_ratio_{0};
+  double max_cache_ratio_{0};
+  bool prefer_device_{false};
+  static_assert(std::is_same_v<S, EllpackPage>);
 
  public:
   using FormatT = EllpackPageRawFormat;
@@ -97,18 +141,27 @@ class EllpackFormatPolicy {
     std::unique_ptr<FormatT> fmt{new EllpackPageRawFormat{cuts_, device_, param, has_hmm_}};
     return fmt;
   }
-
-  void SetCuts(std::shared_ptr<common::HistogramCuts const> cuts, DeviceOrd device) {
-    std::swap(cuts_, cuts);
-    device_ = device;
+  void SetCuts(std::shared_ptr<common::HistogramCuts const> cuts, DeviceOrd device,
+               bst_idx_t n_batches, double ratio, bool prefer_device, double cache_ratio) {
+    std::swap(this->cuts_, cuts);
+    this->device_ = device;
     CHECK(this->device_.IsCUDA());
+    this->n_orig_batches_ = n_batches;
+    this->max_cache_page_ratio_ = ratio;
+    this->prefer_device_ = prefer_device;
+    this->max_cache_ratio_ = cache_ratio;
   }
   [[nodiscard]] auto GetCuts() {
     CHECK(cuts_);
     return cuts_;
   }
+  // Get the original number of batches from the input iterator
+  [[nodiscard]] auto OrigBatches() const { return this->n_orig_batches_; }
+  [[nodiscard]] auto MaxCachePageRatio() const { return this->max_cache_page_ratio_; }
+  [[nodiscard]] auto MaxCacheRatio() const { return this->max_cache_ratio_; }
 
   [[nodiscard]] auto Device() const { return device_; }
+  [[nodiscard]] auto PreferDevice() const { return prefer_device_; }
 };
 
 template <typename S, template <typename> typename F>
@@ -120,7 +173,7 @@ class EllpackCacheStreamPolicy : public F<S> {
   using ReaderT = EllpackHostCacheStream;
 
  public:
-  EllpackCacheStreamPolicy();
+  EllpackCacheStreamPolicy() = default;
   [[nodiscard]] std::unique_ptr<WriterT> CreateWriter(StringView name, std::uint32_t iter);
 
   [[nodiscard]] std::unique_ptr<ReaderT> CreateReader(StringView name, bst_idx_t offset,
@@ -156,6 +209,14 @@ class EllpackMmapStreamPolicy : public F<S> {
                                                       bst_idx_t length) const;
 };
 
+struct EllpackSourceConfig {
+  BatchParam param;
+  bool prefer_device;
+  float missing;
+  double max_cache_page_ratio;
+  double max_cache_ratio;
+};
+
 /**
  * @brief Ellpack source with sparse pages as the underlying source.
  */
@@ -168,19 +229,21 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
   common::Span<FeatureType const> feature_types_;
 
  public:
-  EllpackPageSourceImpl(float missing, std::int32_t nthreads, bst_feature_t n_features,
-                        std::size_t n_batches, std::shared_ptr<Cache> cache, BatchParam param,
+  EllpackPageSourceImpl(std::int32_t nthreads, bst_feature_t n_features,
+                        std::size_t n_batches, std::shared_ptr<Cache> cache,
                         std::shared_ptr<common::HistogramCuts> cuts, bool is_dense,
                         bst_idx_t row_stride, common::Span<FeatureType const> feature_types,
-                        std::shared_ptr<SparsePageSource> source, DeviceOrd device)
-      : Super{missing, nthreads, n_features, n_batches, cache, false},
+                        std::shared_ptr<SparsePageSource> source, DeviceOrd device,
+                        EllpackSourceConfig config)
+      : Super{config.missing, nthreads, n_features, n_batches, cache, false},
         is_dense_{is_dense},
         row_stride_{row_stride},
-        param_{std::move(param)},
+        param_{std::move(config.param)},
         feature_types_{feature_types} {
     this->source_ = source;
     cuts->SetDevice(device);
-    this->SetCuts(std::move(cuts), device);
+    this->SetCuts(std::move(cuts), device, n_batches, config.max_cache_page_ratio,
+                  config.prefer_device, config.max_cache_ratio);
     this->Fetch();
   }
 
@@ -210,18 +273,20 @@ class ExtEllpackPageSourceImpl : public ExtQantileSourceMixin<EllpackPage, Forma
 
  public:
   ExtEllpackPageSourceImpl(
-      Context const* ctx, float missing, MetaInfo* info, ExternalDataInfo ext_info,
-      std::shared_ptr<Cache> cache, BatchParam param, std::shared_ptr<common::HistogramCuts> cuts,
+      Context const* ctx, MetaInfo* info, ExternalDataInfo ext_info, std::shared_ptr<Cache> cache,
+      std::shared_ptr<common::HistogramCuts> cuts,
       std::shared_ptr<DataIterProxy<DataIterResetCallback, XGDMatrixCallbackNext>> source,
-      DMatrixProxy* proxy)
-      : Super{missing, ctx->Threads(), static_cast<bst_feature_t>(info->num_col_), source, cache},
+      DMatrixProxy* proxy, EllpackSourceConfig const& config)
+      : Super{config.missing, ctx->Threads(), static_cast<bst_feature_t>(info->num_col_), source,
+              cache},
         ctx_{ctx},
-        p_{std::move(param)},
+        p_{std::move(config.param)},
         proxy_{proxy},
         info_{info},
         ext_info_{std::move(ext_info)} {
     cuts->SetDevice(ctx->Device());
-    this->SetCuts(std::move(cuts), ctx->Device());
+    this->SetCuts(std::move(cuts), ctx->Device(), ext_info.n_batches, config.max_cache_page_ratio,
+                  config.prefer_device, config.max_cache_ratio);
     CHECK(!this->cache_info_->written);
     this->source_->Reset();
     CHECK(this->source_->Next());
@@ -229,6 +294,17 @@ class ExtEllpackPageSourceImpl : public ExtQantileSourceMixin<EllpackPage, Forma
   }
 
   void Fetch() final;
+  // Need a specialized end iter as we can concatenate pages.
+  void EndIter() final {
+    if (this->cache_info_->written) {
+      CHECK_EQ(this->Iter(), this->cache_info_->Size());
+    } else {
+      CHECK_LE(this->cache_info_->Size(), this->ext_info_.n_batches);
+    }
+    this->cache_info_->Commit();
+    CHECK_GE(this->count_, 1);
+    this->count_ = 0;
+  }
 };
 
 // Cache to host

@@ -491,9 +491,10 @@ void MakeLabels(DeviceOrd device, bst_idx_t n_samples, bst_target_t n_classes,
   }
   CHECK(iter);
 
-  std::shared_ptr<DMatrix> p_fmat{DMatrix::Create(
-      static_cast<DataIterHandle>(iter.get()), iter->Proxy(), nullptr, Reset, Next,
-      std::numeric_limits<float>::quiet_NaN(), 0, this->bins_, prefix, this->on_host_)};
+  std::shared_ptr<DMatrix> p_fmat{
+      DMatrix::Create(static_cast<DataIterHandle>(iter.get()), iter->Proxy(), nullptr, Reset, Next,
+                      std::numeric_limits<float>::quiet_NaN(), 0, this->bins_, prefix,
+                      this->on_host_, this->max_page_cache_ratio_, this->max_cache_ratio_)};
 
   auto page_path = data::MakeId(prefix, p_fmat.get());
   page_path += device_.IsCPU() ? ".gradient_index.page" : ".ellpack.page";

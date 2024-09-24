@@ -511,17 +511,32 @@ struct CopyPage {
 // Copy the data from the given EllpackPage to the current page.
 bst_idx_t EllpackPageImpl::Copy(Context const* ctx, EllpackPageImpl const* page, bst_idx_t offset) {
   monitor_.Start(__func__);
-  bst_idx_t num_elements = page->n_rows * page->info.row_stride;
+  bst_idx_t n_elements = page->n_rows * page->info.row_stride;
   CHECK_EQ(this->info.row_stride, page->info.row_stride);
-  CHECK_EQ(NumSymbols(), page->NumSymbols());
-  CHECK_GE(this->n_rows * this->info.row_stride, offset + num_elements);
-  if (page == this) {
-    LOG(FATAL) << "Concatenating the same Ellpack.";
-    return this->n_rows * this->info.row_stride;
-  }
-  dh::LaunchN(num_elements, ctx->CUDACtx()->Stream(), CopyPage{this, page, offset});
+  CHECK_EQ(this->NumSymbols(), page->NumSymbols());
+  CHECK_GE(this->n_rows * this->info.row_stride, offset + n_elements);
+  CHECK_NE(this, page);
+  thrust::for_each_n(ctx->CUDACtx()->CTP(), thrust::make_counting_iterator(0ul), n_elements,
+                     CopyPage{this, page, offset});
   monitor_.Stop(__func__);
-  return num_elements;
+  return n_elements;
+}
+
+void EllpackPageImpl::Extend(Context const* ctx, EllpackPageImpl const* page) {
+  bst_idx_t n_elements = page->n_rows * page->info.row_stride;
+  this->n_rows += page->n_rows;
+  std::size_t compressed_size_bytes = common::CompressedBufferWriter::CalculateBufferSize(
+      this->info.row_stride * this->n_rows, this->NumSymbols());
+#if defined(XGBOOST_USE_RMM)
+  auto resource =
+      std::dynamic_pointer_cast<common::CudaMallocResource>(this->gidx_buffer.Resource());
+#else
+  auto resource =
+      std::dynamic_pointer_cast<common::CudaGrowOnlyResource>(this->gidx_buffer.Resource());
+#endif
+  CHECK(resource);
+  resource->Resize(compressed_size_bytes);
+  this->Copy(ctx, page, n_elements);
 }
 
 // A functor that compacts the rows from one EllpackPage into another.

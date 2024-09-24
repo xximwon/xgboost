@@ -211,7 +211,12 @@ class EllpackPageImpl {
    * @returns The number of elements copied.
    */
   bst_idx_t Copy(Context const* ctx, EllpackPageImpl const* page, bst_idx_t offset);
-
+  /**
+   * @brief Concatenate a new page to the back of this page.
+   * @param ctx The GPU context.
+   * @param page The ELLPACK page to copy from.
+   */
+  void Extend(Context const* ctx, EllpackPageImpl const* page);
   /**
    * @brief Compact the given ELLPACK page into the current page.
    *
@@ -252,6 +257,17 @@ class EllpackPageImpl {
    */
   [[nodiscard]] auto NumSymbols() const { return this->info.n_symbols; }
   void SetNumSymbols(bst_idx_t n_symbols) { this->info.n_symbols = n_symbols; }
+  /**
+   * @brief Copy basic shape from another page.
+   */
+  void CopyInfo(EllpackPageImpl const* page) {
+    CHECK_NE(this, page);
+    this->n_rows = page->Size();
+    this->is_dense = page->IsDense();
+    this->info.row_stride = page->info.row_stride;
+    this->base_rowid = page->base_rowid;
+    this->SetNumSymbols(page->NumSymbols());
+  }
   /**
    * @brief Get an accessor that can be passed into CUDA kernels.
    */

@@ -655,13 +655,18 @@ class DMatrix {
    *
    *     Parameters are a combination of the external memory DMatrix and the quantile DMatrix.
    *
+   * @param max_cache_page_ratio Maximum ratio between the size of a single cached page
+   *          and the total CUDA device memory. When set to 0, the internal batch size will match
+   *          the user input.
+   *
    * @return A created external memory quantile DMatrix.
    */
   template <typename DataIterHandle, typename DMatrixHandle, typename DataIterResetCallback,
             typename XGDMatrixCallbackNext>
   static DMatrix* Create(DataIterHandle iter, DMatrixHandle proxy, std::shared_ptr<DMatrix> ref,
                          DataIterResetCallback* reset, XGDMatrixCallbackNext* next, float missing,
-                         std::int32_t nthread, bst_bin_t max_bin, std::string cache, bool on_host);
+                         std::int32_t nthread, bst_bin_t max_bin, std::string cache, bool on_host,
+                         double max_cache_page_ratio, double max_cache_ratio);
 
   virtual DMatrix *Slice(common::Span<int32_t const> ridxs) = 0;
 

@@ -433,5 +433,31 @@ TEST_P(SparseEllpack, FromGHistIndex) { this->TestFromGHistIndex(GetParam()); }
 
 TEST_P(SparseEllpack, NumNonMissing) { this->TestNumNonMissing(this->GetParam()); }
 
-INSTANTIATE_TEST_SUITE_P(EllpackPage, SparseEllpack, testing::Values(.0f, .2f, .4f, .8f));
+INSTANTIATE_TEST_SUITE_P(EllpackPage, SparseEllpack, ::testing::Values(.0f, .2f, .4f, .8f));
+
+namespace {
+class ConcatPages : public ::testing::TestWithParam<bst_idx_t> {
+ public:
+  void Run() {
+    bst_idx_t n_samples = 256, n_features = 4;
+    auto ctx = MakeCUDACtx(0);
+    auto Xy = RandomDataGenerator{n_samples, n_features, 0.0}
+                  .Bins(16)
+                  .Batches(4)
+                  .MaxPageCache(0.8)
+                  .OnHost(true)
+                  .Device(ctx.Device())
+                  .GenerateExtMemQuantileDMatrix("temp", true);
+    auto p = BatchParam{16, 0.2};
+    for (auto const& ellpack : Xy->GetBatches<EllpackPage>(&ctx, p)) {
+    }
+  }
+};
+}  // namespace
+
+TEST_P(ConcatPages, Basic) {
+  this->Run();
+}
+
+INSTANTIATE_TEST_SUITE_P(EllpackPage, ConcatPages, ::testing::Values(1));
 }  // namespace xgboost

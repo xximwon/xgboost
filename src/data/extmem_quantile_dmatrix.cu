@@ -58,28 +58,18 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   /**
    * Force initialize the cache and do some sanity checks along the way
    */
-  bst_idx_t batch_cnt = 0;
+  bst_idx_t batch_cnt = 0, k = 0;
   bst_idx_t n_total_samples = 0;
-  std::int32_t last_baserid_idx = -1;
   for (auto const &page : this->GetEllpackPageImpl()) {
     n_total_samples += page.Size();
-    auto it = std::lower_bound(ext_info.base_rows.cbegin(), ext_info.base_rows.cend(),
-                               page.Impl()->base_rowid);
-    CHECK(it != ext_info.base_rows.cend());
-    auto idx = std::distance(ext_info.base_rows.cbegin(), it);
-    CHECK_GT(idx, last_baserid_idx);
-    last_baserid_idx = idx;
-
+    CHECK_EQ(page.Impl()->base_rowid, ext_info.base_rows[k]);
     CHECK_EQ(page.Impl()->info.row_stride, ext_info.row_stride);
-    ++batch_cnt;
+    ++k, ++batch_cnt;
   }
-  if (this->max_cache_page_ratio_ == 0.0) {
-    CHECK_EQ(batch_cnt, ext_info.n_batches);
-  } else {
-    CHECK_LE(batch_cnt, ext_info.n_batches);
-  }
+  CHECK_EQ(batch_cnt, ext_info.n_batches);
   CHECK_EQ(n_total_samples, ext_info.accumulated_rows);
-  this->n_batches_ = batch_cnt;
+
+  this->n_batches_ = this->cache_info_.at(id)->Size();
 }
 
 [[nodiscard]] BatchSet<EllpackPage> ExtMemQuantileDMatrix::GetEllpackPageImpl() {

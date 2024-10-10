@@ -156,7 +156,6 @@ class EllpackHostCacheStreamImpl {
       CHECK(!this->cache_->pages.empty());
       CHECK_EQ(cache_idx, this->cache_->pages.size() - 1);
       auto& new_impl = this->cache_->pages.back();
-      new_impl->n_rows += impl->n_rows;
       auto offset = new_impl->Copy(&ctx, impl, this->cache_->offsets.back());
       this->cache_->offsets.back() += offset;
       if (last_page) {

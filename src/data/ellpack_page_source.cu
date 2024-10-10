@@ -141,7 +141,7 @@ class EllpackHostCacheStreamImpl {
       }
       // Push a new page
       auto n_bytes = this->cache_->buffer_bytes.at(this->cache_->pages.size());
-      auto n_samples = this->cache_->base_rows.at(orig_ptr + 1) - this->cache_->base_rows[orig_ptr];
+      auto n_samples = this->cache_->buffer_rows.at(this->cache_->pages.size());
       auto new_impl = std::make_unique<EllpackPageImpl>(&ctx, impl->CutsShared(), impl->IsDense(),
                                                         impl->info.row_stride, n_samples);
       new_impl->base_rowid = this->cache_->base_rows.at(orig_ptr);

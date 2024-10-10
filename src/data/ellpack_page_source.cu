@@ -44,12 +44,14 @@ namespace xgboost::data {
  * Cache
  */
 EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
-                                   double max_cache_ratio)
+                                   double max_cache_ratio, std::vector<std::size_t> cache_mapping)
     : total_available_mem{dh::TotalMemory(curt::CurrentDevice())},
       max_cache_page_ratio{ratio},
       n_batches_orig{n_batches},
       prefer_device{prefer_device},
-      max_cache_ratio{max_cache_ratio} {};
+      max_cache_ratio{max_cache_ratio},
+      cache_mapping{std::move(cache_mapping)} {};
+
 EllpackHostCache::~EllpackHostCache() = default;
 
 [[nodiscard]] std::size_t EllpackHostCache::SizeBytes() const {
@@ -241,9 +243,9 @@ template <typename S, template <typename> typename F>
 [[nodiscard]] std::unique_ptr<typename EllpackCacheStreamPolicy<S, F>::WriterT>
 EllpackCacheStreamPolicy<S, F>::CreateWriter(StringView, std::uint32_t iter) {
   if (!this->p_cache_) {
-    this->p_cache_ =
-        std::make_shared<EllpackHostCache>(this->OrigBatches(), this->MaxCachePageRatio(),
-                                           this->PreferDevice(), this->MaxCacheRatio());
+    this->p_cache_ = std::make_shared<EllpackHostCache>(
+        this->OrigBatches(), this->MaxCachePageRatio(), this->PreferDevice(), this->MaxCacheRatio(),
+        this->CacheMapping());
   }
   auto fo = std::make_unique<EllpackHostCacheStream>(this->p_cache_);
   if (iter == 0) {

@@ -337,6 +337,10 @@ class EllpackPageImpl {
   }
   return row_stride;
 }
+
+[[nodiscard]] EllpackPageImpl::Info CalcNumSymbols(
+    Context const* ctx, bst_idx_t row_stride, bool is_dense,
+    std::shared_ptr<common::HistogramCuts const> cuts);
 }  // namespace xgboost
 
 #endif  // XGBOOST_DATA_ELLPACK_PAGE_CUH_

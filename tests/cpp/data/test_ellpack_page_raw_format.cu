@@ -33,7 +33,7 @@ class TestEllpackPageRawFormat : public ::testing::TestWithParam<bool> {
 
     ASSERT_EQ(cuts->cut_values_.Device(), ctx.Device());
     ASSERT_TRUE(cuts->cut_values_.DeviceCanRead());
-    policy.SetCuts(cuts, ctx.Device(), 3, 0.0, false, 0.0);
+    policy.SetCuts(cuts, ctx.Device(), 3, 0.0, false, 0.0, {});
 
     std::unique_ptr<EllpackPageRawFormat> format{policy.CreatePageFormat(param)};
 
@@ -98,7 +98,7 @@ TEST_P(TestEllpackPageRawFormat, HostIO) {
       auto p_fmat = RandomDataGenerator{100, 14, 0.5}.Seed(i).GenerateDMatrix();
       for (auto const &page : p_fmat->GetBatches<EllpackPage>(&ctx, param)) {
         if (!format) {
-          policy.SetCuts(page.Impl()->CutsShared(), ctx.Device(), 3, 0.0, false, 0.0);
+          policy.SetCuts(page.Impl()->CutsShared(), ctx.Device(), 3, 0.0, false, 0.0, {});
           format = policy.CreatePageFormat(param);
         }
         auto writer = policy.CreateWriter({}, i);

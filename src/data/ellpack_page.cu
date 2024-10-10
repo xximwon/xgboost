@@ -127,7 +127,6 @@ __global__ void CompressBinEllpackKernel(
   wr.AtomicWriteSymbol(buffer, bin, (irow + base_row) * row_stride + cpr_fidx);
 }
 
-namespace {
 // Calculate the number of symbols for the compressed ellpack. Similar to what the CPU
 // implementation does, we compress the dense data by subtracting the bin values with the
 // starting bin of its feature if it's dense. In addition, we treat the data as dense if
@@ -176,7 +175,6 @@ namespace {
     return {row_stride, n_symbols};
   }
 }
-}  // namespace
 
 // Construct an ELLPACK matrix with the given number of empty rows.
 EllpackPageImpl::EllpackPageImpl(Context const* ctx,

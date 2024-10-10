@@ -38,9 +38,10 @@ struct EllpackHostCache {
   bst_idx_t const n_batches_orig;
   // Size of each batch before concatenation.
   std::vector<bst_idx_t> sizes_orig;
+  std::vector<std::size_t> cache_mapping;
 
   explicit EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
-                            double max_cache_ratio);
+                            double max_cache_ratio, std::vector<std::size_t> cache_mapping);
   ~EllpackHostCache();
 
   // The number of bytes for the entire cache.
@@ -105,6 +106,7 @@ class EllpackFormatPolicy {
   double max_cache_page_ratio_{0};
   double max_cache_ratio_{0};
   bool prefer_device_{false};
+  std::vector<std::size_t> cache_mapping_;
   static_assert(std::is_same_v<S, EllpackPage>);
 
  public:
@@ -142,7 +144,8 @@ class EllpackFormatPolicy {
     return fmt;
   }
   void SetCuts(std::shared_ptr<common::HistogramCuts const> cuts, DeviceOrd device,
-               bst_idx_t n_batches, double ratio, bool prefer_device, double cache_ratio) {
+               bst_idx_t n_batches, double ratio, bool prefer_device, double cache_ratio,
+               std::vector<std::size_t> cache_mapping) {
     std::swap(this->cuts_, cuts);
     this->device_ = device;
     CHECK(this->device_.IsCUDA());
@@ -150,6 +153,7 @@ class EllpackFormatPolicy {
     this->max_cache_page_ratio_ = ratio;
     this->prefer_device_ = prefer_device;
     this->max_cache_ratio_ = cache_ratio;
+    this->cache_mapping_ = std::move(cache_mapping);
   }
   [[nodiscard]] auto GetCuts() {
     CHECK(cuts_);
@@ -159,6 +163,7 @@ class EllpackFormatPolicy {
   [[nodiscard]] auto OrigBatches() const { return this->n_orig_batches_; }
   [[nodiscard]] auto MaxCachePageRatio() const { return this->max_cache_page_ratio_; }
   [[nodiscard]] auto MaxCacheRatio() const { return this->max_cache_ratio_; }
+  [[nodiscard]] auto const& CacheMapping() const { return this->cache_mapping_; }
 
   [[nodiscard]] auto Device() const { return device_; }
   [[nodiscard]] auto PreferDevice() const { return prefer_device_; }
@@ -215,6 +220,7 @@ struct EllpackSourceConfig {
   float missing;
   double max_cache_page_ratio;
   double max_cache_ratio;
+  std::vector<std::size_t> cache_mapping;
 };
 
 /**
@@ -234,7 +240,7 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
                         std::shared_ptr<common::HistogramCuts> cuts, bool is_dense,
                         bst_idx_t row_stride, common::Span<FeatureType const> feature_types,
                         std::shared_ptr<SparsePageSource> source, DeviceOrd device,
-                        EllpackSourceConfig config)
+                        EllpackSourceConfig const& config)
       : Super{config.missing, nthreads, n_features, n_batches, cache, false},
         is_dense_{is_dense},
         row_stride_{row_stride},
@@ -243,7 +249,7 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
     this->source_ = source;
     cuts->SetDevice(device);
     this->SetCuts(std::move(cuts), device, n_batches, config.max_cache_page_ratio,
-                  config.prefer_device, config.max_cache_ratio);
+                  config.prefer_device, config.max_cache_ratio, config.cache_mapping);
     this->Fetch();
   }
 
@@ -270,6 +276,7 @@ class ExtEllpackPageSourceImpl : public ExtQantileSourceMixin<EllpackPage, Forma
   DMatrixProxy* proxy_;
   MetaInfo* info_;
   ExternalDataInfo ext_info_;
+  std::vector<std::size_t> cache_mapping_;
 
  public:
   ExtEllpackPageSourceImpl(
@@ -283,10 +290,11 @@ class ExtEllpackPageSourceImpl : public ExtQantileSourceMixin<EllpackPage, Forma
         p_{std::move(config.param)},
         proxy_{proxy},
         info_{info},
-        ext_info_{std::move(ext_info)} {
+        ext_info_{std::move(ext_info)},
+        cache_mapping_{config.cache_mapping} {
     cuts->SetDevice(ctx->Device());
     this->SetCuts(std::move(cuts), ctx->Device(), ext_info.n_batches, config.max_cache_page_ratio,
-                  config.prefer_device, config.max_cache_ratio);
+                  config.prefer_device, config.max_cache_ratio, config.cache_mapping);
     CHECK(!this->cache_info_->written);
     this->source_->Reset();
     CHECK(this->source_->Next());

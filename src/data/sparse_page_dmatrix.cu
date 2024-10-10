@@ -57,7 +57,8 @@ BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
                                             .prefer_device = false,  // no reference for sparse page
                                             .missing = this->missing_,
                                             .max_cache_page_ratio = cuda_impl::CachePageRatio(),
-                                            .max_cache_ratio = cuda_impl::CacheDeviceRatio()};
+                                            .max_cache_ratio = cuda_impl::CacheDeviceRatio(),
+                                            .cache_mapping = {}};
           ptr = std::make_shared<SourceT>(ctx->Threads(), this->Info().num_col_, this->n_batches_,
                                           cache_info_.at(id), std::move(cuts), this->IsDense(),
                                           row_stride, ft, this->sparse_page_source_, ctx->Device(),

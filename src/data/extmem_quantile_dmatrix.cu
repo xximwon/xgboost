@@ -33,6 +33,29 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   ext_info.SetInfo(ctx, &this->info_);
 
   /**
+   * Calculate cache info
+   */
+  auto ell_info = CalcNumSymbols(ctx, ext_info.row_stride, this->Info().IsDense(), cuts);
+  // FIXME: This can be done in the source
+  std::vector<std::size_t> cache_size{0};
+  std::vector<std::size_t> cache_mapping(ext_info.base_rows.size(), 0);
+  auto n_total_bytes = dh::TotalMemory(curt::CurrentDevice());
+  auto page_bytes = n_total_bytes * this->max_cache_page_ratio_;
+
+  for (std::size_t i = 1; i < ext_info.base_rows.size(); ++i) {
+    auto n_samples = ext_info.base_rows[i] - ext_info.base_rows[i - 1];
+    auto n_bytes = common::CompressedBufferWriter::CalculateBufferSize(
+        ext_info.row_stride * n_samples, ell_info.n_symbols);
+    if (cache_size.back() < page_bytes) {
+      cache_size.back() += n_bytes;
+    } else {
+      cache_size.push_back(n_bytes);
+    }
+    cache_mapping[i] = cache_size.size() - 1;
+  }
+  auto n_batches = cache_size.size();
+
+  /**
    * Generate gradient index
    */
   auto id = MakeCache(this, ".ellpack.page", this->on_host_, cache_prefix_, &cache_info_);
@@ -49,7 +72,8 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
                                           .prefer_device = (ref != nullptr),
                                           .missing = missing,
                                           .max_cache_page_ratio = this->max_cache_page_ratio_,
-                                          .max_cache_ratio = this->max_device_cache_ratio_};
+                                          .max_cache_ratio = this->max_device_cache_ratio_,
+                                          .cache_mapping = cache_mapping};
         ptr = std::make_shared<SourceT>(ctx, &this->Info(), ext_info, cache_info_.at(id), cuts,
                                         iter, proxy, config);
       },

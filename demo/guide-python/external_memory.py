@@ -150,16 +150,10 @@ def setup_rmm():
     from cuda import cudart
     from rmm.allocators.cupy import rmm_cupy_allocator
 
-    status, free, total = cudart.cudaMemGetInfo()
-    assert status == cudart.cudaError_t.cudaSuccess
-    use = int(free * 0.9)  # Use at least 90% of the memory for the pool
-
     if not xgboost.build_info()["USE_RMM"]:
         return
 
-    mr = rmm.mr.CudaAsyncMemoryResource(
-        initial_pool_size=use, release_threshold=use, enable_ipc=False
-    )
+    mr = rmm.mr.PoolMemoryResource(rmm.mr.CudaAsyncMemoryResource())
     rmm.mr.set_current_device_resource(mr)
     # Set the allocator for cupy as well.
     cp.cuda.set_allocator(rmm_cupy_allocator)

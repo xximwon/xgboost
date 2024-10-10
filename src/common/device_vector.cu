@@ -32,6 +32,7 @@ void ThrowOOMError(std::string const &err, std::size_t bytes) {
 void GrowOnlyVirtualMemVec::Reserve(std::size_t new_size) {
   auto va_capacity = this->Capacity();
   if (new_size < va_capacity) {
+    std::cout << "return" << std::endl;
     return;
   }
 
@@ -42,7 +43,9 @@ void GrowOnlyVirtualMemVec::Reserve(std::size_t new_size) {
   auto hint = this->DevPtr() + va_capacity;
 
   bool failed{false};
+  std::cout << "hint:" << hint << " newsize:" << new_reserve_size << std::endl;
   auto range = std::make_unique<VaRange>(new_reserve_size, hint, &status, &failed);
+  std::cout << "failed:" << failed << std::endl;
   if (failed) {
     // Failed to reserve the requested address.
     // Slow path, try to reserve a new address with full size.

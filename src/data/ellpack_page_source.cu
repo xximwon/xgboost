@@ -145,6 +145,8 @@ class EllpackHostCacheStreamImpl {
     } else {
       CHECK(!this->cache_->on_host.back());
       CHECK(!this->cache_->written.back());
+      std::cout << "this:" << this->cache_->pages.back()->gidx_buffer.size_bytes()
+                << " that:" << impl->gidx_buffer.size_bytes() << std::endl;
       this->cache_->pages.back()->Extend(&ctx, impl);
     }
     this->cache_->sizes_orig.push_back(impl->MemCostBytes());

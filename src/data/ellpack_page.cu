@@ -503,7 +503,7 @@ struct CopyPage {
         src_iterator_d{src->gidx_buffer.data(), src->NumSymbols()},
         offset{offset} {}
 
-  __device__ void operator()(size_t element_id) {
+  __device__ void operator()(std::size_t element_id) {
     cbw.AtomicWriteSymbol(dst_data_d, src_iterator_d[element_id], element_id + offset);
   }
 };
@@ -511,11 +511,12 @@ struct CopyPage {
 // Copy the data from the given EllpackPage to the current page.
 bst_idx_t EllpackPageImpl::Copy(Context const* ctx, EllpackPageImpl const* page, bst_idx_t offset) {
   monitor_.Start(__func__);
+  std::cout << "offset:" << offset << std::endl;
   bst_idx_t n_elements = page->n_rows * page->info.row_stride;
+  CHECK_NE(this, page);
   CHECK_EQ(this->info.row_stride, page->info.row_stride);
   CHECK_EQ(this->NumSymbols(), page->NumSymbols());
   CHECK_GE(this->n_rows * this->info.row_stride, offset + n_elements);
-  CHECK_NE(this, page);
   thrust::for_each_n(ctx->CUDACtx()->CTP(), thrust::make_counting_iterator(0ul), n_elements,
                      CopyPage{this, page, offset});
   monitor_.Stop(__func__);
@@ -523,8 +524,10 @@ bst_idx_t EllpackPageImpl::Copy(Context const* ctx, EllpackPageImpl const* page,
 }
 
 void EllpackPageImpl::Extend(Context const* ctx, EllpackPageImpl const* page) {
-  bst_idx_t n_elements = page->n_rows * page->info.row_stride;
+  bst_idx_t n_elements = this->n_rows * this->info.row_stride;
   this->n_rows += page->n_rows;
+  std::cout << "n_symbols:" << this->NumSymbols() << " n_rows:" << this->n_rows
+            << " rs:" << this->info.row_stride << std::endl;
   std::size_t compressed_size_bytes = common::CompressedBufferWriter::CalculateBufferSize(
       this->info.row_stride * this->n_rows, this->NumSymbols());
 #if defined(XGBOOST_USE_RMM)
@@ -535,8 +538,11 @@ void EllpackPageImpl::Extend(Context const* ctx, EllpackPageImpl const* page) {
       std::dynamic_pointer_cast<common::CudaGrowOnlyResource>(this->gidx_buffer.Resource());
 #endif
   CHECK(resource);
+  std::cout << "bytes:" << compressed_size_bytes << std::endl;
   resource->Resize(compressed_size_bytes);
+
   this->Copy(ctx, page, n_elements);
+  dh::DefaultStream().Sync();
 }
 
 // A functor that compacts the rows from one EllpackPage into another.

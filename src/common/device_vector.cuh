@@ -228,8 +228,8 @@ class GrowOnlyVirtualMemVec {
   auto CreatePhysicalMem(std::size_t size) const {
     CUmemGenericAllocationHandle alloc_handle;
     auto padded_size = RoundUp(size, this->granularity_);
-    CUresult status = this->cu_.cuMemCreate(&alloc_handle, padded_size, &this->prop_, 0);
-    CHECK_EQ(status, CUDA_SUCCESS);
+    std::cout << "padded:" << padded_size << std::endl;
+    safe_cu(this->cu_.cuMemCreate(&alloc_handle, padded_size, &this->prop_, 0));
     return alloc_handle;
   }
   void Reserve(std::size_t new_size);
@@ -239,7 +239,10 @@ class GrowOnlyVirtualMemVec {
 
   void GrowTo(std::size_t n_bytes) {
     auto alloc_size = this->PhyCapacity();
+    auto va_capacity = this->Capacity();
+    std::cout << "alloc size:" << alloc_size << " va ca:" << va_capacity << std::endl;
     if (n_bytes <= alloc_size) {
+      std::cout << "return grow" << std::endl;
       return;
     }
 
@@ -251,6 +254,7 @@ class GrowOnlyVirtualMemVec {
         std::unique_ptr<PhyAddrHandle, std::function<void(PhyAddrHandle *)>>{
             new PhyAddrHandle{this->CreatePhysicalMem(padded_delta), padded_delta}, [&](auto *hdl) {
               if (hdl) {
+                std::cout << "release" << std::endl;
                 cu_.cuMemRelease(hdl->handle);
               }
             }});

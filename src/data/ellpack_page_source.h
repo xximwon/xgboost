@@ -110,6 +110,7 @@ class EllpackFormatPolicy {
   std::vector<std::size_t> cache_mapping_;
   std::vector<std::size_t> buffer_bytes_;
   std::vector<std::size_t> base_rows_;
+  std::vector<std::size_t> buffer_rows_;
   static_assert(std::is_same_v<S, EllpackPage>);
 
  public:
@@ -149,7 +150,7 @@ class EllpackFormatPolicy {
   void SetCuts(std::shared_ptr<common::HistogramCuts const> cuts, DeviceOrd device,
                bst_idx_t n_batches, double ratio, bool prefer_device, double cache_ratio,
                std::vector<std::size_t> cache_mapping, std::vector<std::size_t> buffer_bytes,
-               std::vector<std::size_t> base_rows) {
+               std::vector<std::size_t> base_rows, std::vector<std::size_t> buffer_rows) {
     std::swap(this->cuts_, cuts);
     this->device_ = device;
     CHECK(this->device_.IsCUDA());
@@ -160,6 +161,7 @@ class EllpackFormatPolicy {
     this->cache_mapping_ = std::move(cache_mapping);
     this->buffer_bytes_ = std::move(buffer_bytes);
     this->base_rows_ = std::move(base_rows);
+    this->buffer_rows_ = std::move(buffer_rows);
   }
   [[nodiscard]] auto GetCuts() {
     CHECK(cuts_);
@@ -172,6 +174,7 @@ class EllpackFormatPolicy {
   [[nodiscard]] auto const& CacheMapping() const { return this->cache_mapping_; }
   [[nodiscard]] auto const& BufferBytes() const { return this->buffer_bytes_; }
   [[nodiscard]] auto const& BaseRows() const { return this->base_rows_; }
+  [[nodiscard]] auto const& BufferRows() const { return this->buffer_rows_; }
 
   [[nodiscard]] auto Device() const { return device_; }
   [[nodiscard]] auto PreferDevice() const { return prefer_device_; }
@@ -230,6 +233,7 @@ struct EllpackSourceConfig {
   double max_cache_ratio;
   std::vector<std::size_t> cache_mapping;
   std::vector<std::size_t> buffer_bytes;
+  std::vector<std::size_t> buffer_rows;
 };
 
 /**
@@ -259,7 +263,7 @@ class EllpackPageSourceImpl : public PageSourceIncMixIn<EllpackPage, F> {
     cuts->SetDevice(device);
     this->SetCuts(std::move(cuts), device, n_batches, config.max_cache_page_ratio,
                   config.prefer_device, config.max_cache_ratio, config.cache_mapping,
-                  config.buffer_bytes, {});
+                  config.buffer_bytes, {}, config.buffer_rows);
     this->Fetch();
   }
 
@@ -305,7 +309,7 @@ class ExtEllpackPageSourceImpl : public ExtQantileSourceMixin<EllpackPage, Forma
     cuts->SetDevice(ctx->Device());
     this->SetCuts(std::move(cuts), ctx->Device(), ext_info.n_batches, config.max_cache_page_ratio,
                   config.prefer_device, config.max_cache_ratio, config.cache_mapping,
-                  config.buffer_bytes, ext_info_.base_rows);
+                  config.buffer_bytes, ext_info_.base_rows, config.buffer_rows);
     CHECK(!this->cache_info_->written);
     this->source_->Reset();
     CHECK(this->source_->Next());

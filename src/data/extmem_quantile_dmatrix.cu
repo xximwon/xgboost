@@ -39,6 +39,7 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   // FIXME: This can be done in the source
   std::vector<std::size_t> cache_size{0};
   std::vector<std::size_t> cache_mapping(ext_info.base_rows.size(), 0);
+  std::vector<std::size_t> cache_rows{0};
   auto n_total_bytes = dh::TotalMemory(curt::CurrentDevice());
   auto page_bytes = n_total_bytes * this->max_cache_page_ratio_;
 
@@ -48,8 +49,10 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
         ext_info.row_stride * n_samples, ell_info.n_symbols);
     if (cache_size.back() < page_bytes) {
       cache_size.back() += n_bytes;
+      cache_rows.back() += n_samples;
     } else {
       cache_size.push_back(n_bytes);
+      cache_rows.push_back(n_samples);
     }
     cache_mapping[i] = cache_size.size() - 1;
   }
@@ -74,7 +77,8 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
                                           .max_cache_page_ratio = this->max_cache_page_ratio_,
                                           .max_cache_ratio = this->max_device_cache_ratio_,
                                           .cache_mapping = cache_mapping,
-                                          .buffer_bytes = cache_size};
+                                          .buffer_bytes = cache_size,
+                                          .buffer_rows = cache_rows};
         ptr = std::make_shared<SourceT>(ctx, &this->Info(), ext_info, cache_info_.at(id), cuts,
                                         iter, proxy, config);
       },

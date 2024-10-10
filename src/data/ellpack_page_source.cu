@@ -213,7 +213,7 @@ EllpackCacheStreamPolicy<S, F>::CreateWriter(StringView, std::uint32_t iter) {
   if (!this->p_cache_) {
     this->p_cache_ = std::make_shared<EllpackHostCache>(
         this->OrigBatches(), this->MaxCachePageRatio(), this->PreferDevice(), this->MaxCacheRatio(),
-        this->CacheMapping(), this->BufferBytes(), this->BaseRows());
+        this->CacheMapping(), this->BufferBytes(), this->BaseRows(), this->BufferRows());
   }
   auto fo = std::make_unique<EllpackHostCacheStream>(this->p_cache_);
   if (iter == 0) {

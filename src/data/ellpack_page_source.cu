@@ -46,7 +46,8 @@ namespace xgboost::data {
 EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
                                    double max_cache_ratio, std::vector<std::size_t> cache_mapping,
                                    std::vector<std::size_t> buffer_bytes,
-                                   std::vector<std::size_t> base_rows)
+                                   std::vector<std::size_t> base_rows,
+                                   std::vector<bst_idx_t> buffer_rows)
     : total_available_mem{dh::TotalMemory(curt::CurrentDevice())},
       max_cache_page_ratio{ratio},
       n_batches_orig{n_batches},
@@ -54,7 +55,8 @@ EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefe
       max_cache_ratio{max_cache_ratio},
       cache_mapping{std::move(cache_mapping)},
       buffer_bytes{std::move(buffer_bytes)},
-      base_rows{std::move(base_rows)} {};
+      base_rows{std::move(base_rows)},
+      buffer_rows{std::move(buffer_rows)} {};
 
 EllpackHostCache::~EllpackHostCache() = default;
 
@@ -138,7 +140,7 @@ class EllpackHostCacheStreamImpl {
         commit_page();
       }
       // Push a new page
-      auto n_bytes = this->cache_->buffer_bytes.at(orig_ptr);
+      auto n_bytes = this->cache_->buffer_bytes.at(this->cache_->pages.size());
       auto n_samples = this->cache_->base_rows.at(orig_ptr + 1) - this->cache_->base_rows[orig_ptr];
       auto new_impl = std::make_unique<EllpackPageImpl>(&ctx, impl->CutsShared(), impl->IsDense(),
                                                         impl->info.row_stride, n_samples);

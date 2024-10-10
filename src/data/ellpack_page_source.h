@@ -39,11 +39,12 @@ struct EllpackHostCache {
   std::vector<std::size_t> const cache_mapping;
   std::vector<std::size_t> const buffer_bytes;
   std::vector<std::size_t> const base_rows;
+  std::vector<bst_idx_t> const buffer_rows;
 
   explicit EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
                             double max_cache_ratio, std::vector<std::size_t> cache_mapping,
                             std::vector<std::size_t> buffer_bytes,
-                            std::vector<std::size_t> base_rows);
+                            std::vector<std::size_t> base_rows, std::vector<bst_idx_t> buffer_rows);
   ~EllpackHostCache();
 
   // The number of bytes for the entire cache.

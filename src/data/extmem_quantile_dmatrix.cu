@@ -73,7 +73,8 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
                                           .missing = missing,
                                           .max_cache_page_ratio = this->max_cache_page_ratio_,
                                           .max_cache_ratio = this->max_device_cache_ratio_,
-                                          .cache_mapping = cache_mapping};
+                                          .cache_mapping = cache_mapping,
+                                          .buffer_bytes = cache_size};
         ptr = std::make_shared<SourceT>(ctx, &this->Info(), ext_info, cache_info_.at(id), cuts,
                                         iter, proxy, config);
       },

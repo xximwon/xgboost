@@ -187,8 +187,8 @@ class TestEllpackPageExt : public ::testing::TestWithParam<std::tuple<bool, bool
     float sparsity = is_dense ? 0.0 : 0.2;
 
     auto ctx = MakeCUDACtx(0);
-    constexpr bst_idx_t kRows = 64;
-    constexpr size_t kCols = 2;
+    constexpr bst_idx_t kRows = 2048;
+    constexpr size_t kCols = 16;
 
     // Create an in-memory DMatrix.
     auto p_fmat = RandomDataGenerator{kRows, kCols, sparsity}.GenerateDMatrix(true);
@@ -196,16 +196,17 @@ class TestEllpackPageExt : public ::testing::TestWithParam<std::tuple<bool, bool
     // Create a DMatrix with multiple batches.
     auto p_ext_fmat = RandomDataGenerator{kRows, kCols, sparsity}
                           .Batches(4)
+                          .Device(ctx.Device())
                           .OnHost(on_host)
-                          .GenerateSparsePageDMatrix("temp", true);
+                          .GenerateExtMemQuantileDMatrix("temp", true);
 
-    auto param = BatchParam{2, tree::TrainParam::DftSparseThreshold()};
+    auto param = BatchParam{8, tree::TrainParam::DftSparseThreshold()};
     auto impl = (*p_fmat->GetBatches<EllpackPage>(&ctx, param).begin()).Impl();
     ASSERT_EQ(impl->base_rowid, 0);
     ASSERT_EQ(impl->n_rows, kRows);
     ASSERT_EQ(impl->IsDense(), is_dense);
-    ASSERT_EQ(impl->info.row_stride, 2);
-    ASSERT_EQ(impl->Cuts().TotalBins(), 4);
+    ASSERT_EQ(impl->info.row_stride, kCols);
+    ASSERT_EQ(impl->Cuts().TotalBins(), param.max_bin);
 
     std::unique_ptr<EllpackPageImpl> impl_ext;
     size_t offset = 0;

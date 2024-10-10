@@ -122,7 +122,8 @@ class EllpackHostCacheStreamImpl {
       new_impl->CopyInfo(d_page.get());
       new_impl->gidx_buffer = common::MakeFixedVecWithPinnedMalloc<common::CompressedByteT>(
           old_impl->gidx_buffer.size());
-      new_impl->Copy(&ctx, old_impl.get(), 0);
+      dh::safe_cuda(cudaMemcpyAsync(new_impl->gidx_buffer.data(), old_impl->gidx_buffer.data(),
+                                    old_impl->gidx_buffer.size_bytes(), cudaMemcpyDefault));
 
       old_impl.reset();
       this->cache_->pages.back() = std::move(new_impl);

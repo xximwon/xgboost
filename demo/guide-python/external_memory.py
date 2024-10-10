@@ -138,7 +138,7 @@ def main(tmpdir: str, args: argparse.Namespace) -> None:
     it = Iterator(args.device, files)
 
     hist_train(it)
-    approx_train(it)
+    # approx_train(it)
 
 
 def setup_rmm():
@@ -171,7 +171,7 @@ if __name__ == "__main__":
         # support, a warning is raised when constructing the `DMatrix`.
         setup_rmm()
         # Make sure XGBoost is using RMM for all allocations.
-        with xgboost.config_context(use_rmm=True):
+        with xgboost.config_context(use_rmm=True, verbosity=2):
             with tempfile.TemporaryDirectory() as tmpdir:
                 main(tmpdir, args)
     else:

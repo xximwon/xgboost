@@ -439,25 +439,60 @@ INSTANTIATE_TEST_SUITE_P(EllpackPage, SparseEllpack, ::testing::Values(.0f, .2f,
 namespace {
 class ConcatPages : public ::testing::TestWithParam<bst_idx_t> {
  public:
-  void Run() {
-    bst_idx_t n_samples = 256, n_features = 4;
+  void Run(bool on_host, bool is_dense) {
+    float sparsity = is_dense ? 0.0 : 0.2;
+
     auto ctx = MakeCUDACtx(0);
-    auto Xy = RandomDataGenerator{n_samples, n_features, 0.0}
-                  .Bins(16)
-                  .Batches(4)
-                  .MaxPageCache(0.8)
-                  .OnHost(true)
-                  .Device(ctx.Device())
-                  .GenerateExtMemQuantileDMatrix("temp", true);
-    auto p = BatchParam{16, 0.2};
-    for (auto const& ellpack : Xy->GetBatches<EllpackPage>(&ctx, p)) {
+    constexpr bst_idx_t kRows = 64;
+    constexpr size_t kCols = 2;
+
+    // Create an in-memory DMatrix.
+    auto p_fmat = RandomDataGenerator{kRows, kCols, sparsity}.GenerateDMatrix(true);
+
+    // Create a DMatrix with multiple batches.
+    auto param = BatchParam{4, tree::TrainParam::DftSparseThreshold()};
+    auto p_ext_fmat = RandomDataGenerator{kRows, kCols, sparsity}
+                          .Batches(4)
+                          .Bins(param.max_bin)
+                          .Device(ctx.Device())
+                          .OnHost(on_host)
+                          .GenerateExtMemQuantileDMatrix("temp", true);
+
+    auto impl = (*p_fmat->GetBatches<EllpackPage>(&ctx, param).begin()).Impl();
+    ASSERT_EQ(impl->base_rowid, 0);
+    ASSERT_EQ(impl->n_rows, kRows);
+    ASSERT_EQ(impl->IsDense(), is_dense);
+    ASSERT_EQ(impl->info.row_stride, 2);
+    ASSERT_EQ(impl->Cuts().TotalBins(), param.max_bin * kCols);
+
+    std::unique_ptr<EllpackPageImpl> impl_ext;
+    size_t offset = 0;
+    for (auto& batch : p_ext_fmat->GetBatches<EllpackPage>(&ctx, param)) {
+      if (!impl_ext) {
+        impl_ext = std::make_unique<EllpackPageImpl>(&ctx, batch.Impl()->CutsShared(),
+                                                     batch.Impl()->is_dense,
+                                                     batch.Impl()->info.row_stride, kRows);
+      }
+      auto n_elems = impl_ext->Copy(&ctx, batch.Impl(), offset);
+      offset += n_elems;
     }
+    ASSERT_EQ(impl_ext->base_rowid, 0);
+    ASSERT_EQ(impl_ext->n_rows, kRows);
+    ASSERT_EQ(impl_ext->IsDense(), is_dense);
+    ASSERT_EQ(impl_ext->info.row_stride, 2);
+    ASSERT_EQ(impl_ext->Cuts().TotalBins(), 4);
+
+    std::vector<common::CompressedByteT> buffer;
+    [[maybe_unused]] auto h_acc = impl->GetHostAccessor(&ctx, &buffer);
+    std::vector<common::CompressedByteT> buffer_ext;
+    [[maybe_unused]] auto h_ext_acc = impl_ext->GetHostAccessor(&ctx, &buffer_ext);
+    ASSERT_EQ(buffer, buffer_ext);
   }
 };
 }  // namespace
 
 TEST_P(ConcatPages, Basic) {
-  this->Run();
+  this->Run(true, true);
 }
 
 INSTANTIATE_TEST_SUITE_P(EllpackPage, ConcatPages, ::testing::Values(1));

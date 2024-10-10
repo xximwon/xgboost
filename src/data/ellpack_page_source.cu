@@ -112,9 +112,6 @@ class EllpackHostCacheStreamImpl {
     auto new_page = cache_idx == this->cache_->pages.size();
     auto last_page = (orig_ptr + 1) == this->cache_->n_batches_orig;
 
-    auto commit = new_page || last_page;
-    std::cout << "commit:" << commit << " ptr:" << orig_ptr << std::endl;
-
     auto commit_page = [this, &ctx] {
       auto const& d_page = this->cache_->pages.back();
 
@@ -128,7 +125,9 @@ class EllpackHostCacheStreamImpl {
       new_impl->Copy(&ctx, old_impl.get(), 0);
 
       old_impl.reset();
-      old_impl = std::move(new_impl);
+      this->cache_->pages.back() = std::move(new_impl);
+      LOG(INFO) << "Create cache page with size:"
+                << common::HumanMemUnit(this->cache_->pages.back()->MemCostBytes());
       std::cout << "commit page:" << this->cache_->pages.back()->n_rows << std::endl;
     };
 

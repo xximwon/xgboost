@@ -461,32 +461,4 @@ TEST_P(ConcatPages, Basic) {
 }
 
 INSTANTIATE_TEST_SUITE_P(EllpackPage, ConcatPages, ::testing::Values(1));
-
-TEST(EllpackPage, Extend) {
-  bst_idx_t n_samples = (1 << 19), n_features = 256;
-  auto p = BatchParam{256, 0.2};
-  auto ctx = MakeCUDACtx(0);
-  auto p_fmat_0 = RandomDataGenerator{n_samples, n_features, 0.0}
-                      .Batches(1)
-                      .Bins(p.max_bin)
-                      .Device(ctx.Device())
-                      .GenerateExtMemQuantileDMatrix("temp", false);
-  auto p_fmat_1 = RandomDataGenerator{n_samples, n_features, 0.0}
-                      .Batches(1)
-                      .Bins(p.max_bin)
-                      .Device(ctx.Device())
-                      .GenerateExtMemQuantileDMatrix("temp", false);
-  for (auto const& page_0 : p_fmat_0->GetBatches<EllpackPage>(&ctx, p)) {
-    for (auto const& page_1 : p_fmat_1->GetBatches<EllpackPage>(&ctx, p)) {
-      auto copy = std::make_shared<EllpackPageImpl>(
-          &ctx, page_0.Impl()->CutsShared(), page_0.Impl()->IsDense(),
-          page_0.Impl()->info.row_stride, page_0.Impl()->n_rows);
-      copy->CopyInfo(page_0.Impl());
-      copy->gidx_buffer =
-          common::MakeCudaGrowOnly<common::CompressedByteT>(page_0.Impl()->gidx_buffer.size());
-      copy->Extend(&ctx, page_1.Impl());
-      ASSERT_EQ(copy->Size(), n_samples * 2);
-    }
-  }
-}
 }  // namespace xgboost

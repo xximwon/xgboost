@@ -342,10 +342,10 @@ class SparsePageSourceImpl : public BatchIteratorImpl<S>, public FormatStreamPol
     auto bytes = fmt->Write(*page_, fo.get());
 
     timer.Stop();
-    // Not entirely accurate, the kernels doesn't have to flush the data.
-    LOG(INFO) << common::HumanMemUnit(bytes) << " written in " << timer.ElapsedSeconds()
-              << " seconds.";
     if (bytes != InvalidPageSize()) {
+      // Not entirely accurate, the kernels doesn't have to flush the data.
+      LOG(INFO) << common::HumanMemUnit(bytes) << " written in " << timer.ElapsedSeconds()
+                << " seconds.";
       cache_info_->Push(bytes);
     }
   }

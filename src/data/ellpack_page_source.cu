@@ -83,7 +83,6 @@ class EllpackHostCacheStreamImpl {
   auto Share() { return cache_; }
 
   void Seek(bst_idx_t offset_bytes) {
-    // std::cout << "seek:" << offset_bytes << std::endl;
     std::size_t n_bytes{0};
     std::int32_t k{-1};
     for (std::size_t i = 0, n = cache_->pages.size(); i < n; ++i) {
@@ -97,7 +96,6 @@ class EllpackHostCacheStreamImpl {
       k = this->cache_->pages.size();  // seek end
     }
     CHECK_NE(k, -1) << "Invalid offset:" << offset_bytes;
-    // std::cout << "seek:" << k << std::endl;
     ptr_ = k;
   }
 
@@ -131,20 +129,6 @@ class EllpackHostCacheStreamImpl {
       this->cache_->pages.back() = std::move(new_impl);
       LOG(INFO) << "Create cache page with size:"
                 << common::HumanMemUnit(this->cache_->pages.back()->MemCostBytes());
-      {
-        std::vector<common::CompressedByteT> h_buffer;
-        auto& back = this->cache_->pages.back();
-        common::CompressedIterator<uint32_t> gidx_iter{back->gidx_buffer.data(),
-                                                       back->NumSymbols()};
-        for (std::size_t i = 0; i < back->n_rows * back->info.row_stride; ++i) {
-          if (i % 16 == 0) {
-            std::cout << std::endl;
-          }
-          std::cout << gidx_iter[i] << ", ";
-        }
-        std::cout << std::endl;
-      }
-      // std::cout << "commit page:" << this->cache_->pages.back()->n_rows << std::endl;
     };
 
     if (new_page) {
@@ -161,6 +145,8 @@ class EllpackHostCacheStreamImpl {
       CHECK_EQ(this->cache_->base_rows.at(orig_ptr), impl->base_rowid);
       new_impl->SetNumSymbols(impl->NumSymbols());
       new_impl->gidx_buffer = common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(n_bytes);
+      dh::safe_cuda(cudaMemsetAsync(new_impl->gidx_buffer.data(), '\0',
+                                    new_impl->gidx_buffer.size_bytes(), ctx.CUDACtx()->Stream()));
       auto offset = new_impl->Copy(&ctx, impl, 0);
 
       this->cache_->offsets.push_back(offset);
@@ -186,6 +172,8 @@ class EllpackHostCacheStreamImpl {
     if (prefetch_copy) {
       impl->gidx_buffer =
           common::MakeFixedVecWithCudaMalloc<common::CompressedByteT>(page->gidx_buffer.size());
+      dh::safe_cuda(cudaMemcpyAsync(impl->gidx_buffer.data(), page->gidx_buffer.data(),
+                                    page->gidx_buffer.size_bytes(), cudaMemcpyDefault));
     } else {
       auto res = page->gidx_buffer.Resource();
       impl->gidx_buffer = common::RefResourceView<common::CompressedByteT>{

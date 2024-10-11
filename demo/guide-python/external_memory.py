@@ -106,7 +106,7 @@ def hist_train(it: Iterator) -> None:
         {"tree_method": "hist", "max_depth": 4, "device": it.device},
         Xy,
         evals=[(Xy, "Train")],
-        num_boost_round=3,
+        num_boost_round=10,
     )
     booster.predict(Xy)
 
@@ -133,7 +133,7 @@ def main(tmpdir: str, args: argparse.Namespace) -> None:
 
     # generate some random data for demo
     files = make_batches(
-        n_samples_per_batch=256, n_features=4, n_batches=4, tmpdir=tmpdir
+        n_samples_per_batch=1024, n_features=17, n_batches=31, tmpdir=tmpdir
     )
     it = Iterator(args.device, files)
 
@@ -171,7 +171,7 @@ if __name__ == "__main__":
         # support, a warning is raised when constructing the `DMatrix`.
         setup_rmm()
         # Make sure XGBoost is using RMM for all allocations.
-        with xgboost.config_context(use_rmm=True, verbosity=1):
+        with xgboost.config_context(use_rmm=True, verbosity=2):
             with tempfile.TemporaryDirectory() as tmpdir:
                 main(tmpdir, args)
     else:

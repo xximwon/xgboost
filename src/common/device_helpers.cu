@@ -13,7 +13,7 @@ PinnedMemory::PinnedMemory() {
   std::int32_t major{0}, minor{0};
   xgboost::curt::DrVersion(&major, &minor);
   // Host NUMA allocation requires driver that supports CTK >= 12.5 to be stable.
-  if (major >= 12 && minor >= 5) {
+  if (false) {
     this->impl_.emplace<detail::GrowOnlyVirtualMemVec>(CU_MEM_LOCATION_TYPE_HOST_NUMA);
   } else {
     this->impl_.emplace<detail::GrowOnlyPinnedMemoryImpl>();

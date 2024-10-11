@@ -131,7 +131,20 @@ class EllpackHostCacheStreamImpl {
       this->cache_->pages.back() = std::move(new_impl);
       LOG(INFO) << "Create cache page with size:"
                 << common::HumanMemUnit(this->cache_->pages.back()->MemCostBytes());
-      std::cout << "commit page:" << this->cache_->pages.back()->n_rows << std::endl;
+      {
+        std::vector<common::CompressedByteT> h_buffer;
+        auto& back = this->cache_->pages.back();
+        common::CompressedIterator<uint32_t> gidx_iter{back->gidx_buffer.data(),
+                                                       back->NumSymbols()};
+        for (std::size_t i = 0; i < back->n_rows * back->info.row_stride; ++i) {
+          if (i % 16 == 0) {
+            std::cout << std::endl;
+          }
+          std::cout << gidx_iter[i] << ", ";
+        }
+        std::cout << std::endl;
+      }
+      // std::cout << "commit page:" << this->cache_->pages.back()->n_rows << std::endl;
     };
 
     if (new_page) {

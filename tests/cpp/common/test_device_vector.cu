@@ -129,8 +129,10 @@ TEST(AsyncCopy, Throughput) {
     futs.emplace_back(pool.Submit([&] {
       std::vector<double, xgboost::common::cuda_impl::SamAllocPolicy<double>> h_data(n, 1.0);
       dh::DeviceUVector<double> d_data(n);
-      dh::safe_cuda(cudaMemcpyAsync(d_data.data(), h_data.data(), sizeof(double) * n,
-                                    cudaMemcpyDefault, dh::DefaultStream()));
+      for (std::size_t i = 0; i < 10; ++i) {
+        dh::safe_cuda(cudaMemcpyAsync(d_data.data(), h_data.data(), sizeof(double) * n,
+                                      cudaMemcpyDefault, dh::DefaultStream()));
+      }
     }));
   }
   dh::DefaultStream().Sync();

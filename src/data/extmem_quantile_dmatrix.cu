@@ -37,17 +37,21 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
    */
   auto ell_info = CalcNumSymbols(ctx, ext_info.row_stride, this->Info().IsDense(), cuts);
   // FIXME: This can be done in the source
-  std::vector<std::size_t> cache_size{0};
+  std::vector<std::size_t> cache_size;
+  CHECK_EQ(ext_info.base_rows.size(), ext_info.n_batches + 1);
   std::vector<std::size_t> cache_mapping(ext_info.base_rows.size(), 0);
-  std::vector<std::size_t> cache_rows{0};
+  std::vector<std::size_t> cache_rows;
   auto n_total_bytes = dh::TotalMemory(curt::CurrentDevice());
-  auto page_bytes = n_total_bytes * 0 + kRtEps;
+  auto page_bytes = n_total_bytes * 0;
 
-  for (std::size_t i = 1; i < ext_info.base_rows.size(); ++i) {
-    auto n_samples = ext_info.base_rows[i] - ext_info.base_rows[i - 1];
+  for (std::size_t i = 0; i < ext_info.n_batches; ++i) {
+    auto n_samples = ext_info.base_rows.at(i + 1) - ext_info.base_rows[i];
     auto n_bytes = common::CompressedBufferWriter::CalculateBufferSize(
         ext_info.row_stride * n_samples, ell_info.n_symbols);
-    if (cache_size.back() < page_bytes) {
+    if (cache_size.empty()) {
+      cache_size.push_back(n_bytes);
+      cache_rows.push_back(n_samples);
+    } else if (cache_size.back() < page_bytes) {
       cache_size.back() += n_bytes;
       cache_rows.back() += n_samples;
     } else {
@@ -56,7 +60,9 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
     }
     cache_mapping[i] = cache_size.size() - 1;
   }
+
   auto n_batches = cache_size.size();
+  std::cout << "New n_batches:" << n_batches << std::endl;
 
   /**
    * Generate gradient index
@@ -98,6 +104,7 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   CHECK_EQ(batch_cnt, ext_info.n_batches);
   CHECK_EQ(n_total_samples, ext_info.accumulated_rows);
 
+  CHECK_EQ(this->cache_info_.at(id)->Size(), n_batches);
   this->n_batches_ = this->cache_info_.at(id)->Size();
 }
 

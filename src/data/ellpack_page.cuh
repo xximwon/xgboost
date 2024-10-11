@@ -265,7 +265,7 @@ class EllpackPageImpl {
     this->n_rows = page->Size();
     this->is_dense = page->IsDense();
     this->info.row_stride = page->info.row_stride;
-    this->base_rowid = page->base_rowid;
+    this->SetBaseRowId(page->base_rowid);
     this->SetNumSymbols(page->NumSymbols());
   }
   /**

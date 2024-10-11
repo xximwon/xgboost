@@ -25,7 +25,6 @@ namespace xgboost::data {
 // concurrent read. As a result, there are two classes, one for cache storage, another one
 // for stream.
 struct EllpackHostCache {
-  std::size_t const total_available_mem;
   bool const prefer_device;
 
   std::vector<std::unique_ptr<EllpackPageImpl>> pages;
@@ -68,7 +67,7 @@ class EllpackHostCacheStream {
   /**
    * @brief Get a shared handler to the cache.
    */
-  std::shared_ptr<EllpackHostCache> Share();
+  std::shared_ptr<EllpackHostCache const> Share() const;
   /**
    * @brief Stream seek.
    *

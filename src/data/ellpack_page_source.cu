@@ -1,7 +1,7 @@
 /**
  * Copyright 2019-2024, XGBoost contributors
  */
-#include <sys/sysinfo.h>         // for sysinfo
+#include <sys/sysinfo.h>  // for sysinfo
 
 #include <cstddef>  // for size_t
 #include <cstdint>  // for int8_t, uint64_t, uint32_t
@@ -19,27 +19,10 @@
 #include "ellpack_page.cuh"                 // for EllpackPageImpl
 #include "ellpack_page.h"                   // for EllpackPage
 #include "ellpack_page_source.h"
-#include "proxy_dmatrix.cuh"            // for Dispatch
-#include "xgboost/base.h"               // for bst_idx_t
-#include "xgboost/collective/socket.h"  // fixme
+#include "proxy_dmatrix.cuh"  // for Dispatch
+#include "xgboost/base.h"     // for bst_idx_t
 
 namespace xgboost::data {
-
-#if !defined(xgboost_CHECK_SYS_CALL)
-#define xgboost_CHECK_SYS_CALL(exp, expected)         \
-  do {                                                \
-    if (XGBOOST_EXPECT((exp) != (expected), false)) { \
-      ::xgboost::system::ThrowAtError(#exp);          \
-    }                                                 \
-  } while (false)
-#endif  // !defined(xgboost_CHECK_SYS_CALL)
-
-[[nodiscard]] std::size_t AvailableHostMemory() {
-  struct sysinfo info;
-  xgboost_CHECK_SYS_CALL(sysinfo(&info), 0);
-  return info.freeram;
-}
-
 /**
  * Cache
  */
@@ -48,8 +31,7 @@ EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, bool prefer_device,
                                    std::vector<std::size_t> buffer_bytes,
                                    std::vector<std::size_t> base_rows,
                                    std::vector<bst_idx_t> buffer_rows)
-    : total_available_mem{dh::TotalMemory(curt::CurrentDevice())},
-      n_batches_orig{n_batches},
+    : n_batches_orig{n_batches},
       prefer_device{prefer_device},
       cache_mapping{std::move(cache_mapping)},
       buffer_bytes{std::move(buffer_bytes)},
@@ -63,9 +45,7 @@ EllpackHostCache::~EllpackHostCache() = default;
   return std::accumulate(it, it + pages.size(), 0ul);
 }
 
-EllpackPageImpl const* EllpackHostCache::At(std::int32_t k) {
-  return this->pages.at(k).get();
-}
+EllpackPageImpl const* EllpackHostCache::At(std::int32_t k) { return this->pages.at(k).get(); }
 
 /**
  * Cache stream.
@@ -190,7 +170,9 @@ EllpackHostCacheStream::EllpackHostCacheStream(std::shared_ptr<EllpackHostCache>
 
 EllpackHostCacheStream::~EllpackHostCacheStream() = default;
 
-std::shared_ptr<EllpackHostCache> EllpackHostCacheStream::Share() { return p_impl_->Share(); }
+std::shared_ptr<EllpackHostCache const> EllpackHostCacheStream::Share() const {
+  return p_impl_->Share();
+}
 
 void EllpackHostCacheStream::Seek(bst_idx_t offset_bytes) { this->p_impl_->Seek(offset_bytes); }
 

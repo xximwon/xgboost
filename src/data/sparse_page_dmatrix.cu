@@ -56,8 +56,6 @@ BatchSet<EllpackPage> SparsePageDMatrix::GetEllpackBatches(Context const* ctx,
           auto config = EllpackSourceConfig{.param = param,
                                             .prefer_device = false,  // no reference for sparse page
                                             .missing = this->missing_,
-                                            .max_cache_page_ratio = cuda_impl::CachePageRatio(),
-                                            .max_cache_ratio = cuda_impl::CacheDeviceRatio(),
                                             .cache_mapping = {},
                                             .buffer_bytes = {},
                                             .buffer_rows = {}};

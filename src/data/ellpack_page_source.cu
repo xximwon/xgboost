@@ -43,16 +43,14 @@ namespace xgboost::data {
 /**
  * Cache
  */
-EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, double ratio, bool prefer_device,
-                                   double max_cache_ratio, std::vector<std::size_t> cache_mapping,
+EllpackHostCache::EllpackHostCache(bst_idx_t n_batches, bool prefer_device,
+                                   std::vector<std::size_t> cache_mapping,
                                    std::vector<std::size_t> buffer_bytes,
                                    std::vector<std::size_t> base_rows,
                                    std::vector<bst_idx_t> buffer_rows)
     : total_available_mem{dh::TotalMemory(curt::CurrentDevice())},
-      max_cache_page_ratio{ratio},
       n_batches_orig{n_batches},
       prefer_device{prefer_device},
-      max_cache_ratio{max_cache_ratio},
       cache_mapping{std::move(cache_mapping)},
       buffer_bytes{std::move(buffer_bytes)},
       base_rows{std::move(base_rows)},
@@ -211,9 +209,9 @@ template <typename S, template <typename> typename F>
 [[nodiscard]] std::unique_ptr<typename EllpackCacheStreamPolicy<S, F>::WriterT>
 EllpackCacheStreamPolicy<S, F>::CreateWriter(StringView, std::uint32_t iter) {
   if (!this->p_cache_) {
-    this->p_cache_ = std::make_shared<EllpackHostCache>(
-        this->OrigBatches(), this->MaxCachePageRatio(), this->PreferDevice(), this->MaxCacheRatio(),
-        this->CacheMapping(), this->BufferBytes(), this->BaseRows(), this->BufferRows());
+    this->p_cache_ = std::make_shared<EllpackHostCache>(this->OrigBatches(), this->PreferDevice(),
+                                                        this->CacheMapping(), this->BufferBytes(),
+                                                        this->BaseRows(), this->BufferRows());
   }
   auto fo = std::make_unique<EllpackHostCacheStream>(this->p_cache_);
   if (iter == 0) {
@@ -265,6 +263,33 @@ template std::unique_ptr<
 EllpackMmapStreamPolicy<EllpackPage, EllpackFormatPolicy>::CreateReader(StringView name,
                                                                         bst_idx_t offset,
                                                                         bst_idx_t length) const;
+
+void CalcCachInfo(Context const* ctx, bool is_dense,
+                  std::shared_ptr<common::HistogramCuts const> cuts, double min_page_bytes,
+                  ExternalDataInfo const& ext_info) {
+  auto ell_info = CalcNumSymbols(ctx, ext_info.row_stride, is_dense, cuts);
+  std::vector<std::size_t> cache_size;
+  CHECK_EQ(ext_info.base_rows.size(), ext_info.n_batches + 1);
+  std::vector<std::size_t> cache_mapping(ext_info.base_rows.size(), 0);
+  std::vector<std::size_t> cache_rows;
+
+  for (std::size_t i = 0; i < ext_info.n_batches; ++i) {
+    auto n_samples = ext_info.base_rows.at(i + 1) - ext_info.base_rows[i];
+    auto n_bytes = common::CompressedBufferWriter::CalculateBufferSize(
+        ext_info.row_stride * n_samples, ell_info.n_symbols);
+    if (cache_size.empty()) {
+      cache_size.push_back(n_bytes);
+      cache_rows.push_back(n_samples);
+    } else if (cache_size.back() < min_page_bytes) {
+      cache_size.back() += n_bytes;
+      cache_rows.back() += n_samples;
+    } else {
+      cache_size.push_back(n_bytes);
+      cache_rows.push_back(n_samples);
+    }
+    cache_mapping[i] = cache_size.size() - 1;
+  }
+}
 
 /**
  * EllpackPageSourceImpl

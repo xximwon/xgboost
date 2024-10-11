@@ -80,8 +80,6 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
         auto config = EllpackSourceConfig{.param = p,
                                           .prefer_device = (ref != nullptr),
                                           .missing = missing,
-                                          .max_cache_page_ratio = this->max_cache_page_ratio_,
-                                          .max_cache_ratio = this->max_device_cache_ratio_,
                                           .cache_mapping = cache_mapping,
                                           .buffer_bytes = cache_size,
                                           .buffer_rows = cache_rows};

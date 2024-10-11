@@ -48,6 +48,13 @@ void MakeSketches(Context const* ctx,
                               data::BatchSamples(proxy), dh::GetDevice(ctx)),
                           0);
   };
+  auto total_capacity = [&] {
+    bst_idx_t n_bytes = 0;
+    for (auto const& sk : sketches) {
+      n_bytes += sk.first->MemCapacityBytes();
+    }
+    return n_bytes;
+  };
 
   // Workaround empty input with CPU ctx.
   Context new_ctx;
@@ -102,6 +109,7 @@ void MakeSketches(Context const* ctx,
                                     sketches.back().first.get());
         sketches.back().second++;
       });
+      LOG(DEBUG) << "Total capacity:" << common::HumanMemUnit(total_capacity());
     }
 
     /**
@@ -151,6 +159,8 @@ void MakeSketches(Context const* ctx,
   } else {
     GetCutsFromRef(ctx, ref, ext_info.n_features, p, cuts.get());
   }
+
+  ctx->CUDACtx()->Stream().Sync();
 }
 }  // namespace cuda_impl
 }  // namespace xgboost::data

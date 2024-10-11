@@ -42,7 +42,7 @@ void ExtMemQuantileDMatrix::InitFromCUDA(
   std::vector<std::size_t> cache_mapping(ext_info.base_rows.size(), 0);
   std::vector<std::size_t> cache_rows;
   auto n_total_bytes = dh::TotalMemory(curt::CurrentDevice());
-  auto page_bytes = n_total_bytes * 0;
+  auto page_bytes = n_total_bytes * cuda_impl::CachePageRatio();
 
   for (std::size_t i = 0; i < ext_info.n_batches; ++i) {
     auto n_samples = ext_info.base_rows.at(i + 1) - ext_info.base_rows[i];

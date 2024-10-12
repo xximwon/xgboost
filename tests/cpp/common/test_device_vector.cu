@@ -9,6 +9,8 @@
 #include "../../../src/common/cuda_rt_utils.h"     // for DrVersion
 #include "../../../src/common/device_helpers.cuh"  // for CachingThrustPolicy, PinnedMemory
 #include "../../../src/common/device_vector.cuh"
+#include "../../../src/common/cuda_pinned_allocator.h"
+#include "../../../src/common/threadpool.h"
 #include "xgboost/global_config.h"  // for GlobalConfigThreadLocalStore
 
 namespace dh {
@@ -114,5 +116,25 @@ TEST(TestVirtualMem, Version) {
   } else {
     ASSERT_FALSE(pinned.IsVm());
   }
+}
+
+TEST(AsyncCopy, Throughput) {
+  auto n = 8ul * 1024 * 1024 * 1024 / 8ul;
+
+  xgboost::common::ThreadPool pool{"test", 2, [] {
+                                     dh::DefaultStream().Sync();
+                                   }};
+  std::vector<std::future<void>> futs;
+  for (std::size_t i = 0; i < 2; ++i) {
+    futs.emplace_back(pool.Submit([&] {
+      std::vector<double, xgboost::common::cuda_impl::SamAllocPolicy<double>> h_data(n, 1.0);
+      dh::DeviceUVector<double> d_data(n);
+      for (std::size_t i = 0; i < 10; ++i) {
+        dh::safe_cuda(cudaMemcpyAsync(d_data.data(), h_data.data(), sizeof(double) * n,
+                                      cudaMemcpyDefault, dh::DefaultStream()));
+      }
+    }));
+  }
+  dh::DefaultStream().Sync();
 }
 }  // namespace dh

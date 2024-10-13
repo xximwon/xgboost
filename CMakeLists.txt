@@ -220,6 +220,7 @@ if(USE_CUDA)
   endif()
 
   find_package(CUDAToolkit REQUIRED)
+  find_package(nvcomp REQUIRED)
   find_package(CCCL CONFIG)
   if(NOT CCCL_FOUND)
     message(STATUS "Standalone CCCL not found. Attempting to use CCCL from CUDA Toolkit...")

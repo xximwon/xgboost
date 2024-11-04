@@ -155,8 +155,9 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
     t.join();
   }
 
-  for (auto const& w : workers) {
-    worker_error_handles_.emplace_back(w.Host(), w.ErrorPort());
+  for (std::int32_t r = 0; r < n_workers_; ++r) {
+    auto const& w = workers[r];
+    worker_error_handles_.emplace_back(w.Host(), w.ErrorPort(), r);
   }
   return Success();
 }
@@ -198,6 +199,7 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
       CHECK_LE(pending.size(), n_workers);
       CHECK_LE(n_shutdown, n_workers);
 
+      ++n_shutdown;
       running = false;
       during_restart = true;
     }
@@ -223,19 +225,22 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
       CHECK_LE(n_shutdown, n_workers);
       // - Without error, we should shutdown after all workers are offline.
       // - With error, all workers are offline, and we have during_restart as true.
-      return n_shutdown != n_workers || during_restart;
+      return n_shutdown != n_workers;
     }
   };
 
-  auto handle_error = [&](WorkerProxy const& worker) {
+  // worker: The worker who sent the error signal
+  // n_failed: The number of workers we failed to connect during error handling.
+  auto handle_error = [&](WorkerProxy const& worker, std::int32_t* n_failed) {
+    *n_failed = 0;
     auto msg = worker.Msg();
     auto code = worker.Code();
-    LOG(WARNING) << "[tracker]: Recieved error from [" << worker.Host() << ":" << worker.Rank()
+    LOG(WARNING) << "[tracker]: Recieved error from [" << worker.Host() << ":r" << worker.Rank()
                  << "]: " << msg << " code:" << code;
     auto host = worker.Host();
     // We signal all workers for the error, if they haven't aborted already.
     for (auto& w : worker_error_handles_) {
-      if (w.first == host) {
+      if (w.rank == worker.Rank()) {
         continue;
       }
       TCPSocket out;
@@ -244,12 +249,13 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
       // retry is set to 1, just let the worker timeout or error. Otherwise the
       // tracker and the worker might be waiting for each other.
       auto rc = Success() << [&] {
-        return Connect(w.first, w.second, 1, timeout_, &out);
+        return Connect(w.host, w.port, 1, timeout_, &out);
       } << [&] {
         return proto::Error{}.SignalError(&out);
       };
       if (!rc.OK()) {
-        return Fail("Failed to inform worker:" + w.first + " for error.", std::move(rc));
+        *n_failed += 1;
+        return Fail("Failed to inform worker:" + w.host + " for error.", std::move(rc));
       }
     }
     return Success();
@@ -303,8 +309,14 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
           if (state.running) {
             // Something went wrong with one of the workers. It got disconnected without
             // notice.
+            std::int32_t n_failed = 0;
+            rc = handle_error(worker, &n_failed);
             state.Error();
-            rc = handle_error(worker);
+            if (!rc.OK()) {
+              for (std::int32_t k = 0; k < n_failed; ++k) {
+                state.Error();
+              }
+            }
             if (!rc.OK()) {
               return Fail("Failed to handle abort.", this->Stop() + std::move(rc));
             }
@@ -334,7 +346,13 @@ Result RabitTracker::Bootstrap(std::vector<WorkerProxy>* p_workers) {
             continue;
           }
           state.Error();
-          rc = handle_error(worker);
+          std::int32_t n_failed = 0;
+          rc = handle_error(worker, &n_failed);
+          if (!rc.OK()) {
+            for (std::int32_t k = 0; k < n_failed; ++k) {
+              state.Error();
+            }
+          }
           continue;
         }
         case proto::CMD::kPrint: {

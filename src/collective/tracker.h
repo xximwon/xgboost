@@ -6,7 +6,6 @@
 #include <cstdint>  // for int32_t
 #include <future>   // for future
 #include <string>   // for string
-#include <utility>  // for pair
 #include <vector>   // for vector
 
 #include "protocol.h"
@@ -131,7 +130,14 @@ class RabitTracker : public Tracker {
  private:
   std::string host_;
   // record for how to reach out to workers if error happens.
-  std::vector<std::pair<std::string, std::int32_t>> worker_error_handles_;
+  struct ErrorHandle {
+    std::string host;
+    std::int32_t port{-1};
+    std::int32_t rank{-1};
+    ErrorHandle(std::string h, std::int32_t p, std::int32_t r)
+        : host{std::move(h)}, port{p}, rank{r} {}
+  };
+  std::vector<ErrorHandle> worker_error_handles_;
   // listening socket for incoming workers.
   TCPSocket listener_;
   // mutex for protecting the listener, used to prevent race when it's listening while

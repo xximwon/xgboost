@@ -7,6 +7,8 @@
 #include <sstream>     // for stringstream
 #include <stack>       // for stack
 
+#include "comm_group.h"
+#include "communicator-inl.h"
 #include "xgboost/logging.h"
 
 namespace xgboost::collective {
@@ -75,6 +77,12 @@ std::string MakeMsg(std::string&& msg, char const* file, std::int32_t line) {
 
 void SafeColl(Result const& rc) {
   if (!rc.OK()) {
+    if (IsDistributed()) {
+      auto rc1 = GlobalCommGroup()->SignalError(rc);
+      if (!rc1.OK()) {
+        LOG(FATAL) << rc1.Report();
+      }
+    }
     LOG(FATAL) << rc.Report();
   }
 }

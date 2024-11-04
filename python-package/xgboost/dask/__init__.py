@@ -36,7 +36,7 @@ import logging
 import platform
 from collections import defaultdict
 from contextlib import contextmanager
-from functools import partial, update_wrapper
+from functools import partial, update_wrapper, wraps
 from threading import Thread
 from typing import (
     TYPE_CHECKING,
@@ -506,13 +506,18 @@ async def map_worker_partitions(
                 args.append(ref._create_fn_args(addr))
             else:
                 args.append(ref)
+
+        @wraps(func)
+        def fn(*args, **kwargs) -> List[_MapRetT]:
+            return [func(*args, **kwargs)]
+
         fut = client.submit(
             # turn result into a list for bag construction
-            lambda *args, **kwargs: [func(*args, **kwargs)],
+            fn,
             *args,
             pure=False,
             workers=[addr],
-            allow_other_workers=False,
+            allow_other_workers=True,
         )
         futures.append(fut)
 

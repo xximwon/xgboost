@@ -93,6 +93,7 @@ void WaitImpl(TrackerHandleT *ptr, std::chrono::seconds timeout) {
 
     if (res == std::future_status::ready) {
       auto const &rc = ptr->second.get();
+      std::cout << "[tracker wait]: result returned:" << rc.OK() << std::endl;
       collective::SafeColl(rc);
       break;
     }

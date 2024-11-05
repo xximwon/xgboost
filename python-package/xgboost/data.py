@@ -1517,6 +1517,10 @@ def _proxy_transform(
     raise TypeError("Value type is not supported for data iterator:" + str(type(data)))
 
 
+def is_on_cuda(data: Any) -> bool:
+    return any(p(data) for p in (_is_cudf_df, _is_cudf_ser, _is_cupy_alike, _is_dlpack))
+
+
 def dispatch_proxy_set_data(
     proxy: _ProxyDMatrix,
     data: DataType,

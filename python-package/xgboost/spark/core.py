@@ -1450,7 +1450,7 @@ class _SparkXGBModel(Model, _SparkXGBParams, MLReadable, MLWritable):
             if run_on_gpu:
                 if is_cudf_available() and is_cupy_available():
                     if is_local:
-                        import cupy as cp  # pylint: disable=import-error
+                        cp = import_cupy()
 
                         total_gpus = cp.cuda.runtime.getDeviceCount()
                         if total_gpus > 0:

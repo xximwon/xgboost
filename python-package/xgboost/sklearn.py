@@ -29,7 +29,13 @@ from .callback import TrainingCallback
 
 # Do not use class names on scikit-learn directly.  Re-define the classes on
 # .compat to guarantee the behavior without scikit-learn
-from .compat import SKLEARN_INSTALLED, XGBClassifierBase, XGBModelBase, XGBRegressorBase
+from .compat import (
+    SKLEARN_INSTALLED,
+    XGBClassifierBase,
+    XGBModelBase,
+    XGBRegressorBase,
+    import_cupy,
+)
 from .config import config_context
 from .core import (
     Booster,
@@ -1231,9 +1237,9 @@ class XGBModel(XGBModelBase):
                         validate_features=validate_features,
                     )
                     if _is_cupy_alike(predts):
-                        import cupy  # pylint: disable=import-error
+                        cp = import_cupy()
 
-                        predts = cupy.asnumpy(predts)  # ensure numpy array is used.
+                        predts = cp.asnumpy(predts)  # ensure numpy array is used.
                     return predts
                 except TypeError:
                     # coo, csc, dt
@@ -1508,13 +1514,13 @@ class XGBClassifier(XGBModel, XGBClassifierBase):
             # booster in a Python property. This way we can have efficient and
             # thread-safe prediction.
             if _is_cudf_df(y) or _is_cudf_ser(y):
-                import cupy as cp  # pylint: disable=E0401
+                cp = import_cupy()
 
                 classes = cp.unique(y.values)
                 self.n_classes_ = len(classes)
                 expected_classes = cp.array(self.classes_)
             elif _is_cupy_alike(y):
-                import cupy as cp  # pylint: disable=E0401
+                cp = import_cupy()
 
                 classes = cp.unique(y)
                 self.n_classes_ = len(classes)

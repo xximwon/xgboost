@@ -6,6 +6,7 @@ import numpy as np
 
 from xgboost import testing as tm
 
+from ..compat import import_cupy
 from ..core import DataIter, DMatrix, ExtMemQuantileDMatrix, QuantileDMatrix
 
 
@@ -21,7 +22,7 @@ def run_mixed_sparsity(device: str) -> None:
     y = [y_0, y_1, y_2]
 
     if device.startswith("cuda"):
-        import cupy as cp  # pylint: disable=import-error
+        cp = import_cupy()
 
         X = [cp.array(batch) for batch in X]
 

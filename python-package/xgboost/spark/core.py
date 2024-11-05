@@ -61,7 +61,7 @@ from scipy.special import expit, softmax  # pylint: disable=no-name-in-module
 
 import xgboost
 from xgboost import XGBClassifier
-from xgboost.compat import is_cudf_available, is_cupy_available
+from xgboost.compat import import_cupy, is_cudf_available, is_cupy_available
 from xgboost.core import Booster, _check_distributed_params
 from xgboost.sklearn import DEFAULT_N_ESTIMATORS, XGBModel, _can_use_qdm
 from xgboost.training import train as worker_train
@@ -1451,7 +1451,7 @@ class _SparkXGBModel(Model, _SparkXGBParams, MLReadable, MLWritable):
             if run_on_gpu:
                 if is_cudf_available() and is_cupy_available():
                     if is_local:
-                        import cupy as cp  # pylint: disable=import-error
+                        cp = import_cupy()
 
                         total_gpus = cp.cuda.runtime.getDeviceCount()
                         if total_gpus > 0:

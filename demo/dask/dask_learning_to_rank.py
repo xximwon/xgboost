@@ -9,7 +9,6 @@ import argparse
 import os
 
 import numpy as np
-import pandas as pd
 from distributed import Client, LocalCluster
 from sklearn.datasets import load_svmlight_file
 from xgboost import dask as dxgb

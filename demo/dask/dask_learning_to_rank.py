@@ -28,6 +28,7 @@ def load_mlsr_10k(
     # Train,      Valid, Test
     # {S1,S2,S3}, S4,    S5
     fold = 1
+    nparts = 32
 
     if not os.path.exists(cache_path):
         os.mkdir(cache_path)
@@ -44,8 +45,8 @@ def load_mlsr_10k(
         y_train = y_train.astype(np.int32)
         qid_train = qid_train.astype(np.int32)
 
-        X_train["y"] = dd.Series.from_dict({"y": y_train}).y
-        X_train["qid"] = dd.Series.from_dict({"qid": qid_train}).qid
+        X_train["y"] = dd.from_dict({"y": y_train}, npartitions=nparts).y
+        X_train["qid"] = dd.from_dict({"qid": qid_train}, npartitions=nparts).qid
         X_train.to_parquet(os.path.join(cache_path, "train"))
 
         X_valid, y_valid, qid_valid = load_svmlight_file(
@@ -55,8 +56,8 @@ def load_mlsr_10k(
         y_valid = y_valid.astype(np.int32)
         qid_valid = qid_valid.astype(np.int32)
 
-        X_valid["y"] = dd.Series.from_dict({"y": y_valid}).y
-        X_valid["qid"] = dd.Series.from_dict({"qid": qid_valid}).qid
+        X_valid["y"] = dd.from_dict({"y": y_valid}, npartitions=nparts).y
+        X_valid["qid"] = dd.from_dict({"qid": qid_valid}, npartitions=nparts).qid
         X_valid.to_parquet(os.path.join(cache_path, "valid"))
 
         X_test, y_test, qid_test = load_svmlight_file(
@@ -67,8 +68,8 @@ def load_mlsr_10k(
         y_test = y_test.astype(np.int32)
         qid_test = qid_test.astype(np.int32)
 
-        X_test["y"] = dd.Series.from_dict({"y": y_test}).y
-        X_test["qid"] = dd.Series.from_dict({"qid": qid_test}).qid
+        X_test["y"] = dd.from_dict({"y": y_test}, npartitions=nparts).y
+        X_test["qid"] = dd.from_dict({"qid": qid_test}, npartitions=nparts).qid
         X_test.to_parquet(os.path.join(cache_path, "test"))
 
     # Calculate the divisions, otherwise we need a lot of effort to make sure the data

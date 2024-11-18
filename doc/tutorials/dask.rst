@@ -539,16 +539,22 @@ Learning to Rank
 The XGBoost Dask interface can automatically sort and group the samples based on input
 query ID since version 3.0. However, this automatic grouping has some caveats that one
 needs to be aware of, namely it increases memory usage and it groups only worker-local
-data. In theory, it's acceptable to sort only the worker-local data even if a query group
-is split between multiple workers unless position-debiasing is used (not yet supported
-with the Dask interface). Assuming pairwise ranking method is used, we can calculate the
-gradient based on relevance degree (NDCG) by constructing pairs within a query group. If a
-single query group is split among workers and we use worker-local data for gradient
-calculation, then we are simply sampling pairs from a smaller group for each worker to
-calculate the gradient and the evaluation metric. The relevance degree and comparison
-between each pair don't change because a group in split into sub-groups, what changes is
-the number of effective pairs. As a result, the obtained gradient is still valid from a
-theoretical standpoint but might not be optimal. See
+data.
+
+For the memory usage part, XGBoost will first check whether the query ID is sorted before
+sorting the samples. If you don't want XGBoost to sort and group the data, one solution is
+to sort it beforehand.
+
+As for the worker-local grouping, in theory, it's fine to sort only the worker-local data
+even if a query group is split between multiple workers unless position-debiasing is used
+(not yet supported with the Dask interface). Assuming pairwise ranking method is used, we
+can calculate the gradient based on relevance degree (NDCG) by constructing pairs within a
+query group. If a single query group is split among workers and we use worker-local data
+for gradient calculation, then we are simply sampling pairs from a smaller group for each
+worker to calculate the gradient and the evaluation metric. The relevance degree and
+comparison between each pair don't change because a group in split into sub-groups, what
+changes is the number of effective pairs. As a result, the obtained gradient is still
+valid from a theoretical standpoint but might not be optimal. See
 :ref:`sphx_glr_python_dask-examples_dask_learning_to_rank.py` for a worked example.
 
 .. _tracker-ip:

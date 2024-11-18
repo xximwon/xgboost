@@ -72,11 +72,9 @@ def load_mlsr_10k(
         X_test["qid"] = dd.from_dict({"qid": qid_test}, npartitions=nparts).qid
         X_test.to_parquet(os.path.join(cache_path, "test"))
 
-    # Calculate the divisions, otherwise we need a lot of effort to make sure the data
-    # is aligned.
-    df_train = dd.read_parquet(os.path.join(cache_path, "train"), calculate_divisions=True)
-    df_valid = dd.read_parquet(os.path.join(cache_path, "valid"), calculate_divisions=True)
-    df_test = dd.read_parquet(os.path.join(cache_path, "test"), calculate_divisions=True)
+    df_train = dd.read_parquet(os.path.join(cache_path, "train"))
+    df_valid = dd.read_parquet(os.path.join(cache_path, "valid"))
+    df_test = dd.read_parquet(os.path.join(cache_path, "test"))
 
     if device == "cuda":
         df_train = df_train.to_backend("cudf")
@@ -91,12 +89,10 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
 
     X_train: dd.DataFrame = df_train[df_train.columns.difference(["y", "qid"])]
     y_train = df_train[["y", "qid"]]
-    y_train = y_train.repartition(divisions=X_train.divisions)
     Xy_train = dxgb.DaskQuantileDMatrix(client, X_train, y_train.y, qid=y_train.qid)
 
     X_valid: dd.DataFrame = df_valid[df_valid.columns.difference(["y", "qid"])]
     y_valid = df_valid[["y", "qid"]]
-    y_valid = y_valid.repartition(X_valid.divisions)
     Xy_valid = dxgb.DaskQuantileDMatrix(
         client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train
     )

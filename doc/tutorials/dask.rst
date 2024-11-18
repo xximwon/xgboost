@@ -548,7 +548,8 @@ calculation, then we are simply sampling pairs from a smaller group for each wor
 calculate the gradient and the evaluation metric. The relevance degree and comparison
 between each pair don't change because a group in split into sub-groups, what changes is
 the number of effective pairs. As a result, the obtained gradient is still valid from a
-theoretical standpoint but might not be optimal.
+theoretical standpoint but might not be optimal. See
+:ref:`sphx_glr_python_dask-examples_dask_learning_to_rank.py` for a worked example.
 
 .. _tracker-ip:
 

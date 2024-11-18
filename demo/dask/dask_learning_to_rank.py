@@ -3,16 +3,18 @@ Learning to rank with the Dask Interface
 ========================================
 
 """
+
 from __future__ import annotations
 
 import argparse
 import os
 
 import numpy as np
-from distributed import Client, LocalCluster
+from distributed import Client, LocalCluster, wait
 from sklearn.datasets import load_svmlight_file
 from xgboost import dask as dxgb
 
+from dask import array as da
 from dask import dataframe as dd
 
 
@@ -71,9 +73,15 @@ def load_mlsr_10k(
         X_test["qid"] = dd.from_dict({"qid": qid_test}, npartitions=nparts).qid
         X_test.to_parquet(os.path.join(cache_path, "test"))
 
-    df_train = dd.read_parquet(os.path.join(cache_path, "train"))
-    df_valid = dd.read_parquet(os.path.join(cache_path, "valid"))
-    df_test = dd.read_parquet(os.path.join(cache_path, "test"))
+    df_train = dd.read_parquet(
+        os.path.join(cache_path, "train"), calculate_divisions=True
+    )
+    df_valid = dd.read_parquet(
+        os.path.join(cache_path, "valid"), calculate_divisions=True
+    )
+    df_test = dd.read_parquet(
+        os.path.join(cache_path, "test"), calculate_divisions=True
+    )
 
     if device == "cuda":
         df_train = df_train.to_backend("cudf")
@@ -104,6 +112,34 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     )
 
 
+def no_group_split(client: Client, args: argparse.Namespace) -> None:
+    df_train, df_valid, df_test = load_mlsr_10k(args.device, args.data, args.cache)
+    print("divisions:", df_train.divisions)
+    df_train = df_train.sort_values(by="qid")
+    print("df_train.columns:", list(df_train.columns))
+    cnt = df_train.groupby("qid").qid.count()
+    div = da.cumsum(cnt.to_dask_array(lengths=True)).compute()
+    print(div, type(div), div.shape)
+    div = np.concatenate([np.zeros(shape=(1,), dtype=div.dtype), div])
+    print(div, div.shape, "npartitions:", df_train.npartitions)
+    df_train = df_train.set_index("qid", divisions=list(div)).persist()
+    df_train = df_train.persist()
+    wait([df_train])
+
+    Xy_train = dxgb.DaskQuantileDMatrix(
+        client,
+        df_train[df_train.columns.difference(["y"])],
+        df_train.y,
+        qid=df_train.index,
+    )
+    dxgb.train(
+        client,
+        {"objective": "rank:ndcg", "device": args.device},
+        Xy_train,
+        evals=[(Xy_train, "Train")],
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Demonstration of learning to rank using XGBoost."
@@ -129,8 +165,10 @@ if __name__ == "__main__":
 
             with LocalCUDACluster() as cluster:
                 with Client(cluster) as client:
-                    ranking_demo(client, args)
+                    # ranking_demo(client, args)
+                    no_group_split(client, args)
         case "cpu":
             with LocalCluster(n_workers=2) as cluster:
                 with Client(cluster) as client:
-                    ranking_demo(client, args)
+                    # ranking_demo(client, args)
+                    no_group_split(client, args)

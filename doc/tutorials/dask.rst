@@ -526,6 +526,24 @@ See https://github.com/coiled/dask-xgboost-nyctaxi for a set of examples of usin
 with dask and optuna.
 
 
+****************
+Learning to Rank
+****************
+
+  .. versionadded:: 3.0.0
+
+The XGBoost Dask interface can automatically sort and group the samples based on input
+query ID since version 3.0. However, this automatic sorting has some drawbacks that one
+needs to be aware of, namely it increases memory usage and it sorts only worker-local
+data. In theory, it's acceptable to sort only the worker-local data even if a query group
+is split between multiple workers unless position-debiasing is used (not yet supported
+with the Dask interface). Assuming pairwise ranking method is used, we can calculate the
+gradient based on relevance degree (NDCG) by constructing pairs within a query group. If a
+single query group is split among workers and we use worker-local data for gradient
+calculation, we are simply sampling pairs from a smaller group for each worker to
+calculate the gradient. The gradient histogram is eventually reduced among workers. As a
+result, the obtained gradient is still valid but might not be optimal.
+
 .. _tracker-ip:
 
 ***************

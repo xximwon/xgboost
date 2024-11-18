@@ -426,7 +426,7 @@ def is_pd_cat_dtype(dtype: PandasDType) -> bool:
 
             return isinstance(dtype, CategoricalDtype)
 
-    from pandas.api.types import is_categorical_dtype
+    from pandas.api.types import is_categorical_dtype  # type: ignore
 
     return is_categorical_dtype(dtype)
 
@@ -442,7 +442,7 @@ def is_pd_sparse_dtype(dtype: PandasDType) -> bool:
 
             return isinstance(dtype, SparseDtype)
 
-    from pandas.api.types import is_sparse
+    from pandas.api.types import is_sparse  # type: ignore
 
     return is_sparse(dtype)
 
@@ -455,7 +455,7 @@ def pandas_pa_type(ser: Any) -> np.ndarray:
     # No copy, callstack:
     # pandas.core.internals.managers.SingleBlockManager.array_values()
     # pandas.core.internals.blocks.EABackedBlock.values
-    d_array: pd.arrays.ArrowExtensionArray = ser.array
+    d_array: pd.arrays.ArrowExtensionArray = ser.array  # type: ignore
     # no copy in __arrow_array__
     # ArrowExtensionArray._data is a chunked array
     aa: pa.ChunkedArray = d_array.__arrow_array__()
@@ -1518,6 +1518,7 @@ def _proxy_transform(
 
 
 def is_on_cuda(data: Any) -> bool:
+    """Whether the data is a CUDA-based data structure."""
     return any(p(data) for p in (_is_cudf_df, _is_cudf_ser, _is_cupy_alike, _is_dlpack))
 
 

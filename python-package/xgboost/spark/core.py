@@ -60,8 +60,8 @@ from pyspark.sql.types import (
 from scipy.special import expit, softmax  # pylint: disable=no-name-in-module
 
 from .._typing import ArrayLike
-from ..compat import is_cudf_available, is_cupy_available
-from ..config import config_context
+from ..compat import is_cudf_available, is_cupy_available, import_cupy
+from ..config import config_context, get_config
 from ..core import Booster, _check_distributed_params, _py_version
 from ..sklearn import DEFAULT_N_ESTIMATORS, XGBClassifier, XGBModel, _can_use_qdm
 from ..training import train as worker_train
@@ -1076,6 +1076,8 @@ class _SparkXGBEstimator(Estimator, _SparkXGBParams, MLReadable, MLWritable):
 
         log_level = get_logger_level(_LOG_TAG)
 
+        use_rmm = get_config()["use_rmm"]
+
         def _train_booster(
             pandas_df_iter: Iterator[pd.DataFrame],
         ) -> Iterator[pd.DataFrame]:
@@ -1134,9 +1136,9 @@ class _SparkXGBEstimator(Estimator, _SparkXGBParams, MLReadable, MLWritable):
                 _rabit_args = json.loads(messages[0])["rabit_msg"]
 
             evals_result: Dict[str, Any] = {}
-            with config_context(verbosity=verbosity), CommunicatorContext(
-                context, **_rabit_args
-            ):
+            with config_context(
+                verbosity=verbosity, use_rmm=use_rmm
+            ), CommunicatorContext(context, **_rabit_args):
                 dtrain, dvalid = create_dmatrix_from_partitions(
                     iterator=pandas_df_iter,
                     feature_cols=feature_prop.features_cols_names,
@@ -1492,7 +1494,7 @@ class _SparkXGBModel(Model, _SparkXGBParams, MLReadable, MLWritable):
                     X = _read_csr_matrix_from_unwrapped_spark_vec(data)
                 else:
                     if feature_col_names is not None:
-                        tmp = data[feature_col_names]
+                        tmp: ArrayLike = data[feature_col_names]
                     else:
                         tmp = stack_series(data[alias.data])
                     X = to_gpu_if_possible(tmp)

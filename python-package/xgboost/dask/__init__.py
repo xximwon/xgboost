@@ -389,11 +389,7 @@ class DaskDMatrix:
         def to_delayed(d: _DaskCollection) -> List[Delayed]:
             """Breaking data into partitions, a trick borrowed from
             dask_xgboost. `to_delayed` downgrades high-level objects into numpy or
-<<<<<<< HEAD
             pandas equivalents.
-=======
-            pandas equivalents .
->>>>>>> 57210b947 ([dask] Sort QID automatically.)
 
             """
             d = client.persist(d)

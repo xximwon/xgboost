@@ -1,17 +1,25 @@
+"""
+Learning to rank with the Dask Interface
+========================================
+
+This is a demonstration of using XGBoost for learning to rank tasks using the
+MSLR_10k_letor dataset. For more infomation about the dataset, please visit its
+`description page <https://www.microsoft.com/en-us/research/project/mslr/>`_.
+
+"""
+
 from __future__ import annotations
 
 import argparse
 import os
 
+import dask
 import numpy as np
-import pandas as pd
+from dask import dataframe as dd
 from distributed import Client, LocalCluster
 from sklearn.datasets import load_svmlight_file
-from xgboost import dask as dxgb
-from xgboost.testing import make_ltr
 
-from dask import array as da
-from dask import dataframe as dd
+from xgboost import dask as dxgb
 
 
 def load_mlsr_10k(
@@ -41,9 +49,9 @@ def load_mlsr_10k(
         y_train = y_train.astype(np.int32)
         qid_train = qid_train.astype(np.int32)
 
-        X_train["y"] = dd.Series.from_dict({"y": y_train}).y
-        X_train["qid"] = dd.Series.from_dict({"qid": qid_train}).qid
-        X_train.to_parquet(os.path.join(cache_path, "train"))
+        X_train["y"] = dd.from_array(y_train)
+        X_train["qid"] = dd.from_array(qid_train)
+        X_train.to_parquet(os.path.join(cache_path, "train"), engine="pyarrow")
 
         X_valid, y_valid, qid_valid = load_svmlight_file(
             valid_path, query_id=True, dtype=np.float32
@@ -52,9 +60,9 @@ def load_mlsr_10k(
         y_valid = y_valid.astype(np.int32)
         qid_valid = qid_valid.astype(np.int32)
 
-        X_valid["y"] = dd.Series.from_dict({"y": y_valid}).y
-        X_valid["qid"] = dd.Series.from_dict({"qid": qid_valid}).qid
-        X_valid.to_parquet(os.path.join(cache_path, "valid"))
+        X_valid["y"] = dd.from_array(y_valid)
+        X_valid["qid"] = dd.from_array(qid_valid)
+        X_valid.to_parquet(os.path.join(cache_path, "valid"), engine="pyarrow")
 
         X_test, y_test, qid_test = load_svmlight_file(
             test_path, query_id=True, dtype=np.float32
@@ -64,20 +72,19 @@ def load_mlsr_10k(
         y_test = y_test.astype(np.int32)
         qid_test = qid_test.astype(np.int32)
 
-        X_test["y"] = dd.Series.from_dict({"y": y_test}).y
-        X_test["qid"] = dd.Series.from_dict({"qid": qid_test}).qid
-        X_test.to_parquet(os.path.join(cache_path, "test"))
+        X_test["y"] = dd.from_array(y_test)
+        X_test["qid"] = dd.from_array(qid_test)
+        X_test.to_parquet(os.path.join(cache_path, "test"), engine="pyarrow")
 
-    # Calculate the divisions, otherwise we need a lot of effort to make sure the data
-    # is aligned.
-    df_train = dd.read_parquet(os.path.join(cache_path, "train"), calculate_divisions=True)
-    df_valid = dd.read_parquet(os.path.join(cache_path, "valid"), calculate_divisions=True)
-    df_test = dd.read_parquet(os.path.join(cache_path, "test"), calculate_divisions=True)
-
-    if device == "cuda":
-        df_train = df_train.to_backend("cudf")
-        df_valid = df_valid.to_backend("cudf")
-        df_test = df_test.to_backend("cudf")
+    df_train = dd.read_parquet(
+        os.path.join(cache_path, "train"), calculate_divisions=True
+    )
+    df_valid = dd.read_parquet(
+        os.path.join(cache_path, "valid"), calculate_divisions=True
+    )
+    df_test = dd.read_parquet(
+        os.path.join(cache_path, "test"), calculate_divisions=True
+    )
 
     return df_train, df_valid, df_test
 
@@ -87,12 +94,10 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
 
     X_train: dd.DataFrame = df_train[df_train.columns.difference(["y", "qid"])]
     y_train = df_train[["y", "qid"]]
-    y_train = y_train.repartition(divisions=X_train.divisions)
     Xy_train = dxgb.DaskQuantileDMatrix(client, X_train, y_train.y, qid=y_train.qid)
 
     X_valid: dd.DataFrame = df_valid[df_valid.columns.difference(["y", "qid"])]
     y_valid = df_valid[["y", "qid"]]
-    y_valid = y_valid.repartition(X_valid.divisions)
     Xy_valid = dxgb.DaskQuantileDMatrix(
         client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train
     )
@@ -130,8 +135,11 @@ if __name__ == "__main__":
 
             with LocalCUDACluster() as cluster:
                 with Client(cluster) as client:
-                    ranking_demo(client, args)
+                    with dask.config.set(
+                        {"array.backend": "cupy", "dataframe.backend": "cudf"}
+                    ):
+                        ranking_demo(client, args)
         case "cpu":
-            with LocalCluster(n_workers=2) as cluster:
+            with LocalCluster() as cluster:
                 with Client(cluster) as client:
                     ranking_demo(client, args)

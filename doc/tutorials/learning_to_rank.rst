@@ -165,10 +165,40 @@ On the other hand, if you have comparatively small amount of training data:
 
 For any method chosen, you can modify ``lambdarank_num_pair_per_sample`` to control the amount of pairs generated.
 
+.. _ltr-dist:
+
 ********************
 Distributed Training
 ********************
-XGBoost implements distributed learning-to-rank with integration of multiple frameworks including Dask, Spark, and PySpark. The interface is similar to the single-node counterpart. Please refer to document of the respective XGBoost interface for details. Scattering a query group onto multiple workers is theoretically sound but can affect the model accuracy. For most of the use cases, the small discrepancy is not an issue, as the amount of training data is usually large when distributed training is used. As a result, users don't need to partition the data based on query groups. As long as each data partition is correctly sorted by query IDs, XGBoost can aggregate sample gradients accordingly.
+
+XGBoost implements distributed learning-to-rank with integration of multiple frameworks
+including :doc:`Dask </tutorials/dask>`, Spark, and :doc:`PySpark
+</tutorials/spark_estimator>`. The interface is similar to the single-node
+counterpart. Please refer to document of the respective XGBoost interface for details.
+
+.. warning::
+
+   Position-debiasing is not yet supported for existing distributed interfaces.
+
+XGBoost works with collective operations, which means data is scattered to multiple
+workers. Scattering a query group to multiple workers is theoretically sound but can
+affect the model accuracy. For most of the use cases, the small discrepancy is not an
+issue, as the amount of training data is usually large when distributed training is
+used. For a longer explanation, assuming pairwise ranking method is used, we calculate the
+gradient based on relevance degree by constructing pairs within a query group. If a single
+query group is split among workers and we use worker-local data for gradient calculation,
+then we are simply sampling pairs from a smaller group for each worker to calculate the
+gradient and the evaluation metric. The comparison between each pair and the resulting
+gradient don't change because a group is split into sub-groups, what changes is the number
+of total and effective pairs. One can generate more pairs from a large group then it's
+from two smaller subgroups. As a result, the obtained gradient is still valid from a
+theoretical standpoint but might not be optimal.
+
+Unless there's a very small number of query groups, we don't need to partition the data
+based on query groups. As long as each data partitions within a worker are correctly
+sorted by query IDs, XGBoost can aggregate sample gradients accordingly. And both the
+(Py)Spark interface and the Dask interface can sort the data according to query ID, please
+see respected tutorials for more information.
 
 *******************
 Reproducible Result

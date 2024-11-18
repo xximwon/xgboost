@@ -526,6 +526,28 @@ See https://github.com/coiled/dask-xgboost-nyctaxi for a set of examples of usin
 with dask and optuna.
 
 
+****************
+Learning to Rank
+****************
+
+  .. versionadded:: 3.0.0
+
+  .. note::
+
+     Position debiasing is not yet supported.
+
+Similar to the (Py)Spark interface, the XGBoost Dask interface can automatically sort and
+group the samples based on input query ID since version 3.0. However, the automatic
+grouping in the Dask interface has some caveats that one needs to be aware of, namely it
+increases memory usage and it groups only worker-local data. This should be similar with
+other interfaces.
+
+For the memory usage part, XGBoost first checks whether the query ID is sorted before
+actually sorting the samples. If you don't want XGBoost to sort and group the data during
+training, one solution is to sort it beforehand.  See :ref:`ltr-dist` for more info about
+the implication of worker-local grouping,
+:ref:`sphx_glr_python_dask-examples_dask_learning_to_rank.py` for a worked example.
+
 .. _tracker-ip:
 
 ***************

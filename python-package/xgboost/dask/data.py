@@ -166,7 +166,7 @@ def sort_data_by_qid(**kwargs: List[Any]) -> Dict[str, List[Any]]:
     return kwargs
 
 
-def get_worker_parts(list_of_parts: _DataParts) -> Dict[str, List[Any]]:
+def _get_worker_parts(list_of_parts: _DataParts) -> Dict[str, List[Any]]:
     assert isinstance(list_of_parts, list)
     result: Dict[str, List[Any]] = {}
 
@@ -191,7 +191,7 @@ def get_worker_parts(list_of_parts: _DataParts) -> Dict[str, List[Any]]:
     return result
 
 
-def _create_quantile_dmatrix(
+def _create_quantile_dmatrix(  # pylint: disable=too-many-arguments
     *,
     feature_names: Optional[FeatureNames],
     feature_types: Optional[Union[Any, List[Any]]],
@@ -220,7 +220,7 @@ def _create_quantile_dmatrix(
         )
         return Xy
 
-    unzipped_dict = get_worker_parts(parts)
+    unzipped_dict = _get_worker_parts(parts)
     it = DaskPartitionIter(
         **unzipped_dict,
         feature_types=feature_types,
@@ -239,7 +239,7 @@ def _create_quantile_dmatrix(
     return Xy
 
 
-def _create_dmatrix(
+def _create_dmatrix(  # pylint: disable=too-many-locals,too-many-arguments
     *,
     feature_names: Optional[FeatureNames],
     feature_types: Optional[Union[Any, List[Any]]],
@@ -276,7 +276,7 @@ def _create_dmatrix(
             return None
         return dconcat(data)
 
-    unzipped_dict = get_worker_parts(list_of_parts)
+    unzipped_dict = _get_worker_parts(list_of_parts)
     concated_dict: Dict[str, Any] = {}
     for key, value in unzipped_dict.items():
         v = concat_or_none(value)

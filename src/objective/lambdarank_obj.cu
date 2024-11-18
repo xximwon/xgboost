@@ -1,5 +1,5 @@
 /**
- * Copyright 2015-2023 by XGBoost contributors
+ * Copyright 2015-2024, XGBoost contributors
  *
  * \brief CUDA implementation of lambdarank.
  */

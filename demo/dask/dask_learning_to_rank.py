@@ -1,3 +1,8 @@
+"""
+Learning to rank with the Dask Interface
+========================================
+
+"""
 from __future__ import annotations
 
 import argparse
@@ -8,9 +13,7 @@ import pandas as pd
 from distributed import Client, LocalCluster
 from sklearn.datasets import load_svmlight_file
 from xgboost import dask as dxgb
-from xgboost.testing import make_ltr
 
-from dask import array as da
 from dask import dataframe as dd
 
 

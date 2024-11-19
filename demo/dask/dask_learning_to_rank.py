@@ -114,16 +114,22 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
 
 
 def no_group_split(client: Client, args: argparse.Namespace) -> None:
+    import cupy as cp
+    from xgboost.data import _is_cupy_alike
+
     df_train, df_valid, df_test = load_mlsr_10k(args.device, args.data, args.cache)
     print("divisions:", df_train.divisions)
     df_train = df_train.sort_values(by="qid")
-    print("df_train.columns:", list(df_train.columns))
     cnt = df_train.groupby("qid").qid.count()
-    div = da.cumsum(cnt.to_dask_array(lengths=True)).compute()
-    print(div, type(div), div.shape)
-    div = np.concatenate([np.zeros(shape=(1,), dtype=div.dtype), div])
-    print(div, div.shape, "npartitions:", df_train.npartitions)
-    df_train = df_train.set_index("qid", divisions=list(div)).persist()
+    div = cnt.cumsum().compute().values
+
+    if _is_cupy_alike(div):
+        div = cp.concatenate([cp.zeros(shape=(1,), dtype=div.dtype), div])
+    else:
+        div = np.concatenate([np.zeros(shape=(1,), dtype=div.dtype), div])
+    print(div, div.shape, "npartitions:", df_train.npartitions, type(div))
+    div = div.tolist()
+    df_train = df_train.set_index("qid", divisions=div).persist()
     df_train = df_train.persist()
     wait([df_train])
 

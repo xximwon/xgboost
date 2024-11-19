@@ -14,6 +14,7 @@ from distributed import Client, LocalCluster, wait
 from sklearn.datasets import load_svmlight_file
 from xgboost import dask as dxgb
 
+import dask
 from dask import array as da
 from dask import dataframe as dd
 
@@ -165,10 +166,13 @@ if __name__ == "__main__":
 
             with LocalCUDACluster() as cluster:
                 with Client(cluster) as client:
-                    # ranking_demo(client, args)
-                    no_group_split(client, args)
+                    with dask.config.set(
+                        {"array.backend": "cupy", "dataframe.backend": "cudf"}
+                    ):
+                        # ranking_demo(client, args)
+                        no_group_split(client, args)
         case "cpu":
-            with LocalCluster(n_workers=2) as cluster:
+            with LocalCluster() as cluster:
                 with Client(cluster) as client:
                     # ranking_demo(client, args)
                     no_group_split(client, args)

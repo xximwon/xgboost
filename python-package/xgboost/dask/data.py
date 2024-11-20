@@ -132,6 +132,17 @@ def sort_data_by_qid(**kwargs: List[Any]) -> Dict[str, List[Any]]:
     if dfq.qid.is_monotonic_increasing:
         return kwargs
 
+    msg = f"r{coll.get_rank()}: "
+    qid_fs = []
+    for i, qid in enumerate(qid_parts):
+        msg += f"i:{i}:q:{qid.iloc[0, 'qid']}:inc:{qid.qid.is_monotonic_increasing}; "
+        qid_fs.append(qid.iloc[0, "qid"])
+    msg += "\n"
+    qdf = pd.DataFrame({"q": qid_fs})
+    msg += f"qdf:{qdf.q.is_monotonic_increasing}\n"
+    msg += str(qdf) + "\n"
+    print(msg, flush=True)
+
     LOGGER.warning(
         f"[r{coll.get_rank()}]: Sorting data with {n_parts} partitions for ranking. "
         "This is a costly operation and will increase the memory usage significantly. "

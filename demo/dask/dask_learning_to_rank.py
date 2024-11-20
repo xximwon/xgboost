@@ -13,13 +13,14 @@ from __future__ import annotations
 import argparse
 import os
 
-import dask
 import numpy as np
-from dask import dataframe as dd
-from distributed import Client, LocalCluster
+from distributed import Client, LocalCluster, wait
 from sklearn.datasets import load_svmlight_file
-
 from xgboost import dask as dxgb
+
+import dask
+from dask import array as da
+from dask import dataframe as dd
 
 
 def load_mlsr_10k(
@@ -101,6 +102,58 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     Xy_valid = dxgb.DaskQuantileDMatrix(
         client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train
     )
+
+    dxgb.train(
+        client,
+        {"objective": "rank:ndcg", "device": args.device},
+        Xy_train,
+        evals=[(Xy_train, "Train"), (Xy_valid, "Valid")],
+    )
+
+
+def no_group_split(client: Client, df: dd.DataFrame) -> dd.DataFrame:
+    """A function to prevent query group from being scattered to different
+    workers. Please see the tutorial in the document for the implication for not having
+    partition boundary based on query groups.
+
+    """
+
+    df = df.sort_values(by="qid")
+    cnt = df.groupby("qid").qid.count()
+    div = cnt.cumsum().compute().values
+
+    if hasattr(div, "__cuda_array_interface__"):
+        import cupy as cp
+
+        div = cp.concatenate([cp.zeros(shape=(1,), dtype=div.dtype), div])
+    else:
+        div = np.concatenate([np.zeros(shape=(1,), dtype=div.dtype), div])
+    div = div.tolist()
+    # The shuffle here is costly, in addition, we use the "tasks" shuffle method here
+    # for stability. As of writing the faster `p2p` shuffle method is still
+    # in-development. If you find the `p2p` method robust enough, please open a PR for
+    # the update.
+    df = (
+        df.reset_index(drop=False)
+        .set_index("index", divisions=div, shuffle_method="tasks")
+        .persist()
+    )
+    wait([df])
+    return df
+
+
+def ranking_wo_split_demo(client: Client, args: argparse.Namespace) -> None:
+    df_train, df_valid, df_test = load_mlsr_10k(args.device, args.data, args.cache)
+
+    df_train = no_group_split(client, df_train)
+    df_valid = no_group_split(client, df_valid)
+    df_test = no_group_split(client, df_test)
+
+    X = df_train[df_train.columns.difference(["y", "qid"])]
+    Xy_train = dxgb.DaskQuantileDMatrix(client, X, label=df_train.y, qid=df_train.qid)
+
+    X = df_train[df_valid.columns.difference(["y", "qid"])]
+    Xy_valid = dxgb.DaskQuantileDMatrix(client, X, label=df_valid.y, qid=df_valid.qid, ref=Xy_train)
 
     dxgb.train(
         client,

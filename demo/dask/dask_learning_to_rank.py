@@ -120,26 +120,18 @@ def no_group_split(client: Client, df: dd.DataFrame) -> dd.DataFrame:
 
     """
 
+    df["qid"] = df.qid.astype("category").cat.as_known().cat.codes
     df = df.sort_values(by="qid")
     cnt = df.groupby("qid").qid.count()
-    div = cnt.cumsum().compute().values
+    div = cnt.index.compute().values.tolist()
+    div = tuple(div + [div[-1] + 1])
 
-    if hasattr(div, "__cuda_array_interface__"):
-        import cupy as cp
+    df = df.set_index(
+        "qid",
+        drop=False,
+        divisions=div,
+    ).persist()
 
-        div = cp.concatenate([cp.zeros(shape=(1,), dtype=div.dtype), div])
-    else:
-        div = np.concatenate([np.zeros(shape=(1,), dtype=div.dtype), div])
-    div = div.tolist()
-    # The shuffle here is costly, in addition, we use the "tasks" shuffle method here
-    # for stability. As of writing the faster `p2p` shuffle method is still
-    # in-development. If you find the `p2p` method robust enough, please open a PR for
-    # the update.
-    df = (
-        df.reset_index(drop=False)
-        .set_index("index", divisions=div, shuffle_method="p2p")
-        .persist()
-    )
     wait([df])
     return df
 

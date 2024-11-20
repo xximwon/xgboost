@@ -145,26 +145,37 @@ def no_group_split(client: Client, df: dd.DataFrame) -> dd.DataFrame:
 
 
 def ranking_wo_split_demo(client: Client, args: argparse.Namespace) -> None:
+    """Learning to rank with data partitioned according to query groups."""
+
     df_train, df_valid, df_test = load_mlsr_10k(args.device, args.data, args.cache)
 
-    df_train = no_group_split(client, df_train)
-    df_valid = no_group_split(client, df_valid)
-    df_test = no_group_split(client, df_test)
+    df_train, df_valid, df_test = [
+        no_group_split(client, df) for df in (df_train, df_valid, df_test)
+    ]
 
     X = df_train[df_train.columns.difference(["y", "qid"])]
     Xy_train = dxgb.DaskQuantileDMatrix(client, X, label=df_train.y, qid=df_train.qid)
 
-    X = df_train[df_valid.columns.difference(["y", "qid"])]
+    X = df_valid[df_valid.columns.difference(["y", "qid"])]
     Xy_valid = dxgb.DaskQuantileDMatrix(
         client, X, label=df_valid.y, qid=df_valid.qid, ref=Xy_train
     )
 
-    dxgb.train(
+    # You should *NOT* see this warning since the data is sorted already:
+    #
+    # Sorting data for learning to rank. This is an expensive operation and will
+    # increase the memory usage significantly. To avoid this warning, sort the data
+    # based on qid before passing it into XGBoost.
+    out = dxgb.train(
         client,
         {"objective": "rank:ndcg", "device": args.device},
         Xy_train,
         evals=[(Xy_train, "Train"), (Xy_valid, "Valid")],
     )
+
+    # Don't sort the data for prediction unless you are feeding it for evaluation.
+    X = df_test[df_test.columns.difference(["y", "qid"])]
+    predt = dxgb.inplace_predict(client, out, X)
 
 
 @contextmanager

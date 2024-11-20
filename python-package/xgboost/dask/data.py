@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from dask import dataframe as dd
 
+from .. import collective as coll
 from .._typing import _T, FeatureNames
 from ..compat import concat, import_cupy
 from ..core import DataIter, DMatrix, QuantileDMatrix
@@ -126,13 +127,14 @@ def sort_data_by_qid(**kwargs: List[Any]) -> Dict[str, List[Any]]:
         data = get_dict(i)
         return DataFrame(data)
 
-    dfy = concat([map_fn(i) for i in range(n_parts)])
-    if dfy.qid.is_monotonic_increasing:
+    qid_parts = [map_fn(i) for i in range(n_parts)]
+    dfq = concat(qid_parts)
+    if dfq.qid.is_monotonic_increasing:
         return kwargs
 
     LOGGER.warning(
-        "Sorting data for learning to rank. "
-        "This is an expensive operation and will increase the memory usage significantly. "
+        f"[r{coll.get_rank()}]: Sorting data with {n_parts} partitions for ranking. "
+        "This is a costly operation and will increase the memory usage significantly. "
         "To avoid this warning, sort the data based on qid before passing it into XGBoost."
     )
     # I tried to construct a new dask DF to perform the sort, but it's quite difficult
@@ -146,12 +148,12 @@ def sort_data_by_qid(**kwargs: List[Any]) -> Dict[str, List[Any]]:
     # in df.partitions])`. It was to avoid creating mismatched partitions.
     dfx = concat(data_parts)
 
-    if is_on_cuda(dfy):
+    if is_on_cuda(dfq):
         cp = import_cupy()
-        sorted_idx = cp.argsort(dfy.qid)
+        sorted_idx = cp.argsort(dfq.qid)
     else:
-        sorted_idx = np.argsort(dfy.qid)
-    dfy = dfy.iloc[sorted_idx, :]
+        sorted_idx = np.argsort(dfq.qid)
+    dfq = dfq.iloc[sorted_idx, :]
 
     if hasattr(dfx, "iloc"):
         dfx = dfx.iloc[sorted_idx, :]
@@ -159,9 +161,9 @@ def sort_data_by_qid(**kwargs: List[Any]) -> Dict[str, List[Any]]:
         dfx = dfx[sorted_idx, :]
 
     kwargs.update({"data": [dfx]})
-    for i, c in enumerate(dfy.columns):
+    for i, c in enumerate(dfq.columns):
         assert c in kwargs
-        kwargs.update({c: [dfy[c]]})
+        kwargs.update({c: [dfq[c]]})
 
     return kwargs
 

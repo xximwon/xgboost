@@ -137,7 +137,7 @@ def no_group_split(client: Client, df: dd.DataFrame) -> dd.DataFrame:
     # the update.
     df = (
         df.reset_index(drop=False)
-        .set_index("index", divisions=div, shuffle_method="tasks")
+        .set_index("index", divisions=div, shuffle_method="p2p")
         .persist()
     )
     wait([df])

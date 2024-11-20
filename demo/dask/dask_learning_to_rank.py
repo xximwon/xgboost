@@ -12,15 +12,17 @@ from __future__ import annotations
 
 import argparse
 import os
-
-import numpy as np
-from distributed import Client, LocalCluster, wait
-from sklearn.datasets import load_svmlight_file
-from xgboost import dask as dxgb
+from contextlib import contextmanager
+from typing import Generator
 
 import dask
+import numpy as np
 from dask import array as da
 from dask import dataframe as dd
+from distributed import Client, LocalCluster, wait
+from sklearn.datasets import load_svmlight_file
+
+from xgboost import dask as dxgb
 
 
 def load_mlsr_10k(
@@ -153,7 +155,9 @@ def ranking_wo_split_demo(client: Client, args: argparse.Namespace) -> None:
     Xy_train = dxgb.DaskQuantileDMatrix(client, X, label=df_train.y, qid=df_train.qid)
 
     X = df_train[df_valid.columns.difference(["y", "qid"])]
-    Xy_valid = dxgb.DaskQuantileDMatrix(client, X, label=df_valid.y, qid=df_valid.qid, ref=Xy_train)
+    Xy_valid = dxgb.DaskQuantileDMatrix(
+        client, X, label=df_valid.y, qid=df_valid.qid, ref=Xy_train
+    )
 
     dxgb.train(
         client,
@@ -161,6 +165,24 @@ def ranking_wo_split_demo(client: Client, args: argparse.Namespace) -> None:
         Xy_train,
         evals=[(Xy_train, "Train"), (Xy_valid, "Valid")],
     )
+
+
+@contextmanager
+def gen_client(device: str) -> Generator[Client, None, None]:
+    match device:
+        case "cuda":
+            from dask_cuda import LocalCUDACluster
+
+            with LocalCUDACluster() as cluster:
+                with Client(cluster) as client:
+                    with dask.config.set(
+                        {"array.backend": "cupy", "dataframe.backend": "cudf"}
+                    ):
+                        yield client
+        case "cpu":
+            with LocalCluster() as cluster:
+                with Client(cluster) as client:
+                    yield client
 
 
 if __name__ == "__main__":
@@ -180,19 +202,15 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument(
+        "--no-split",
+        action="store_true",
+        help="Flag to indicate query groups should not be split.",
+    )
     args = parser.parse_args()
 
-    match args.device:
-        case "cuda":
-            from dask_cuda import LocalCUDACluster
-
-            with LocalCUDACluster() as cluster:
-                with Client(cluster) as client:
-                    with dask.config.set(
-                        {"array.backend": "cupy", "dataframe.backend": "cudf"}
-                    ):
-                        ranking_demo(client, args)
-        case "cpu":
-            with LocalCluster() as cluster:
-                with Client(cluster) as client:
-                    ranking_demo(client, args)
+    with gen_client(args.device) as client:
+        if args.no_split:
+            ranking_wo_split_demo(client, args)
+        else:
+            ranking_demo(client, args)

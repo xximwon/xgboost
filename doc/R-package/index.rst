@@ -15,6 +15,8 @@ Get Started
 * Checkout the :doc:`Installation Guide </install>` contains instructions to install xgboost, and :doc:`Tutorials </tutorials/index>` for examples on how to use XGBoost for various tasks.
 * Read the `API documentation <https://cran.r-project.org/web/packages/xgboost/xgboost.pdf>`_.
 * Please visit `Walk-through Examples <https://github.com/dmlc/xgboost/tree/master/R-package/demo>`_.
+* XGBoost is integrated with `mlr3 <https://mlr3.mlr-org.com/>`_. See their document on how to use the XGBoost learners.
+
 
 *********
 Tutorials

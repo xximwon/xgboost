@@ -247,11 +247,11 @@ class CommunicatorContext(collective.CommunicatorContext):
         self.args["DMLC_TASK_ID"] = f"[xgboost.dask-{wid}]:" + str(worker.address)
 
 
-def _get_client(client: Optional["distributed.Client"]) -> "distributed.Client":
+def _get_client(client: Optional[distributed.Client]) -> distributed.Client:
     """Simple wrapper around testing None."""
-    if not isinstance(client, (type(distributed.get_client()), type(None))):
+    if not isinstance(client, distributed.Client) and client is not None:
         raise TypeError(
-            _expect([type(distributed.get_client()), type(None)], type(client))
+            _expect([distributed.Client, type(None)], type(client))
         )
     ret = distributed.get_client() if client is None else client
     return ret
@@ -275,8 +275,8 @@ class DaskDMatrix:
 
     .. note::
 
-        DaskDMatrix does not repartition or move data between workers.  It's
-        the caller's responsibility to balance the data.
+        DaskDMatrix does not repartition or move data between workers unless learning to
+        rank is used.  It's the caller's responsibility to balance the data.
 
     .. versionadded:: 1.0.0
 

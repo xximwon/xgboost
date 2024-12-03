@@ -32,7 +32,10 @@ from xgboost import dask as dxgb
 def load_mslr_10k(
     device: str, data_path: str, cache_path: str
 ) -> tuple[dd.DataFrame, dd.DataFrame, dd.DataFrame]:
-    """Load the MSLR10k dataset from data_path and save parquet files in the cache_path."""
+    """Load the MSLR10k dataset from data_path and save parquet files in the
+    cache_path.
+
+    """
     root_path = os.path.expanduser(args.data)
     cache_path = os.path.expanduser(args.cache)
 

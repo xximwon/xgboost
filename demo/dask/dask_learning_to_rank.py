@@ -20,13 +20,13 @@ import os
 from contextlib import contextmanager
 from typing import Generator
 
-import dask
 import numpy as np
-from dask import dataframe as dd
 from distributed import Client, LocalCluster, wait
 from sklearn.datasets import load_svmlight_file
-
 from xgboost import dask as dxgb
+
+import dask
+from dask import dataframe as dd
 
 
 def load_mslr_10k(
@@ -103,23 +103,52 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     """Learning to rank with data sorted locally."""
     df_tr, df_va, _ = load_mslr_10k(args.device, args.data, args.cache)
 
-    X_train: dd.DataFrame = df_tr[df_tr.columns.difference(["y", "qid"])]
-    y_train = df_tr[["y", "qid"]]
-    Xy_train = dxgb.DaskQuantileDMatrix(client, X_train, y_train.y, qid=y_train.qid)
+    # X_train: dd.DataFrame = df_tr[df_tr.columns.difference(["y", "qid"])]
+    # y_train = df_tr[["y", "qid"]]
+    # Xy_train = dxgb.DaskQuantileDMatrix(client, X_train, y_train.y, qid=y_train.qid)
 
-    X_valid: dd.DataFrame = df_va[df_va.columns.difference(["y", "qid"])]
-    y_valid = df_va[["y", "qid"]]
-    Xy_valid = dxgb.DaskQuantileDMatrix(
-        client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train
+    # X_valid: dd.DataFrame = df_va[df_va.columns.difference(["y", "qid"])]
+    # y_valid = df_va[["y", "qid"]]
+    # Xy_valid = dxgb.DaskQuantileDMatrix(
+    #     client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train
+    # )
+    # # Upon training, you will see a performance warning about sorting data based on
+    # # query groups.
+    # dxgb.train(
+    #     client,
+    #     {"objective": "rank:ndcg", "device": args.device},
+    #     Xy_train,
+    #     evals=[(Xy_train, "Train"), (Xy_valid, "Valid")],
+    #     num_boost_round=10,
+    # )
+
+    qids = df_tr.qid.unique().compute()
+    n_qids = len(qids)
+    rng = np.random.default_rng(2024)
+    pseduo_weight = rng.uniform(low=0.0, high=1.0, size=n_qids)
+    mapping = {w: q for w, q in zip(pseduo_weight, qids)}
+
+    df_tr["weight"] = df_tr.qid.map(mapping)
+    df_va["weight"] = df_va.qid.map(mapping)
+
+    meta_names = ["y", "qid", "weight"]
+    X_train: dd.DataFrame = df_tr[df_tr.columns.difference(meta_names)]
+    y_train = df_tr[meta_names]
+    Xy_train = dxgb.DaskQuantileDMatrix(
+        client, X_train, y_train.y, qid=y_train.qid, weight=df_tr.weight
     )
-    # Upon training, you will see a performance warning about sorting data based on
-    # query groups.
+
+    X_valid: dd.DataFrame = df_va[df_va.columns.difference(meta_names)]
+    y_valid = df_va[meta_names]
+    Xy_valid = dxgb.DaskQuantileDMatrix(
+        client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train, weight=df_va.weight
+    )
     dxgb.train(
         client,
         {"objective": "rank:ndcg", "device": args.device},
         Xy_train,
         evals=[(Xy_train, "Train"), (Xy_valid, "Valid")],
-        num_boost_round=100,
+        num_boost_round=10,
     )
 
 

@@ -125,8 +125,8 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     qids = df_tr.qid.unique().compute()
     n_qids = len(qids)
     rng = np.random.default_rng(2024)
-    pseduo_weight = rng.uniform(low=0.0, high=1.0, size=n_qids)
-    mapping = {w: q for w, q in zip(pseduo_weight, qids)}
+    pseduo_weight = rng.uniform(low=0.01, high=0.99, size=n_qids)
+    mapping = {q: w for w, q in zip(pseduo_weight, qids)}
 
     df_tr["weight"] = df_tr.qid.map(mapping)
     df_va["weight"] = df_va.qid.map(mapping)

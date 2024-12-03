@@ -315,15 +315,13 @@ class DaskDMatrix:
         self.missing = missing if missing is not None else numpy.nan
         self.enable_categorical = enable_categorical
 
-        if qid is not None and weight is not None:
-            raise NotImplementedError("per-group weight is not implemented.")
         if group is not None:
             raise NotImplementedError(
-                "group structure is not implemented, use qid instead."
+                "group structure is not implemented, use `qid` instead."
             )
 
         if len(data.shape) != 2:
-            raise ValueError(f"Expecting 2 dimensional input, got: {data.shape}")
+            raise ValueError(f"Expecting 2 dimensional `data`, got: {data.shape}")
 
         if not isinstance(data, (dd.DataFrame, da.Array)):
             raise TypeError(_expect((dd.DataFrame, da.Array), type(data)))

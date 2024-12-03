@@ -495,6 +495,36 @@ void CopyTensorInfoImpl(Context const* ctx, Json arr_interface, linalg::Tensor<T
     });
   });
 }
+
+// Convert sample weight into group weight. There's no pre-defined order for setting meta
+// info. One can set the group first or the weight first, we have to call this function
+// whenever one of them is being set. The function sets the weight only when both of them
+// are not empty.
+void SetGroupWeight(std::vector<bst_group_t> const& group_ptr, std::vector<float>* p_weights) {
+  auto& weights = *p_weights;
+  if (group_ptr.empty() || weights.empty()) {
+    return;
+  }
+  if (weights.size() + 1 == group_ptr.size()) {
+    // This is already group weight.
+    return;
+  }
+
+  CHECK_EQ(weights.size(), group_ptr.back());
+  std::vector<float> new_weights;
+  for (std::size_t i = 1, n = group_ptr.size(); i < n; ++i) {
+    auto begin = group_ptr[i - 1];
+    auto end = group_ptr[i];
+    auto valid = std::all_of(weights.cbegin() + begin, weights.cbegin() + end,
+                             [&](auto w) { return w == weights[begin]; });
+    if (!valid) {
+      LOG(FATAL) << "Weight for each sample within the same query group should be the same.";
+    }
+    new_weights.push_back(weights[begin]);
+  }
+  std::swap(new_weights, weights);
+  CHECK_EQ(weights.size() + 1, group_ptr.size());
+}
 }  // namespace
 
 void MetaInfo::SetInfo(Context const& ctx, StringView key, StringView interface_str) {
@@ -560,13 +590,15 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
     group_ptr_[0] = 0;
     std::partial_sum(h_groups.cbegin(), h_groups.cend(), group_ptr_.begin() + 1);
     data::ValidateQueryGroup(group_ptr_);
+    auto& h_weights = this->weights_.HostVector();
+    SetGroupWeight(group_ptr_, &h_weights);
     return;
   } else if (key == "qid") {
     linalg::Tensor<bst_group_t, 1> t;
     CopyTensorInfoImpl(ctx, arr, &t);
     bool non_dec = true;
     auto const& query_ids = t.Data()->HostVector();
-    for (size_t i = 1; i < query_ids.size(); ++i) {
+    for (std::size_t i = 1; i < query_ids.size(); ++i) {
       if (query_ids[i] < query_ids[i - 1]) {
         non_dec = false;
         break;
@@ -575,6 +607,8 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
     CHECK(non_dec) << error::QidSorted();
     common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
     data::ValidateQueryGroup(group_ptr_);
+    auto& h_weights = this->weights_.HostVector();
+    SetGroupWeight(group_ptr_, &h_weights);
     return;
   }
 
@@ -583,10 +617,11 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
   CopyTensorInfoImpl<1>(ctx, arr, &t);
   if (key == "weight") {
     this->weights_ = std::move(*t.Data());
-    auto const& h_weights = this->weights_.ConstHostVector();
+    auto& h_weights = this->weights_.HostVector();
     auto valid = std::none_of(h_weights.cbegin(), h_weights.cend(),
                               [](float w) { return w < 0 || std::isinf(w) || std::isnan(w); });
     CHECK(valid) << "Weights must be positive values.";
+    SetGroupWeight(group_ptr_, &h_weights);
   } else if (key == "label_lower_bound") {
     this->labels_lower_bound_ = std::move(*t.Data());
   } else if (key == "label_upper_bound") {

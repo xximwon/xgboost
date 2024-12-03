@@ -122,18 +122,25 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     #     num_boost_round=10,
     # )
 
+    from xgboost.compat import concat
     qids = df_tr.qid.unique().compute()
+    qids_va = df_va.qid.unique().compute()
+    qids = concat([qids, qids_va]).unique()
     n_qids = len(qids)
     rng = np.random.default_rng(2024)
     pseduo_weight = rng.uniform(low=0.01, high=0.99, size=n_qids)
-    mapping = {q: w for w, q in zip(pseduo_weight, qids)}
+    assert (pseduo_weight > 0).all()
+    mapping = {q: w for q, w in zip(qids, pseduo_weight)}
+    import pandas as pd
 
-    df_tr["weight"] = df_tr.qid.map(mapping)
-    df_va["weight"] = df_va.qid.map(mapping)
+    meta = pd.Series([pseduo_weight[0]], dtype=pd.Float64Dtype(), name="weight")
+    df_tr["weight"] = df_tr.qid.map(mapping, meta=meta)
+    df_va["weight"] = df_va.qid.map(mapping, meta=meta)
 
     meta_names = ["y", "qid", "weight"]
     X_train: dd.DataFrame = df_tr[df_tr.columns.difference(meta_names)]
     y_train = df_tr[meta_names]
+    assert (df_va.weight >= 0).all().compute(), df_va.weight.compute()
     Xy_train = dxgb.DaskQuantileDMatrix(
         client, X_train, y_train.y, qid=y_train.qid, weight=df_tr.weight
     )
@@ -197,7 +204,7 @@ def gen_client(device: str) -> Generator[Client, None, None]:
                     ):
                         yield client
         case "cpu":
-            with LocalCluster() as cluster:
+            with LocalCluster(n_workers=2) as cluster:
                 with Client(cluster) as client:
                     yield client
 

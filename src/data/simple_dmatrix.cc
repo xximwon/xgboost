@@ -324,6 +324,7 @@ SimpleDMatrix::SimpleDMatrix(AdapterT* adapter, float missing, int nthread,
     sparse_page_->SortIndices(ctx.Threads());
   }
 
+  this->Info().SetGroupWeight(&ctx);
   this->fmat_ctx_ = ctx;
 }
 

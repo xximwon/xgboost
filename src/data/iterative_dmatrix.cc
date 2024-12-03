@@ -47,6 +47,7 @@ IterativeDMatrix::IterativeDMatrix(DataIterHandle iter_handle, DMatrixHandle pro
     this->InitFromCPU(&ctx, p, iter_handle, missing, ref);
   }
 
+  this->Info().SetGroupWeight(&ctx);
   this->fmat_ctx_ = ctx;
   this->batch_ = p;
 

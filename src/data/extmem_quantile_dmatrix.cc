@@ -45,6 +45,8 @@ ExtMemQuantileDMatrix::ExtMemQuantileDMatrix(DataIterHandle iter_handle, DMatrix
     p.n_prefetch_batches = ::xgboost::cuda_impl::DftPrefetchBatches();
     this->InitFromCUDA(&ctx, iter, proxy, p, ref, max_quantile_blocks, config);
   }
+
+  this->Info().SetGroupWeight(&ctx);
   this->batch_ = p;
   this->fmat_ctx_ = ctx;
 }

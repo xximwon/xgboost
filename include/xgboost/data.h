@@ -161,6 +161,11 @@ class MetaInfo {
   void GetFeatureInfo(const char *field, std::vector<std::string>* out_str_vecs) const;
 
   /**
+   * @brief Convert sample weight to group weight.
+   */
+  void SetGroupWeight(Context const* ctx);
+
+  /**
    * @brief Extend with other MetaInfo.
    *
    * @param that The other MetaInfo object.
@@ -216,6 +221,11 @@ class MetaInfo {
 
   /*! \brief argsort of labels */
   mutable std::vector<size_t> label_order_cache_;
+  /**
+   * @brief A temporary variable to hold query group index. This should be cleared once
+   * the `group_ptr` is constructed.
+   */
+  linalg::Vector<bst_group_t> qid_;
   bool has_categorical_{false};
 };
 

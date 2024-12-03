@@ -590,11 +590,9 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
     group_ptr_[0] = 0;
     std::partial_sum(h_groups.cbegin(), h_groups.cend(), group_ptr_.begin() + 1);
     data::ValidateQueryGroup(group_ptr_);
-    auto& h_weights = this->weights_.HostVector();
-    SetGroupWeight(group_ptr_, &h_weights);
     return;
   } else if (key == "qid") {
-    linalg::Tensor<bst_group_t, 1> t;
+    linalg::Vector<bst_group_t> t;
     CopyTensorInfoImpl(ctx, arr, &t);
     bool non_dec = true;
     auto const& query_ids = t.Data()->HostVector();
@@ -607,8 +605,6 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
     CHECK(non_dec) << error::QidSorted();
     common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
     data::ValidateQueryGroup(group_ptr_);
-    auto& h_weights = this->weights_.HostVector();
-    SetGroupWeight(group_ptr_, &h_weights);
     return;
   }
 
@@ -621,7 +617,6 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
     auto valid = std::none_of(h_weights.cbegin(), h_weights.cend(),
                               [](float w) { return w < 0 || std::isinf(w) || std::isnan(w); });
     CHECK(valid) << "Weights must be positive values.";
-    SetGroupWeight(group_ptr_, &h_weights);
   } else if (key == "label_lower_bound") {
     this->labels_lower_bound_ = std::move(*t.Data());
   } else if (key == "label_upper_bound") {
@@ -724,6 +719,15 @@ void MetaInfo::GetFeatureInfo(const char* field, std::vector<std::string>* out_s
     std::copy(feature_names.begin(), feature_names.end(), str_vecs.begin());
   } else {
     LOG(FATAL) << "Unknown feature info: " << field;
+  }
+}
+
+void MetaInfo::SetGroupWeight(Context const* ctx) {
+  if (ctx->IsCPU()) {
+    auto& h_weight = this->weights_.HostVector();
+    ::xgboost::SetGroupWeight(this->group_ptr_, &h_weight);
+  } else {
+    LOG(FATAL) << "Not implemented";
   }
 }
 

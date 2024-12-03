@@ -118,5 +118,9 @@ constexpr StringView InconsistentFeatureTypes() {
 }
 
 void CheckOldNccl(std::int32_t major, std::int32_t minor, std::int32_t patch);
+
+constexpr StringView QidSorted() {
+  return "data must be sorted according to the `qid` in non-decreasing order.";
+}
 }  // namespace xgboost::error
 #endif  // XGBOOST_COMMON_ERROR_MSG_H_

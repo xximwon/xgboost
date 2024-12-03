@@ -572,7 +572,7 @@ void MetaInfo::SetInfoFromHost(Context const* ctx, StringView key, Json arr) {
         break;
       }
     }
-    CHECK(non_dec) << "`qid` must be sorted in non-decreasing order along with data.";
+    CHECK(non_dec) << error::QidSorted();
     common::RunLengthEncode(query_ids.cbegin(), query_ids.cend(), &group_ptr_);
     data::ValidateQueryGroup(group_ptr_);
     return;

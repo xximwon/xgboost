@@ -100,9 +100,8 @@ void CopyQidImpl(Context const* ctx, ArrayInterface<1> array_interface,
     }
   });
   bool non_dec = true;
-  dh::safe_cuda(cudaMemcpy(&non_dec, flag.data().get(), sizeof(bool),
-                           cudaMemcpyDeviceToHost));
-  CHECK(non_dec) << "`qid` must be sorted in increasing order along with data.";
+  dh::safe_cuda(cudaMemcpy(&non_dec, flag.data().get(), sizeof(bool), cudaMemcpyDeviceToHost));
+  CHECK(non_dec) << error::QidSorted();
   size_t bytes = 0;
   dh::caching_device_vector<uint32_t> out(array_interface.Shape(0));
   dh::caching_device_vector<uint32_t> cnt(array_interface.Shape(0));

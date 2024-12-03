@@ -768,11 +768,10 @@ void MetaInfo::Extend(MetaInfo const& that, bool accumulate_rows, bool check_col
   } else {
     CHECK_NE(that.group_ptr_.size(), 0);
     auto group_ptr = that.group_ptr_;
-    for (size_t i = 1; i < group_ptr.size(); ++i) {
+    for (std::size_t i = 1; i < group_ptr.size(); ++i) {
       group_ptr[i] += this->group_ptr_.back();
     }
-    this->group_ptr_.insert(this->group_ptr_.end(), group_ptr.begin() + 1,
-                            group_ptr.end());
+    this->group_ptr_.insert(this->group_ptr_.end(), group_ptr.begin(), group_ptr.end());
   }
 
   /**

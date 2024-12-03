@@ -138,17 +138,18 @@ def ranking_demo(client: Client, args: argparse.Namespace) -> None:
     df_va["weight"] = df_va.qid.map(mapping, meta=meta)
 
     meta_names = ["y", "qid", "weight"]
-    X_train: dd.DataFrame = df_tr[df_tr.columns.difference(meta_names)]
-    y_train = df_tr[meta_names]
+    X_tr: dd.DataFrame = df_tr[df_tr.columns.difference(meta_names)]
+    meta_tr = df_tr[meta_names]
     assert (df_va.weight >= 0).all().compute(), df_va.weight.compute()
     Xy_train = dxgb.DaskQuantileDMatrix(
-        client, X_train, y_train.y, qid=y_train.qid, weight=df_tr.weight
+        client, X_tr, meta_tr.y, qid=meta_tr.qid, weight=df_tr.weight
     )
 
-    X_valid: dd.DataFrame = df_va[df_va.columns.difference(meta_names)]
-    y_valid = df_va[meta_names]
+    X_va: dd.DataFrame = df_va[df_va.columns.difference(meta_names)]
+    meta_va = df_va[meta_names]
+
     Xy_valid = dxgb.DaskQuantileDMatrix(
-        client, X_valid, y_valid.y, qid=y_valid.qid, ref=Xy_train, weight=df_va.weight
+        client, X_va, meta_va.y, qid=meta_va.qid, ref=Xy_train, weight=meta_va.weight
     )
     dxgb.train(
         client,

@@ -6,7 +6,20 @@ import functools
 import json
 import os
 import warnings
-from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeGuard, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeGuard,
+    Union,
+    cast,
+    overload,
+)
 
 import numpy as np
 
@@ -17,6 +30,7 @@ from ._data_utils import (
     cuda_array_interface,
 )
 from ._typing import (
+    ArrayInf,
     CupyT,
     DataType,
     FeatureNames,
@@ -25,7 +39,10 @@ from ._typing import (
     NumpyDType,
     PandasDType,
     PathLike,
+    StringArray,
     TransformedData,
+    _ArrayLikeArg,
+    _CupyArrayLikeArg,
     c_bst_ulong,
 )
 from .compat import DataFrame
@@ -37,11 +54,16 @@ from .core import (
     DataSplitMode,
     DMatrix,
     _check_call,
+    _expect,
     _ProxyDMatrix,
     c_str,
     from_pystr_to_cstr,
     make_jcargs,
 )
+
+if TYPE_CHECKING:
+    import pandas as pd
+    import pyarrow as pa
 
 DispatchedDataBackendReturnType = Tuple[
     ctypes.c_void_p, Optional[FeatureNames], Optional[FeatureTypes]
@@ -83,6 +105,183 @@ def is_scipy_csr(data: DataType) -> bool:
     except ImportError:
         pass
     return is_array or is_matrix
+
+
+def _is_arrow_dict(data: Any) -> TypeGuard["pa.DictionaryArray"]:
+    return lazy_isinstance(data, "pyarrow.lib", "DictionaryArray")
+
+
+def _is_pd_cat(
+    data: Any,
+) -> TypeGuard["pd.core.arrays.categorical.CategoricalAccessor"]:
+    return hasattr(data, "categories") and hasattr(data, "codes")
+
+
+@functools.cache
+def _arrow_typestr() -> Dict["pa.DataType", str]:
+    import pyarrow as pa
+
+    mapping = {
+        pa.int8(): "<i1",
+        pa.int16(): "<i2",
+        pa.int32(): "<i4",
+        pa.int64(): "<i8",
+        pa.uint8(): "<u1",
+        pa.uint16(): "<u2",
+        pa.uint32(): "<u4",
+        pa.uint64(): "<u8",
+    }
+
+    return mapping
+
+
+def _arrow_cat_inf(
+    cats: "pa.StringArray",
+    codes: Union[_ArrayLikeArg, _CupyArrayLikeArg, "pa.IntegerArray"],
+) -> Tuple[StringArray, ArrayInf, Tuple]:
+    import pyarrow as pa
+
+    # fixme: account for offset
+    assert cats.offset == 0
+    # fixme: assert arrow's ordering is the same as cudf.
+    buffers: List[pa.Buffer] = cats.buffers()
+    mask, offset, data = buffers
+    assert offset.is_cpu
+
+    off_len = len(cats) + 1
+    assert offset.size == off_len * (np.iinfo(np.int32).bits / 8)
+
+    joffset: ArrayInf = {
+        "data": (int(offset.address), True),
+        "typestr": "<i4",
+        "version": 3,
+        "strides": None,
+        "shape": (off_len,),
+        "mask": None,
+    }
+
+    def make_buf_inf(buf: pa.Buffer, typestr: str) -> ArrayInf:
+        return {
+            "data": (int(buf.address), True),
+            "typestr": typestr,
+            "version": 3,
+            "strides": None,
+            "shape": (buf.size,),
+            "mask": None,
+        }
+
+    jdata = make_buf_inf(data, "<i1")
+
+    if mask is not None:
+        # fixme: test cudf mask
+        jdata["mask"] = make_buf_inf(mask, "<i1")
+
+    jnames: StringArray = {"offsets": joffset, "values": jdata}
+
+    def make_array_inf(
+        array: Any,
+    ) -> Tuple[ArrayInf, Optional[Tuple[pa.Buffer, pa.Buffer]]]:
+        if hasattr(codes, "__cuda_array_interface__"):
+            inf = array.__cuda_array_interface__
+            if "mask" in inf:
+                inf["mask"] = inf["mask"].__array_cuda_interface__
+            return inf, None
+        elif hasattr(codes, "__array_interface__"):
+            inf = array.__array_interface__
+            if "mask" in inf:
+                inf["mask"] = inf["mask"].__array_interface__
+            return inf, None
+
+        if not isinstance(array, pa.IntegerArray):
+            raise TypeError(
+                _expect(
+                    [pa.IntegerArray, _CupyArrayLikeArg, _ArrayLikeArg], type(array)
+                )
+            )
+        buffers: List[pa.Buffer] = array.buffers()
+        mask, data = buffers
+
+        jdata = make_buf_inf(data, _arrow_typestr()[array.type])
+        if mask is not None:
+            # fixme: test cudf mask
+            jdata["mask"] = make_buf_inf(mask, "<i1")
+
+        inf = cast(ArrayInf, jdata)
+        return inf, (mask, data)
+
+    cats_tmp = (mask, offset, data)
+    jcodes, codes_tmp = make_array_inf(codes)
+
+    return jnames, jcodes, (cats_tmp, codes_tmp)
+
+
+def _npstr_to_arrow_strarr(strarr: np.ndarray) -> Tuple[np.ndarray, str]:
+    lenarr = np.vectorize(len)
+    offsets = np.cumsum(np.concatenate([np.array([0], dtype=np.int64), lenarr(strarr)]))
+    values = strarr.sum()
+    # fixme: assert not null-terminated
+    return offsets.astype(np.int32), values
+
+
+@overload
+def _array_interface_dict(data: np.ndarray) -> ArrayInf: ...
+
+
+@overload
+def _array_interface_dict(
+    data: "pd.core.arrays.categorical.CategoricalAccessor",
+) -> Tuple[StringArray, ArrayInf, Tuple]: ...
+
+
+@overload
+def _array_interface_dict(
+    data: "pa.DictionaryArray",
+) -> Tuple[StringArray, ArrayInf, Tuple]: ...
+
+
+def _array_interface_dict(
+    data: Union[
+        np.ndarray,
+        "pd.core.arrays.categorical.CategoricalAccessor",
+        "pa.DictionaryType",
+    ]
+) -> Union[ArrayInf, Tuple[StringArray, ArrayInf, Tuple]]:
+    if _is_arrow_dict(data):
+        cats = data.dictionary
+        codes = data.indices
+        jnames, jcodes, buf = _arrow_cat_inf(cats, codes)
+        return jnames, jcodes, buf
+    if _is_pd_cat(data):
+        cats = data.categories
+        codes = data.codes
+
+        offsets, values = _npstr_to_arrow_strarr(cats.values)
+        offsets, _ = _ensure_np_dtype(offsets, np.int32)
+        joffsets = _array_interface_dict(offsets)
+        bvalues = values.encode("utf-8")
+        ptr = ctypes.c_void_p.from_buffer(ctypes.c_char_p(bvalues)).value
+        assert ptr is not None
+
+        jvalues: ArrayInf = {
+            "data": (ptr, True),
+            "typestr": "|i1",
+            "shape": (len(values),),
+            "strides": None,
+            "version": 3,
+            "mask": None,
+        }
+        jnames = {"offsets": joffsets, "values": jvalues}
+
+        jcodes = _array_interface_dict(codes.values)
+
+        buf = (offsets, values, bvalues)
+        return jnames, jcodes, buf
+    if array_hasobject(data):
+        raise ValueError("Input data contains `object` dtype.  Expecting numeric data.")
+    ainf = data.__array_interface__
+    if "mask" in ainf:
+        ainf["mask"] = ainf["mask"].__array_interface__
+    return cast(ArrayInf, ainf)
 
 
 def transform_scipy_sparse(data: DataType, is_csr: bool) -> DataType:
@@ -520,12 +719,7 @@ def pandas_transform_data(data: DataFrame) -> List[np.ndarray]:
     np_dtypes = _lazy_has_npdtypes()
 
     def cat_codes(ser: PdSeries) -> np.ndarray:
-        return _ensure_np_dtype(
-            ser.cat.codes.astype(np.float32)
-            .replace(-1.0, np.nan)
-            .to_numpy(na_value=np.nan),
-            np.float32,
-        )[0]
+        return ser.cat
 
     def nu_type(ser: PdSeries) -> np.ndarray:
         # Avoid conversion when possible
@@ -591,16 +785,37 @@ class PandasTransformed:
     def __init__(self, columns: List[np.ndarray]) -> None:
         self.columns = columns
 
+        aitfs = []
+        self.temporary_buffers = []
+
+        for col in self.columns:
+            inf = _array_interface_dict(col)
+            if isinstance(inf, tuple):
+                jnames, jcodes, buf = inf
+                self.temporary_buffers.append(buf)
+                aitfs.append([jnames, jcodes])
+            else:
+                aitfs.append(inf)
+
+        self.aitfs = aitfs
+
     def array_interface(self) -> bytes:
         """Return a byte string for JSON encoded array interface."""
-        aitfs = list(map(array_interface_dict, self.columns))
-        sarrays = bytes(json.dumps(aitfs), "utf-8")
+        sarrays = bytes(json.dumps(self.aitfs), "utf-8")
         return sarrays
 
     @property
     def shape(self) -> Tuple[int, int]:
         """Return shape of the transformed DataFrame."""
-        return self.columns[0].shape[0], len(self.columns)
+        import pyarrow as pa
+
+        if isinstance(self.columns[0], pa.DictionaryArray):
+            n_samples = len(self.columns[0].indices)
+        elif _is_pd_cat(self.columns[0]):
+            n_samples = self.columns[0].codes.shape[0]
+        else:
+            n_samples = self.columns[0].shape[0]
+        return n_samples, len(self.columns)
 
 
 def _transform_pandas_df(
@@ -774,7 +989,9 @@ def _lazy_load_cudf_is_cat() -> Callable[[Any], bool]:
     return is_categorical_dtype
 
 
-def _cudf_array_interfaces(data: DataType, cat_codes: list) -> bytes:
+def _cudf_array_interfaces(
+    data: DataType, cat_codes: List[Tuple[Any, Any]]
+) -> Tuple[bytes, List[Any]]:
     """Extract CuDF __cuda_array_interface__.  This is special as it returns a new list
     of data and a list of array interfaces.  The data is list of categorical codes that
     caller can safely ignore, but have to keep their reference alive until usage of
@@ -783,6 +1000,7 @@ def _cudf_array_interfaces(data: DataType, cat_codes: list) -> bytes:
     """
     is_categorical_dtype = _lazy_load_cudf_is_cat()
     interfaces = []
+    buffers = []
 
     def append(interface: dict) -> None:
         if "mask" in interface:
@@ -791,20 +1009,22 @@ def _cudf_array_interfaces(data: DataType, cat_codes: list) -> bytes:
 
     if _is_cudf_ser(data):
         if is_categorical_dtype(data.dtype):
-            interface = cat_codes[0].__cuda_array_interface__
+            interface = cat_codes[0].__cuda_array_interface__  # fixme
         else:
             interface = data.__cuda_array_interface__
         append(interface)
     else:
         for i, col in enumerate(data):
             if is_categorical_dtype(data[col].dtype):
-                codes = cat_codes[i]
-                interface = codes.__cuda_array_interface__
+                cats, codes = cat_codes[i]
+                joffset, jdata, buf = _arrow_cat_inf(cats.to_arrow(), codes)
+                interface = [joffset, jdata]
+                buffers.append(buf)
             else:
                 interface = data[col].__cuda_array_interface__
             append(interface)
     interfaces_str = from_pystr_to_cstr(json.dumps(interfaces))
-    return interfaces_str
+    return interfaces_str, buffers
 
 
 def _transform_cudf_df(
@@ -812,7 +1032,14 @@ def _transform_cudf_df(
     feature_names: Optional[FeatureNames],
     feature_types: Optional[FeatureTypes],
     enable_categorical: bool,
-) -> Tuple[ctypes.c_void_p, list, Optional[FeatureNames], Optional[FeatureTypes]]:
+) -> Tuple[
+    ctypes.c_void_p,
+    list[Tuple[Any, Any]],
+    Optional[FeatureNames],
+    Optional[FeatureTypes],
+]:
+
+    import cudf
 
     try:
         from cudf.api.types import is_bool_dtype
@@ -860,6 +1087,7 @@ def _transform_cudf_df(
                 feature_types.append(_pandas_dtype_mapper[dtype.name])
 
     # handle categorical data
+    cats = []
     cat_codes = []
     if _is_cudf_ser(data):
         # unlike pandas, cuDF uses NA for missing data.
@@ -870,14 +1098,17 @@ def _transform_cudf_df(
         for col in data:
             dtype = data[col].dtype
             if is_categorical_dtype(dtype) and enable_categorical:
+                categories: cudf.Index = data[col].cat.categories
+                cats.append(categories)
                 codes = data[col].cat.codes
                 cat_codes.append(codes)
             elif is_categorical_dtype(dtype):
                 raise ValueError(_ENABLE_CAT_ERR)
             else:
-                cat_codes.append([])
+                cats.append(None)
+                cat_codes.append(None)
 
-    return data, cat_codes, feature_names, feature_types
+    return data, list(zip(cats, cat_codes)), feature_names, feature_types
 
 
 def _from_cudf_df(
@@ -892,7 +1123,9 @@ def _from_cudf_df(
     data, cat_codes, feature_names, feature_types = _transform_cudf_df(
         data, feature_names, feature_types, enable_categorical
     )
-    interfaces_str = _cudf_array_interfaces(data, cat_codes)
+    # fixme: move the buffers into transform function or an auxiluary structure like the
+    # transformed pandas.
+    interfaces_str, buffers = _cudf_array_interfaces(data, cat_codes)
     handle = ctypes.c_void_p()
     _check_call(
         _LIB.XGDMatrixCreateFromCudaColumnar(
@@ -995,11 +1228,7 @@ def _from_uri(
     _warn_unused_missing(data, missing)
     handle = ctypes.c_void_p()
     data = os.fspath(os.path.expanduser(data))
-    args = {
-        "uri": str(data),
-        "data_split_mode": int(data_split_mode),
-    }
-    config = bytes(json.dumps(args), "utf-8")
+    config = make_jcargs(uri=str(data), data_split_mode=int(data_split_mode))
     _check_call(_LIB.XGDMatrixCreateFromURI(config, ctypes.byref(handle)))
     return handle, feature_names, feature_types
 

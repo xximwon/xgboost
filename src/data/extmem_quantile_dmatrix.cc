@@ -9,7 +9,7 @@
 
 #include "../tree/param.h"          // FIXME(jiamingy): Find a better way to share this parameter.
 #include "batch_utils.h"            // for CheckParam, RegenGHist
-#include "proxy_dmatrix.h"          // for DataIterProxy, HostAdapterDispatch
+#include "proxy_dmatrix.h"          // for DataIterProxy
 #include "quantile_dmatrix.h"       // for GetDataShape, MakeSketches
 #include "simple_batch_iterator.h"  // for SimpleBatchIteratorImpl
 #include "sparse_page_source.h"     // for MakeCachePrefix

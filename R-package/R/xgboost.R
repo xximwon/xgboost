@@ -157,7 +157,6 @@ process.y.margin.and.objective <- function(
   }
 
   if (is.factor(y)) {
-
     y_levels <- levels(y)
     if (length(y_levels) < 2) {
       stop("Factor 'y' has less than 2 levels.")

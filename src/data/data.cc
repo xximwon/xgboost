@@ -36,6 +36,7 @@
 #include "./sparse_page_dmatrix.h"            // for SparsePageDMatrix
 #include "array_interface.h"                  // for ArrayInterfaceHandler, ArrayInterface, Dispa...
 #include "batch_utils.h"                      // for MatchingPageBytes
+#include "cat_container.h"                    // for CatContainer
 #include "dmlc/base.h"                        // for BeginPtr
 #include "dmlc/common.h"                      // for OMPException
 #include "dmlc/data.h"                        // for Parser
@@ -770,6 +771,15 @@ void MetaInfo::Extend(MetaInfo const& that, bool accumulate_rows, bool check_col
   }
 }
 
+void MetaInfo::Finalize(Context const* ctx, DataSplitMode split_mode) {
+  this->SynchronizeNumberOfColumns(ctx);
+  this->data_split_mode = split_mode;
+
+  if (!this->cats_) {
+    this->cats_ = std::make_shared<CatContainer>();
+  }
+}
+
 void MetaInfo::SynchronizeNumberOfColumns(Context const* ctx) {
   auto op = IsColumnSplit() ? collective::Op::kSum : collective::Op::kMax;
   auto rc = collective::Allreduce(ctx, linalg::MakeVec(&num_col_, 1), op);
@@ -849,6 +859,16 @@ bool MetaInfo::IsVerticalFederated() const {
 
 bool MetaInfo::ShouldHaveLabels() const {
   return !IsVerticalFederated() || collective::GetRank() == 0;
+}
+
+[[nodiscard]] CatContainer const* MetaInfo::Cats() const { return this->cats_.get(); }
+
+[[nodiscard]] CatContainer* MetaInfo::Cats() { return this->cats_.get(); }
+
+void MetaInfo::Cats(std::shared_ptr<CatContainer> cats) {
+  this->cats_ = std::move(cats);
+  CHECK_LT(cats_->Size(),
+           static_cast<decltype(cats->Size())>(std::numeric_limits<bst_cat_t>::max()));
 }
 
 using DMatrixThreadLocal =

@@ -6,32 +6,30 @@
  */
 #include "xgboost/learner.h"
 
-#include <dmlc/io.h>                      // for Stream
-#include <dmlc/parameter.h>               // for FieldEntry, DMLC_DECLARE_FIELD, Parameter, DMLC...
-#include <dmlc/thread_local.h>            // for ThreadLocalStore
+#include <dmlc/io.h>            // for Stream
+#include <dmlc/parameter.h>     // for FieldEntry, DMLC_DECLARE_FIELD, Parameter, DMLC...
+#include <dmlc/thread_local.h>  // for ThreadLocalStore
 
-#include <algorithm>                      // for equal, max, transform, sort, find_if, all_of
-#include <array>                          // for array
-#include <atomic>                         // for atomic
-#include <cctype>                         // for isalpha, isspace
-#include <cmath>                          // for isnan, isinf
-#include <cstdint>                        // for int32_t, uint32_t, int64_t, uint64_t
-#include <cstdlib>                        // for atoi
-#include <cstring>                        // for memcpy, size_t, memset
-#include <iomanip>                        // for operator<<, setiosflags
-#include <iterator>                       // for back_insert_iterator, distance, back_inserter
-#include <limits>                         // for numeric_limits
-#include <memory>                         // for allocator, unique_ptr, shared_ptr, operator==
-#include <mutex>                          // for mutex, lock_guard
-#include <set>                            // for set
-#include <sstream>                        // for operator<<, basic_ostream, basic_ostream::opera...
-#include <stack>                          // for stack
-#include <string>                         // for basic_string, char_traits, operator<, string
-#include <system_error>                   // for errc
-#include <tuple>                          // for get
-#include <unordered_map>                  // for operator!=, unordered_map
-#include <utility>                        // for pair, as_const, move, swap
-#include <vector>                         // for vector
+#include <algorithm>      // for equal, max, transform, sort, find_if, all_of
+#include <array>          // for array
+#include <atomic>         // for atomic
+#include <cctype>         // for isalpha, isspace
+#include <cmath>          // for isnan, isinf
+#include <cstdint>        // for int32_t, uint32_t, int64_t, uint64_t
+#include <cstdlib>        // for atoi
+#include <cstring>        // for memcpy, size_t, memset
+#include <iomanip>        // for operator<<, setiosflags
+#include <iterator>       // for back_insert_iterator, distance, back_inserter
+#include <limits>         // for numeric_limits
+#include <memory>         // for allocator, unique_ptr, shared_ptr, operator==
+#include <mutex>          // for mutex, lock_guard
+#include <sstream>        // for operator<<, basic_ostream, basic_ostream::opera...
+#include <stack>          // for stack
+#include <string>         // for basic_string, char_traits, operator<, string
+#include <system_error>   // for errc
+#include <unordered_map>  // for operator!=, unordered_map
+#include <utility>        // for pair, as_const, move, swap
+#include <vector>         // for vector
 
 #include "collective/aggregator.h"        // for ApplyWithLabels
 #include "collective/communicator-inl.h"  // for Allreduce, Broadcast, GetRank, IsDistributed
@@ -845,7 +843,7 @@ class LearnerConfiguration : public Learner {
     }
   }
 
-  void InitEstimation(MetaInfo const& info, linalg::Tensor<float, 1>* base_score) {
+  void InitEstimation(MetaInfo const& info, linalg::Vector<float>* base_score) {
     base_score->Reshape(1);
     collective::ApplyWithLabels(this->Ctx(), info, base_score->Data(),
                                 [&] { UsePtr(obj_)->InitEstimation(info, base_score); });
@@ -858,7 +856,7 @@ class LearnerIO : public LearnerConfiguration {
  private:
   // Used to identify the offset of JSON string when
   // Will be removed once JSON takes over.  Right now we still loads some RDS files from R.
-  std::string const serialisation_header_ { u8"CONFIG-offset:" };
+  std::string const serialisation_header_{u8"CONFIG-offset:"};
 
  protected:
   void ClearCaches() { this->prediction_container_ = PredictionContainer{}; }
@@ -1210,8 +1208,7 @@ class LearnerIO : public LearnerConfiguration {
  */
 class LearnerImpl : public LearnerIO {
  public:
-  explicit LearnerImpl(std::vector<std::shared_ptr<DMatrix> > cache)
-      : LearnerIO{cache} {}
+  explicit LearnerImpl(std::vector<std::shared_ptr<DMatrix>> cache) : LearnerIO{cache} {}
   ~LearnerImpl() override {
     auto local_map = LearnerAPIThreadLocalStore::Get();
     if (local_map->find(this) != local_map->cend()) {

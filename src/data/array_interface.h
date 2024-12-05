@@ -17,6 +17,7 @@
 
 #include "../common/bitfield.h"   // for RBitField8
 #include "../common/error_msg.h"  // for NoF128
+#include "../encoder/types.h"     // for Overloaded
 #include "xgboost/json.h"         // for Json
 #include "xgboost/linalg.h"       // for CalcStride, TensorView
 #include "xgboost/logging.h"      // for CHECK
@@ -251,8 +252,8 @@ class ArrayInterfaceHandler {
    * \brief Extracts the optiona `strides' field and returns whether the array is c-contiguous.
    */
   template <int32_t D>
-  static bool ExtractStride(Object::Map const &array, size_t itemsize,
-                            size_t (&shape)[D], size_t (&stride)[D]) {
+  static bool ExtractStride(Object::Map const &array, size_t itemsize, size_t (&shape)[D],
+                            size_t (&stride)[D]) {
     auto strides_it = array.find("strides");
     // No stride is provided
     if (strides_it == array.cend() || IsA<Null>(strides_it->second)) {
@@ -333,8 +334,7 @@ struct ToDType<double> {
   static constexpr ArrayInterfaceHandler::Type kType = ArrayInterfaceHandler::kF8;
 };
 template <typename T>
-struct ToDType<T,
-               std::enable_if_t<std::is_same_v<T, long double> && sizeof(long double) == 16>> {
+struct ToDType<T, std::enable_if_t<std::is_same_v<T, long double> && sizeof(long double) == 16>> {
   static constexpr ArrayInterfaceHandler::Type kType = ArrayInterfaceHandler::kF16;
 };
 // uint
@@ -424,7 +424,7 @@ class ArrayInterface {
       common::Span<RBitField8::value_type> s_mask;
       size_t n_bits = ArrayInterfaceHandler::ExtractMask(array, &s_mask);
 
-      valid = RBitField8(s_mask);
+      this->valid = RBitField8(s_mask);
 
       if (s_mask.data()) {
         CHECK_EQ(n_bits, n) << "Shape of bit mask doesn't match data shape. "

@@ -16,6 +16,7 @@ from functools import wraps
 from inspect import Parameter, signature
 from types import EllipsisType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -66,6 +67,9 @@ from ._typing import (
 )
 from .compat import PANDAS_INSTALLED, DataFrame, py_str
 from .libpath import find_lib_path
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class XGBoostError(ValueError):
@@ -830,7 +834,10 @@ class DMatrix:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
             If 'data' is not a data frame, this argument is ignored.
 
-            JSON/UBJSON serialization format is required for this.
+            .. versionchanged:: 3.0.0
+
+            XGBoost can remember the encoding of categories when the input is a
+            dataframe.
 
         """
         if group is not None and qid is not None:
@@ -1209,6 +1216,46 @@ class DMatrix:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         assert data.size == indptr[-1]
         assert data.dtype == np.float32
         return indptr, data
+
+    def get_categories(self) -> Dict[str, "pa.DictionaryArray"]:
+        """Get the categories in the dataset.
+
+
+        .. versionadded:: 3.0.0
+
+        """
+        import pyarrow as pa
+
+        n_features = self.num_col()
+        fnames = self.feature_names
+        if fnames is None:
+            fnames = [str(i) for i in range(n_features)]
+
+        results: Dict[str, "pa.DictionaryArray"] = {}
+
+        ret = ctypes.c_char_p()
+        _check_call(_LIB.XGBDMatrixGetCategories(self.handle, ctypes.byref(ret)))
+        assert ret.value is not None
+
+        retstr = ret.value.decode()
+        jcats = json.loads(retstr)
+        assert isinstance(jcats, list) and len(jcats) == n_features
+        for fidx in range(n_features):
+            joffsets = jcats[fidx]["offsets"]
+            jvalues = jcats[fidx]["values"]
+            offsets = from_array_interface(joffsets, True)
+            values = from_array_interface(jvalues, True)
+            pa_offsets = pa.array(offsets).buffers()
+            pa_values = pa.array(values).buffers()
+            assert (
+                pa_offsets[0] is None and pa_values[0] is None
+            ), "Should not have null mask."
+            pa_dict = pa.StringArray.from_buffers(
+                len(offsets) - 1, pa_offsets[1], pa_values[1]
+            )
+            results[fnames[fidx]] = pa_dict
+
+        return results
 
     def num_row(self) -> int:
         """Get the number of rows in the DMatrix."""
@@ -2616,7 +2663,8 @@ class Booster:
         if validate_features:
             if not hasattr(data, "shape"):
                 raise TypeError(
-                    "`shape` attribute is required when `validate_features` is True."
+                    "`shape` attribute is required when `validate_features` is True"
+                    f", got: {type(data)}"
                 )
             if len(data.shape) != 1 and self.num_features() != data.shape[1]:
                 raise ValueError(
@@ -2695,13 +2743,13 @@ class Booster:
             data, cat_codes, fns, _ = _transform_cudf_df(
                 data, None, None, enable_categorical
             )
-            interfaces_str = _cudf_array_interfaces(data, cat_codes)
+            array_inf, _ = _cudf_array_interfaces(data, cat_codes)
             if validate_features:
                 self._validate_features(fns)
             _check_call(
                 _LIB.XGBoosterPredictFromCudaColumnar(
                     self.handle,
-                    interfaces_str,
+                    array_inf,
                     args,
                     p_handle,
                     ctypes.byref(shape),

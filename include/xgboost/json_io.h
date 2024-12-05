@@ -140,6 +140,7 @@ class JsonWriter {
   virtual void Visit(JsonArray  const* arr);
   virtual void Visit(F32Array  const* arr);
   virtual void Visit(F64Array const*) { LOG(FATAL) << "Only UBJSON format can handle f64 array."; }
+  virtual void Visit(I8Array  const* arr);
   virtual void Visit(U8Array  const* arr);
   virtual void Visit(I32Array  const* arr);
   virtual void Visit(I64Array  const* arr);
@@ -218,7 +219,7 @@ class UBJReader : public JsonReader {
   }
 
   template <typename TypedArray>
-  auto ParseTypedArray(int64_t n) {
+  auto ParseTypedArray(std::int64_t n) {
     TypedArray results{static_cast<size_t>(n)};
     for (int64_t i = 0; i < n; ++i) {
       auto v = this->ReadPrimitive<typename TypedArray::Type>();
@@ -244,6 +245,7 @@ class UBJWriter : public JsonWriter {
   void Visit(JsonArray const* arr) override;
   void Visit(F32Array const* arr) override;
   void Visit(F64Array const* arr) override;
+  void Visit(I8Array  const* arr) override;
   void Visit(U8Array  const* arr) override;
   void Visit(I32Array  const* arr) override;
   void Visit(I64Array  const* arr) override;

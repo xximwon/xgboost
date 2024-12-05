@@ -42,8 +42,10 @@ enum class FeatureType : uint8_t { kNumerical = 0, kCategorical = 1 };
 
 enum class DataSplitMode : int { kRow = 0, kCol = 1 };
 
-/*!
- * \brief Meta information about dataset, always sit in memory.
+struct CatContainer;
+
+/**
+ * @brief Meta information about dataset, always sit in memory.
  */
 class MetaInfo {
  public:
@@ -173,30 +175,21 @@ class MetaInfo {
    */
   void Extend(MetaInfo const& that, bool accumulate_rows, bool check_column);
 
-  /**
-   * @brief Synchronize the number of columns across all workers.
-   *
-   * Normally we just need to find the maximum number of columns across all workers, but
-   * in vertical federated learning, since each worker loads its own list of columns,
-   * we need to sum them.
-   */
-  void SynchronizeNumberOfColumns(Context const* ctx);
+  /** @brief Called at the end of DMatrix construction. */
+  void Finalize(Context const* ctx, DataSplitMode split_mode);
 
-  /*! \brief Whether the data is split row-wise. */
-  bool IsRowSplit() const {
-    return data_split_mode == DataSplitMode::kRow;
-  }
-
+  /** @brief Whether the data is split row-wise. */
+  [[nodiscard]] bool IsRowSplit() const { return data_split_mode == DataSplitMode::kRow; }
   /** @brief Whether the data is split column-wise. */
-  bool IsColumnSplit() const { return data_split_mode == DataSplitMode::kCol; }
+  [[nodiscard]] bool IsColumnSplit() const { return data_split_mode == DataSplitMode::kCol; }
   /** @brief Whether this is a learning to rank data. */
-  bool IsRanking() const { return !group_ptr_.empty(); }
+  [[nodiscard]] bool IsRanking() const { return !group_ptr_.empty(); }
 
-  /*!
-   * \brief A convenient method to check if we are doing vertical federated learning, which requires
+  /**
+   * @brief A convenient method to check if we are doing vertical federated learning, which requires
    * some special processing.
    */
-  bool IsVerticalFederated() const;
+  [[nodiscard]] bool IsVerticalFederated() const;
 
   /*!
    * \brief A convenient method to check if the MetaInfo should contain labels.
@@ -210,13 +203,28 @@ class MetaInfo {
    */
   bool HasCategorical() const { return has_categorical_; }
 
+  [[nodiscard]] CatContainer const* Cats() const;
+  [[nodiscard]] CatContainer* Cats();
+  void Cats(std::shared_ptr<CatContainer> cats);
+
  private:
   void SetInfoFromHost(Context const* ctx, StringView key, Json arr);
   void SetInfoFromCUDA(Context const* ctx, StringView key, Json arr);
 
+  /**
+   * @brief Synchronize the number of columns across all workers.
+   *
+   * Normally we just need to find the maximum number of columns across all workers, but
+   * in vertical federated learning, since each worker loads its own list of columns,
+   * we need to sum them.
+   */
+  void SynchronizeNumberOfColumns(Context const* ctx);
+
   /*! \brief argsort of labels */
   mutable std::vector<size_t> label_order_cache_;
   bool has_categorical_{false};
+
+  std::shared_ptr<CatContainer> cats_;
 };
 
 /*! \brief Element from a sparse vector */
@@ -330,10 +338,9 @@ struct HostSparsePageView {
   common::Span<bst_idx_t const> offset;
   common::Span<Entry const> data;
 
-  Inst operator[](size_t i) const {
+  [[nodiscard]] Inst operator[](std::size_t i) const {
     auto size = *(offset.data() + i + 1) - *(offset.data() + i);
-    return {data.data() + *(offset.data() + i),
-            static_cast<Inst::index_type>(size)};
+    return {data.data() + *(offset.data() + i), static_cast<Inst::index_type>(size)};
   }
 
   [[nodiscard]] size_t Size() const { return offset.size() == 0 ? 0 : offset.size() - 1; }
@@ -696,7 +703,14 @@ class DMatrix {
    * @param slice_id Index of the current slice
    * @return DMatrix containing the slice of columns
    */
-  virtual DMatrix *SliceCol(int num_slices, int slice_id) = 0;
+  virtual DMatrix* SliceCol(int num_slices, int slice_id) = 0;
+  /**
+   * @brief Accessor for the string representation of the categories.
+   */
+  virtual CatContainer const* Cats() const {
+    LOG(FATAL) << "Not implemented for the current DMatrix type.";
+    return nullptr;
+  }
 
  protected:
   virtual BatchSet<SparsePage> GetRowBatches() = 0;

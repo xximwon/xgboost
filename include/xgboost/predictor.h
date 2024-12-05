@@ -123,7 +123,7 @@ class Predictor {
    */
   virtual bool InplacePredict(std::shared_ptr<DMatrix> p_fmat, const gbm::GBTreeModel& model,
                               float missing, PredictionCacheEntry* out_preds,
-                              uint32_t tree_begin = 0, uint32_t tree_end = 0) const = 0;
+                              bst_tree_t tree_begin = 0, bst_tree_t tree_end = 0) const = 0;
   /**
    * \brief online prediction function, predict score for one instance at a time
    * NOTE: use the batch prediction interface if possible, batch prediction is

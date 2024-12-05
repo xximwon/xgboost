@@ -13,6 +13,7 @@
 #include "../common/bitfield.h"
 #include "../common/categorical.h"
 #include "../common/common.h"
+#include "../encoder/ordinal.cuh"     // for CudaCategoryRecoder
 #include "../common/cuda_context.cuh"  // for CUDAContext
 #include "../common/cuda_rt_utils.h"   // for AllVisibleGPUs, SetDevice
 #include "../common/device_helpers.cuh"
@@ -39,7 +40,7 @@ struct TreeView {
   common::Span<RegTree::Node const> d_tree;
 
   XGBOOST_DEVICE
-  TreeView(size_t tree_begin, size_t tree_idx, common::Span<const RegTree::Node> d_nodes,
+  TreeView(bst_tree_t tree_begin, bst_tree_t tree_idx, common::Span<const RegTree::Node> d_nodes,
            common::Span<size_t const> d_tree_segments,
            common::Span<FeatureType const> d_tree_split_types,
            common::Span<uint32_t const> d_cat_tree_segments,
@@ -113,10 +114,11 @@ struct SparsePageLoader {
   bool use_shared;
   SparsePageView data;
   float* smem;
+  enc::MappingView cats_mapping;
 
   __device__ SparsePageLoader(SparsePageView data, bool use_shared, bst_feature_t num_features,
-                              bst_idx_t num_rows, float)
-      : use_shared(use_shared), data(data) {
+                              bst_idx_t num_rows, float, enc::MappingView cats_mapping)
+      : use_shared(use_shared), data(data), cats_mapping{std::move(cats_mapping)} {
     extern __shared__ float _smem[];
     smem = _smem;
     // Copy instances
@@ -147,8 +149,11 @@ struct SparsePageLoader {
 
 struct EllpackLoader {
   EllpackDeviceAccessor matrix;
-  XGBOOST_DEVICE EllpackLoader(EllpackDeviceAccessor m, bool, bst_feature_t, bst_idx_t, float)
-      : matrix{std::move(m)} {}
+  enc::MappingView cats_mapping;
+
+  XGBOOST_DEVICE EllpackLoader(EllpackDeviceAccessor m, bool, bst_feature_t, bst_idx_t, float,
+                               enc::MappingView cats_mapping)
+      : matrix{std::move(m)}, cats_mapping{std::move(cats_mapping)} {}
   [[nodiscard]] XGBOOST_DEV_INLINE float GetElement(size_t ridx, size_t fidx) const {
     auto gidx = matrix.GetBinIndex<false>(ridx, fidx);
     if (gidx == -1) {
@@ -168,20 +173,27 @@ struct EllpackLoader {
   [[nodiscard]] XGBOOST_DEVICE bst_idx_t NumRows() const { return this->matrix.n_rows; }
 };
 
-template <typename Batch>
+template <typename Batch, typename EncAccessor>
 struct DeviceAdapterLoader {
   Batch batch;
   bst_feature_t columns;
   float* smem;
   bool use_shared;
   data::IsValidFunctor is_valid;
+  enc::MappingView cats_mapping;
+  EncAccessor enc;
 
   using BatchT = Batch;
 
   XGBOOST_DEV_INLINE DeviceAdapterLoader(Batch const batch, bool use_shared,
                                          bst_feature_t num_features, bst_idx_t num_rows,
-                                         float missing)
-      : batch{batch}, columns{num_features}, use_shared{use_shared}, is_valid{missing} {
+                                         float missing, enc::MappingView const& cats)
+      : batch{batch},
+        columns{num_features},
+        use_shared{use_shared},
+        is_valid{missing},
+        cats_mapping{cats},
+        enc{cats} {
     extern __shared__ float _smem[];
     smem = _smem;
     if (use_shared) {
@@ -193,9 +205,10 @@ struct DeviceAdapterLoader {
         auto beg = global_idx * columns;
         auto end = (global_idx + 1) * columns;
         for (size_t i = beg; i < end; ++i) {
-          auto value = batch.GetElement(i).value;
-          if (is_valid(value)) {
-            smem[threadIdx.x * num_features + (i - beg)] = value;
+          data::COOTuple const& e = batch.GetElement(i);
+          auto fvalue = enc(e);
+          if (is_valid(fvalue)) {
+            smem[threadIdx.x * num_features + (i - beg)] = fvalue;
           }
         }
       }
@@ -252,15 +265,15 @@ PredictLeafKernel(Data data, common::Span<const RegTree::Node> d_nodes,
                   common::Span<RegTree::CategoricalSplitMatrix::Segment const> d_cat_node_segments,
                   common::Span<uint32_t const> d_categories,
 
-                  size_t tree_begin, size_t tree_end, bst_feature_t num_features,
+                  bst_tree_t tree_begin, bst_tree_t tree_end, bst_feature_t num_features,
                   size_t num_rows, bool use_shared,
-                  float missing) {
+                  float missing, enc::MappingView cats_mapping) {
   bst_idx_t ridx = blockDim.x * blockIdx.x + threadIdx.x;
   if (ridx >= num_rows) {
     return;
   }
-  Loader loader{data, use_shared, num_features, num_rows, missing};
-  for (size_t tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
+  Loader loader{data, use_shared, num_features, num_rows, missing, cats_mapping};
+  for (auto tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
     TreeView d_tree{
         tree_begin,          tree_idx,           d_nodes,
         d_tree_segments,     d_tree_split_types, d_cat_tree_segments,
@@ -285,16 +298,16 @@ PredictKernel(Data data, common::Span<const RegTree::Node> d_nodes,
               common::Span<FeatureType const> d_tree_split_types,
               common::Span<uint32_t const> d_cat_tree_segments,
               common::Span<RegTree::CategoricalSplitMatrix::Segment const> d_cat_node_segments,
-              common::Span<uint32_t const> d_categories, size_t tree_begin,
-              size_t tree_end, size_t num_features, size_t num_rows,
-              bool use_shared, int num_group, float missing) {
+              common::Span<uint32_t const> d_categories, bst_tree_t tree_begin,
+              bst_tree_t tree_end, size_t num_features, size_t num_rows,
+              bool use_shared, int num_group, float missing, enc::MappingView cats_mapping) {
   bst_uint global_idx = blockDim.x * blockIdx.x + threadIdx.x;
-  Loader loader(data, use_shared, num_features, num_rows, missing);
+  Loader loader(data, use_shared, num_features, num_rows, missing, cats_mapping);
   if (global_idx >= num_rows) return;
 
   if (num_group == 1) {
     float sum = 0;
-    for (size_t tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
+    for (auto tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
       TreeView d_tree{
           tree_begin,          tree_idx,           d_nodes,
           d_tree_segments,     d_tree_split_types, d_cat_tree_segments,
@@ -304,7 +317,7 @@ PredictKernel(Data data, common::Span<const RegTree::Node> d_nodes,
     }
     d_out_predictions[global_idx] += sum;
   } else {
-    for (size_t tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
+    for (auto tree_idx = tree_begin; tree_idx < tree_end; tree_idx++) {
       int tree_group = d_tree_group[tree_idx];
       TreeView d_tree{
           tree_begin,          tree_idx,           d_nodes,
@@ -474,7 +487,7 @@ struct ShapSplitCondition {
 struct PathInfo {
   int64_t leaf_position;  // -1 not a leaf
   size_t length;
-  size_t tree_idx;
+  bst_tree_t tree_idx;
 };
 
 // Transform model into path element form for GPUTreeShap
@@ -494,8 +507,7 @@ void ExtractPaths(Context const* ctx,
         if (!n.IsLeaf() || n.IsDeleted()) {
           return PathInfo{-1, 0, 0};
         }
-        size_t tree_idx =
-            dh::SegmentId(d_tree_segments.begin(), d_tree_segments.end(), idx);
+        bst_tree_t tree_idx = dh::SegmentId(d_tree_segments.begin(), d_tree_segments.end(), idx);
         size_t tree_offset = d_tree_segments[tree_idx];
         size_t path_length = 1;
         while (!n.IsRoot()) {
@@ -622,10 +634,10 @@ __global__ void MaskBitVectorKernel(
     common::Span<std::uint32_t const> d_cat_tree_segments,
     common::Span<RegTree::CategoricalSplitMatrix::Segment const> d_cat_node_segments,
     common::Span<std::uint32_t const> d_categories, BitVector decision_bits, BitVector missing_bits,
-    std::size_t tree_begin, std::size_t tree_end, bst_feature_t num_features, std::size_t num_rows,
-    std::size_t num_nodes, bool use_shared, float missing) {
+    bst_tree_t tree_begin, bst_tree_t tree_end, bst_feature_t num_features, std::size_t num_rows,
+    std::size_t num_nodes, bool use_shared, float missing, enc::MappingView cats_mapping) {
   // This needs to be always instantiated since the data is loaded cooperatively by all threads.
-  SparsePageLoader loader{data, use_shared, num_features, num_rows, missing};
+  SparsePageLoader loader{data, use_shared, num_features, num_rows, missing, cats_mapping};
   auto const row_idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (row_idx >= num_rows) {
     return;
@@ -695,7 +707,7 @@ __global__ void PredictByBitVectorKernel(
     common::Span<std::uint32_t const> d_cat_tree_segments,
     common::Span<RegTree::CategoricalSplitMatrix::Segment const> d_cat_node_segments,
     common::Span<std::uint32_t const> d_categories, BitVector decision_bits, BitVector missing_bits,
-    std::size_t tree_begin, std::size_t tree_end, std::size_t num_rows, std::size_t num_nodes,
+    bst_tree_t tree_begin, bst_tree_t tree_end, std::size_t num_rows, std::size_t num_nodes,
     std::uint32_t num_group) {
   auto const row_idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (row_idx >= num_rows) {
@@ -704,7 +716,7 @@ __global__ void PredictByBitVectorKernel(
 
   std::size_t tree_offset = 0;
   if constexpr (predict_leaf) {
-    for (size_t tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
+    for (auto tree_idx = tree_begin; tree_idx < tree_end; ++tree_idx) {
       TreeView d_tree{tree_begin,          tree_idx,           d_nodes,
                       d_tree_segments,     d_tree_split_types, d_cat_tree_segments,
                       d_cat_node_segments, d_categories};
@@ -793,7 +805,7 @@ class ColumnSplitHelper {
           model.split_types.ConstDeviceSpan(), model.categories_tree_segments.ConstDeviceSpan(),
           model.categories_node_segments.ConstDeviceSpan(), model.categories.ConstDeviceSpan(),
           decision_bits, missing_bits, model.tree_beg_, model.tree_end_, num_features, num_rows,
-          num_nodes, use_shared, std::numeric_limits<float>::quiet_NaN());
+          num_nodes, use_shared, std::numeric_limits<float>::quiet_NaN(), enc::MappingView{});
 
       AllReduceBitVectors(&decision_storage, &missing_storage);
 
@@ -869,7 +881,7 @@ class GPUPredictor : public xgboost::Predictor {
           model.categories_tree_segments.ConstDeviceSpan(),
           model.categories_node_segments.ConstDeviceSpan(), model.categories.ConstDeviceSpan(),
           model.tree_beg_, model.tree_end_, num_features, num_rows, use_shared, model.num_group,
-          std::numeric_limits<float>::quiet_NaN());
+          std::numeric_limits<float>::quiet_NaN(), enc::MappingView{});  // fixme
     };
     if (is_dense) {
       kernel(PredictKernel<SparsePageLoader, SparsePageView, false>);
@@ -893,7 +905,7 @@ class GPUPredictor : public xgboost::Predictor {
         model.categories_tree_segments.ConstDeviceSpan(),
         model.categories_node_segments.ConstDeviceSpan(), model.categories.ConstDeviceSpan(),
         model.tree_beg_, model.tree_end_, batch.NumFeatures(), num_rows, use_shared,
-        model.num_group, std::numeric_limits<float>::quiet_NaN());
+        model.num_group, std::numeric_limits<float>::quiet_NaN(), enc::MappingView{}); // fixme
   }
 
   void DevicePredictInternal(DMatrix* dmat, HostDeviceVector<float>* out_preds,
@@ -958,7 +970,7 @@ class GPUPredictor : public xgboost::Predictor {
                                 const gbm::GBTreeModel& model, float missing,
                                 PredictionCacheEntry* out_preds, uint32_t tree_begin,
                                 uint32_t tree_end) const {
-    uint32_t const output_groups =  model.learner_model_param->num_output_group;
+    uint32_t const output_groups = model.learner_model_param->num_output_group;
 
     auto m = std::any_cast<std::shared_ptr<Adapter>>(x);
     CHECK_EQ(m->NumColumns(), model.learner_model_param->num_feature)
@@ -987,29 +999,55 @@ class GPUPredictor : public xgboost::Predictor {
 
     bool use_shared = shared_memory_bytes != 0;
 
-    dh::LaunchKernel {GRID_SIZE, BLOCK_THREADS, shared_memory_bytes, ctx_->CUDACtx()->Stream()}(
-        PredictKernel<Loader, typename Loader::BatchT>, m->Value(), d_model.nodes.ConstDeviceSpan(),
-        out_preds->predictions.DeviceSpan(), d_model.tree_segments.ConstDeviceSpan(),
-        d_model.tree_group.ConstDeviceSpan(), d_model.split_types.ConstDeviceSpan(),
-        d_model.categories_tree_segments.ConstDeviceSpan(),
-        d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
-        tree_begin, tree_end, m->NumColumns(), m->NumRows(), use_shared, output_groups, missing);
+    auto launch = [&](auto&& enc) {
+      dh::LaunchKernel{GRID_SIZE, BLOCK_THREADS, shared_memory_bytes, ctx_->CUDACtx()->Stream()}(
+          PredictKernel<Loader, typename Loader::BatchT>, m->Value(),
+          d_model.nodes.ConstDeviceSpan(), out_preds->predictions.DeviceSpan(),
+          d_model.tree_segments.ConstDeviceSpan(), d_model.tree_group.ConstDeviceSpan(),
+          d_model.split_types.ConstDeviceSpan(), d_model.categories_tree_segments.ConstDeviceSpan(),
+          d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
+          tree_begin, tree_end, m->NumColumns(), m->NumRows(), use_shared, output_groups, missing,
+          enc);
+    };
+    if constexpr (std::is_same_v<Adapter, data::CudfAdapter>) {
+      if (m->HasCategorical()) {
+        auto orig_enc = model.cats->DeviceView(ctx_);
+        // FIXME(jiamingy): Remove the use of container once cuDF can return device data.
+        CatContainer container{ctx_->Device(), m->Cats()};
+        auto cats = container.DeviceView(ctx_);
+        enc::cuda_impl::CudaCategoryRecoder encoder;
+        auto mapping = encoder.Recode(orig_enc, cats);
+        CHECK_EQ(cats.feature_segments.size(), orig_enc.feature_segments.size());
+        auto cats_mapping = enc::MappingView{cats.feature_segments, dh::ToSpan(mapping)};
+        launch(cats_mapping);
+        return;
+      }
+    }
+    launch(enc::MappingView{});
   }
 
   bool InplacePredict(std::shared_ptr<DMatrix> p_m, const gbm::GBTreeModel& model, float missing,
-                      PredictionCacheEntry* out_preds, uint32_t tree_begin,
-                      unsigned tree_end) const override {
+                      PredictionCacheEntry* out_preds, bst_tree_t tree_begin,
+                      bst_tree_t tree_end) const override {
     auto proxy = dynamic_cast<data::DMatrixProxy*>(p_m.get());
     CHECK(proxy) << error::InplacePredictProxy();
     auto x = proxy->Adapter();
     if (x.type() == typeid(std::shared_ptr<data::CupyAdapter>)) {
       this->DispatchedInplacePredict<data::CupyAdapter,
-                                     DeviceAdapterLoader<data::CupyAdapterBatch>>(
+                                     DeviceAdapterLoader<data::CupyAdapterBatch, NoOpAccessor>>(
           x, p_m, model, missing, out_preds, tree_begin, tree_end);
     } else if (x.type() == typeid(std::shared_ptr<data::CudfAdapter>)) {
-      this->DispatchedInplacePredict<data::CudfAdapter,
-                                     DeviceAdapterLoader<data::CudfAdapterBatch>>(
-          x, p_m, model, missing, out_preds, tree_begin, tree_end);
+      auto m = std::any_cast<std::shared_ptr<data::CudfAdapter>>(x);
+      if (m->HasCategorical()) {
+        this->DispatchedInplacePredict<data::CudfAdapter,
+                                       DeviceAdapterLoader<data::CudfAdapterBatch, CatAccessor>>(
+            x, p_m, model, missing, out_preds, tree_begin, tree_end);
+      } else {
+        this->DispatchedInplacePredict<data::CudfAdapter,
+                                       DeviceAdapterLoader<data::CudfAdapterBatch, NoOpAccessor>>(
+            x, p_m, model, missing, out_preds, tree_begin, tree_end);
+      }
+
     } else {
       return false;
     }
@@ -1043,6 +1081,7 @@ class GPUPredictor : public xgboost::Predictor {
     // allocate space for (number of features + bias) times the number of rows
     size_t contributions_columns =
         model.learner_model_param->num_feature + 1;  // +1 for bias
+    auto orig_enc = model.cats->DeviceView(ctx_);
     auto dim_size = contributions_columns * model.learner_model_param->num_output_group;
     out_contribs->Resize(p_fmat->Info().num_row_ * dim_size);
     out_contribs->Fill(0.0f);
@@ -1067,8 +1106,17 @@ class GPUPredictor : public xgboost::Predictor {
     } else {
       for (auto& batch : p_fmat->GetBatches<EllpackPage>(ctx_, StaticBatch(true))) {
         EllpackDeviceAccessor acc{batch.Impl()->GetDeviceAccessor(ctx_)};
-        auto X = EllpackLoader{acc, true, model.learner_model_param->num_feature, batch.Size(),
-                               std::numeric_limits<float>::quiet_NaN()};
+        auto p_cats = p_fmat->Cats();
+        auto new_enc = p_cats->DeviceView(ctx_);
+        enc::cuda_impl::CudaCategoryRecoder encoder;
+        auto mapping = encoder.Recode(orig_enc, new_enc);
+        enc::MappingView cats_mapping{new_enc.feature_segments, dh::ToSpan(mapping)};
+        auto X = EllpackLoader{acc,
+                               true,
+                               model.learner_model_param->num_feature,
+                               batch.Size(),
+                               std::numeric_limits<float>::quiet_NaN(),
+                               cats_mapping};
         auto begin = dh::tbegin(phis) + batch.BaseRowId() * dim_size;
         gpu_treeshap::GPUTreeShap<dh::XGBDeviceAllocator<int>>(
             X, device_paths.begin(), device_paths.end(), ngroup, begin, dh::tend(phis));
@@ -1128,6 +1176,7 @@ class GPUPredictor : public xgboost::Predictor {
       for (auto const& batch : p_fmat->GetBatches<SparsePage>()) {
         batch.data.SetDevice(ctx_->Device());
         batch.offset.SetDevice(ctx_->Device());
+        // fixme: use mapping
         SparsePageView X(batch.data.DeviceSpan(), batch.offset.DeviceSpan(),
                          model.learner_model_param->num_feature);
         auto begin = dh::tbegin(phis) + batch.base_rowid * dim_size;
@@ -1139,8 +1188,13 @@ class GPUPredictor : public xgboost::Predictor {
         auto impl = batch.Impl();
         auto acc = impl->GetDeviceAccessor(ctx_, p_fmat->Info().feature_types.ConstDeviceSpan());
         auto begin = dh::tbegin(phis) + batch.BaseRowId() * dim_size;
-        auto X = EllpackLoader{acc, true, model.learner_model_param->num_feature, batch.Size(),
-                               std::numeric_limits<float>::quiet_NaN()};
+        // fixme: mapping
+        auto X = EllpackLoader{acc,
+                               true,
+                               model.learner_model_param->num_feature,
+                               batch.Size(),
+                               std::numeric_limits<float>::quiet_NaN(),
+                               enc::MappingView{}};
         gpu_treeshap::GPUTreeShapInteractions<dh::XGBDeviceAllocator<int>>(
             X, device_paths.begin(), device_paths.end(), ngroup, begin, dh::tend(phis));
       }
@@ -1205,7 +1259,7 @@ class GPUPredictor : public xgboost::Predictor {
           d_model.categories_node_segments.ConstDeviceSpan(), d_model.categories.ConstDeviceSpan(),
 
           d_model.tree_beg_, d_model.tree_end_, num_features, num_rows, use_shared,
-          std::numeric_limits<float>::quiet_NaN());
+          std::numeric_limits<float>::quiet_NaN(), enc::MappingView{});  // fixme
     };
 
     if (p_fmat->PageExists<SparsePage>()) {

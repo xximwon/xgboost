@@ -66,6 +66,11 @@ one-hot encoding.  A comparison between using one-hot encoded data and XGBoost's
 categorical data support can be found :ref:`sphx_glr_python_examples_cat_in_the_dat.py`.
 
 
+.. versionadded:: 3.0.0
+
+XGBoost can remember the encoding of categories when the input is a dataframe.
+
+
 ********************
 Optimal Partitioning
 ********************

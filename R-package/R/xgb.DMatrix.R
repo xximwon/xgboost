@@ -239,9 +239,8 @@ xgb.DMatrix <- function(
 
   lst <- lapply(df, function(col) {
     is_factor <- is.factor(col)
-    col <- as.numeric(col)
-    if (is_factor) {
-      col <- col - 1
+    if (!is_factor) {
+      col <- as.numeric(col)
     }
     return(col)
   })

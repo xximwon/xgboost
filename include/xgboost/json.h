@@ -43,6 +43,7 @@ class Value {
     // typed array for ubjson
     kF32Array,
     kF64Array,
+    kI8Array,
     kU8Array,
     kI32Array,
     kI64Array
@@ -179,6 +180,10 @@ using F32Array = JsonTypedArray<float, Value::ValueKind::kF32Array>;
  * @brief Typed UBJSON array for 64-bit floating point.
  */
 using F64Array = JsonTypedArray<double, Value::ValueKind::kF64Array>;
+/**
+ * @brief Typed UBJSON array for iint8_t.
+ */
+using I8Array = JsonTypedArray<std::int8_t, Value::ValueKind::kI8Array>;
 /**
  * @brief Typed UBJSON array for uint8_t.
  */

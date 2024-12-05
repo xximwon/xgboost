@@ -1,9 +1,12 @@
 /**
- * Copyright 2021-2023 by XGBoost Contributors
+ * Copyright 2021-2024, XGBoost Contributors
  */
 #ifndef XGBOOST_PREDICTOR_PREDICT_FN_H_
 #define XGBOOST_PREDICTOR_PREDICT_FN_H_
 #include "../common/categorical.h"
+#include "../common/math.h"      // for CheckNAN
+#include "../data/adapter.h"     // for COOTuple
+#include "../encoder/ordinal.h"  // for MappingView
 #include "xgboost/tree_model.h"
 
 namespace xgboost::predictor {
@@ -49,5 +52,24 @@ inline XGBOOST_DEVICE bst_node_t GetNextNodeMulti(MultiTargetTree const &tree,
   }
 }
 
+struct CatAccessor {
+  enc::MappingView const &enc;
+  [[nodiscard]] XGBOOST_DEVICE float operator()(data::COOTuple const &e) {
+    auto fvalue = e.value;
+    if (!common::CheckNAN(fvalue) && !enc.Empty() && !enc[e.column_idx].empty()) {
+      auto f_mapping = enc[e.column_idx];
+      if (fvalue >= 0 && fvalue < f_mapping.size()) {
+        fvalue = f_mapping[fvalue];
+      }
+    }
+    return fvalue;
+  }
+};
+
+struct NoOpAccessor {
+  XGBOOST_DEVICE explicit NoOpAccessor(enc::MappingView const &) {}
+  NoOpAccessor() = default;
+  [[nodiscard]] XGBOOST_DEVICE float operator()(data::COOTuple const &e) const { return e.value; }
+};
 }  // namespace xgboost::predictor
 #endif  // XGBOOST_PREDICTOR_PREDICT_FN_H_

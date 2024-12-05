@@ -6,6 +6,13 @@
 #include <type_traits>  // for is_const_v, add_const_t, conditional_t, add_pointer_t
 
 #include "xgboost/span.h"  // for Span
+
+#if defined(XGBOOST_USE_CUDA)
+
+#include <cuda/std/variant>  // for variant
+
+#endif  // defined(XGBOOST_USE_CUDA)
+
 namespace xgboost::common {
 template <typename T, typename U = std::conditional_t<std::is_const_v<T>,
                                                       std::add_const_t<std::int8_t>, std::int8_t>>

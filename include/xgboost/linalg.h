@@ -1,5 +1,5 @@
 /**
- * Copyright 2021-2023 by XGBoost Contributors
+ * Copyright 2021-2024, XGBoost Contributors
  * \file linalg.h
  * \brief Linear algebra related utilities.
  */
@@ -15,8 +15,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cinttypes>  // for int32_t
-#include <cstddef>    // for size_t
+#include <cstddef>  // for size_t
+#include <cstdint>  // for int32_t
 #include <limits>
 #include <string>
 #include <tuple>  // for make_tuple

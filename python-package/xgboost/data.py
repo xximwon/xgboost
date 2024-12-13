@@ -6,31 +6,20 @@ import functools
 import json
 import os
 import warnings
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    TypeGuard,
-    Union,
-    cast,
-    overload,
-)
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TypeGuard, cast
 
 import numpy as np
 
 from ._data_utils import (
+    _arrow_cat_inf,
+    _ensure_np_dtype,
+    _is_pd_cat,
     array_hasobject,
     array_interface,
     array_interface_dict,
     cuda_array_interface,
 )
 from ._typing import (
-    ArrayInf,
     CupyT,
     DataType,
     FeatureNames,
@@ -39,10 +28,7 @@ from ._typing import (
     NumpyDType,
     PandasDType,
     PathLike,
-    StringArray,
     TransformedData,
-    _ArrayLikeArg,
-    _CupyArrayLikeArg,
     c_bst_ulong,
 )
 from .compat import DataFrame
@@ -54,16 +40,11 @@ from .core import (
     DataSplitMode,
     DMatrix,
     _check_call,
-    _expect,
     _ProxyDMatrix,
     c_str,
     from_pystr_to_cstr,
     make_jcargs,
 )
-
-if TYPE_CHECKING:
-    import pandas as pd
-    import pyarrow as pa
 
 DispatchedDataBackendReturnType = Tuple[
     ctypes.c_void_p, Optional[FeatureNames], Optional[FeatureTypes]
@@ -105,183 +86,6 @@ def is_scipy_csr(data: DataType) -> bool:
     except ImportError:
         pass
     return is_array or is_matrix
-
-
-def _is_arrow_dict(data: Any) -> TypeGuard["pa.DictionaryArray"]:
-    return lazy_isinstance(data, "pyarrow.lib", "DictionaryArray")
-
-
-def _is_pd_cat(
-    data: Any,
-) -> TypeGuard["pd.core.arrays.categorical.CategoricalAccessor"]:
-    return hasattr(data, "categories") and hasattr(data, "codes")
-
-
-@functools.cache
-def _arrow_typestr() -> Dict["pa.DataType", str]:
-    import pyarrow as pa
-
-    mapping = {
-        pa.int8(): "<i1",
-        pa.int16(): "<i2",
-        pa.int32(): "<i4",
-        pa.int64(): "<i8",
-        pa.uint8(): "<u1",
-        pa.uint16(): "<u2",
-        pa.uint32(): "<u4",
-        pa.uint64(): "<u8",
-    }
-
-    return mapping
-
-
-def _arrow_cat_inf(
-    cats: "pa.StringArray",
-    codes: Union[_ArrayLikeArg, _CupyArrayLikeArg, "pa.IntegerArray"],
-) -> Tuple[StringArray, ArrayInf, Tuple]:
-    import pyarrow as pa
-
-    # fixme: account for offset
-    assert cats.offset == 0
-    # fixme: assert arrow's ordering is the same as cudf.
-    buffers: List[pa.Buffer] = cats.buffers()
-    mask, offset, data = buffers
-    assert offset.is_cpu
-
-    off_len = len(cats) + 1
-    assert offset.size == off_len * (np.iinfo(np.int32).bits / 8)
-
-    joffset: ArrayInf = {
-        "data": (int(offset.address), True),
-        "typestr": "<i4",
-        "version": 3,
-        "strides": None,
-        "shape": (off_len,),
-        "mask": None,
-    }
-
-    def make_buf_inf(buf: pa.Buffer, typestr: str) -> ArrayInf:
-        return {
-            "data": (int(buf.address), True),
-            "typestr": typestr,
-            "version": 3,
-            "strides": None,
-            "shape": (buf.size,),
-            "mask": None,
-        }
-
-    jdata = make_buf_inf(data, "<i1")
-
-    if mask is not None:
-        # fixme: test cudf mask
-        jdata["mask"] = make_buf_inf(mask, "<i1")
-
-    jnames: StringArray = {"offsets": joffset, "values": jdata}
-
-    def make_array_inf(
-        array: Any,
-    ) -> Tuple[ArrayInf, Optional[Tuple[pa.Buffer, pa.Buffer]]]:
-        if hasattr(codes, "__cuda_array_interface__"):
-            inf = array.__cuda_array_interface__
-            if "mask" in inf:
-                inf["mask"] = inf["mask"].__array_cuda_interface__
-            return inf, None
-        elif hasattr(codes, "__array_interface__"):
-            inf = array.__array_interface__
-            if "mask" in inf:
-                inf["mask"] = inf["mask"].__array_interface__
-            return inf, None
-
-        if not isinstance(array, pa.IntegerArray):
-            raise TypeError(
-                _expect(
-                    [pa.IntegerArray, _CupyArrayLikeArg, _ArrayLikeArg], type(array)
-                )
-            )
-        buffers: List[pa.Buffer] = array.buffers()
-        mask, data = buffers
-
-        jdata = make_buf_inf(data, _arrow_typestr()[array.type])
-        if mask is not None:
-            # fixme: test cudf mask
-            jdata["mask"] = make_buf_inf(mask, "<i1")
-
-        inf = cast(ArrayInf, jdata)
-        return inf, (mask, data)
-
-    cats_tmp = (mask, offset, data)
-    jcodes, codes_tmp = make_array_inf(codes)
-
-    return jnames, jcodes, (cats_tmp, codes_tmp)
-
-
-def _npstr_to_arrow_strarr(strarr: np.ndarray) -> Tuple[np.ndarray, str]:
-    lenarr = np.vectorize(len)
-    offsets = np.cumsum(np.concatenate([np.array([0], dtype=np.int64), lenarr(strarr)]))
-    values = strarr.sum()
-    # fixme: assert not null-terminated
-    return offsets.astype(np.int32), values
-
-
-@overload
-def _array_interface_dict(data: np.ndarray) -> ArrayInf: ...
-
-
-@overload
-def _array_interface_dict(
-    data: "pd.core.arrays.categorical.CategoricalAccessor",
-) -> Tuple[StringArray, ArrayInf, Tuple]: ...
-
-
-@overload
-def _array_interface_dict(
-    data: "pa.DictionaryArray",
-) -> Tuple[StringArray, ArrayInf, Tuple]: ...
-
-
-def _array_interface_dict(
-    data: Union[
-        np.ndarray,
-        "pd.core.arrays.categorical.CategoricalAccessor",
-        "pa.DictionaryType",
-    ]
-) -> Union[ArrayInf, Tuple[StringArray, ArrayInf, Tuple]]:
-    if _is_arrow_dict(data):
-        cats = data.dictionary
-        codes = data.indices
-        jnames, jcodes, buf = _arrow_cat_inf(cats, codes)
-        return jnames, jcodes, buf
-    if _is_pd_cat(data):
-        cats = data.categories
-        codes = data.codes
-
-        offsets, values = _npstr_to_arrow_strarr(cats.values)
-        offsets, _ = _ensure_np_dtype(offsets, np.int32)
-        joffsets = _array_interface_dict(offsets)
-        bvalues = values.encode("utf-8")
-        ptr = ctypes.c_void_p.from_buffer(ctypes.c_char_p(bvalues)).value
-        assert ptr is not None
-
-        jvalues: ArrayInf = {
-            "data": (ptr, True),
-            "typestr": "|i1",
-            "shape": (len(values),),
-            "strides": None,
-            "version": 3,
-            "mask": None,
-        }
-        jnames = {"offsets": joffsets, "values": jvalues}
-
-        jcodes = _array_interface_dict(codes.values)
-
-        buf = (offsets, values, bvalues)
-        return jnames, jcodes, buf
-    if array_hasobject(data):
-        raise ValueError("Input data contains `object` dtype.  Expecting numeric data.")
-    ainf = data.__array_interface__
-    if "mask" in ainf:
-        ainf["mask"] = ainf["mask"].__array_interface__
-    return cast(ArrayInf, ainf)
 
 
 def transform_scipy_sparse(data: DataType, is_csr: bool) -> DataType:
@@ -408,17 +212,6 @@ def is_scipy_coo(data: DataType) -> bool:
 
 def _is_np_array_like(data: DataType) -> TypeGuard[np.ndarray]:
     return hasattr(data, "__array_interface__")
-
-
-def _ensure_np_dtype(
-    data: DataType, dtype: Optional[NumpyDType]
-) -> Tuple[np.ndarray, Optional[NumpyDType]]:
-    if array_hasobject(data) or data.dtype in [np.float16, np.bool_]:
-        dtype = np.float32
-        data = data.astype(dtype, copy=False)
-    if not data.flags.aligned:
-        data = np.require(data, requirements="A")
-    return data, dtype
 
 
 def _maybe_np_slice(data: DataType, dtype: Optional[NumpyDType]) -> np.ndarray:
@@ -789,7 +582,7 @@ class PandasTransformed:
         self.temporary_buffers = []
 
         for col in self.columns:
-            inf = _array_interface_dict(col)
+            inf = array_interface_dict(col)
             if isinstance(inf, tuple):
                 jnames, jcodes, buf = inf
                 self.temporary_buffers.append(buf)

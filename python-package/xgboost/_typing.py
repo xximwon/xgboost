@@ -9,13 +9,10 @@ from typing import (
     Callable,
     Dict,
     List,
-    Literal,
     Optional,
-    Protocol,
     Sequence,
     Tuple,
     Type,
-    TypedDict,
     TypeVar,
     Union,
 )
@@ -37,31 +34,6 @@ if TYPE_CHECKING:
 else:
     PathLike = Union[str, os.PathLike]
 CupyT = ArrayLike  # maybe need a stub for cupy arrays
-
-
-# Used for accepting inputs for numpy and cupy arrays
-class _ArrayLikeArg(Protocol):
-    @property
-    def __array_interface__(self) -> dict: ...
-
-
-class _CupyArrayLikeArg(Protocol):
-    @property
-    def __cuda_array_interface__(self) -> dict: ...
-
-
-ArrayInf = TypedDict(
-    "ArrayInf",
-    {
-        "data": Tuple[int, bool],
-        "typestr": str,
-        "version": Literal[3],
-        "strides": Optional[tuple],
-        "shape": Tuple,
-        "mask": Union["ArrayInf", None, _ArrayLikeArg],
-    },
-)
-StringArray = TypedDict("StringArray", {"offsets": ArrayInf, "values": ArrayInf})
 
 NumpyOrCupy = Any
 NumpyDType = Union[str, Type[np.number]]  # pylint: disable=invalid-name
